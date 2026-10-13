@@ -6,18 +6,19 @@ colors:
   primary: "#0E1526"
   secondary: "#16203A"
   tertiary: "#F2B457"
+  tertiary-day: "#AD740F"
   neutral: "#E6EAF2"
   neutral-muted: "#8A94AC"
   line: "#C9D2E6"
-  trace: "#5A6480"
-  claimed: "#3E4760"
+  trace: "#6E7996"
+  claimed: "#5A6480"
   day-bg: "#F4F1EA"
   day-surface: "#FFFFFF"
   day-ink: "#22252B"
   day-ink-muted: "#646B78"
   day-line: "#2E3238"
-  day-trace: "#A8A29A"
-  day-claimed: "#C9C4BA"
+  day-trace: "#6F6A61"
+  day-claimed: "#8E897F"
   alert: "#E08A76"
   live: "#7FBFA8"
 typography:
@@ -78,16 +79,22 @@ components:
     backgroundColor: "{colors.neutral-muted}"
   bed-occupied:
     backgroundColor: "{colors.line}"
+  bed-occupied-day:
+    backgroundColor: "{colors.day-line}"
   bed-claimed:
     backgroundColor: "{colors.claimed}"
   bed-claimed-day:
     backgroundColor: "{colors.day-claimed}"
-  bed-own:
-    backgroundColor: "{colors.tertiary}"
   bed-trace:
     backgroundColor: "{colors.trace}"
   bed-trace-day:
     backgroundColor: "{colors.day-trace}"
+  marker-own:
+    backgroundColor: "{colors.tertiary}"
+    rounded: "{rounded.full}"
+  marker-own-day:
+    backgroundColor: "{colors.tertiary-day}"
+    rounded: "{rounded.full}"
   presence-dot:
     backgroundColor: "{colors.live}"
   name-bubble:
@@ -96,9 +103,6 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.md}"
     padding: "{spacing.xs}"
-  self-marker:
-    backgroundColor: "{colors.tertiary}"
-    rounded: "{rounded.full}"
   chat-panel:
     backgroundColor: "{colors.secondary}"
     textColor: "{colors.neutral}"
@@ -183,16 +187,31 @@ components:
 
 - **Primary（`primary`）**：深蓝黑，整个大厅的夜空底色。不纯黑——纯黑会让线稿显得刺眼，也更容易暴露 OLED 屏的色阶断层。
 - **Secondary（`secondary`）**：比底色亮一档，用于浮在夜空上的界面：聊天面板、输入框、提示条。
-- **Tertiary（`tertiary`）**：暖灯黄。**全系统唯一允许出现的暖色**，用于床头灯光晕与「自己的床位」标记。
+- **Tertiary（`tertiary`）**：暖灯黄。**全系统唯一允许出现的暖色**，只用于**小标记**（自己的小人脚下、自己的床位角落）与床头灯光晕。**不得用于整张床的轮廓**：它在冷底上比亮线更抢眼，会把「谁的床」排到「有人在睡」前面。
+- **Tertiary Day（`tertiary-day`）**：暖灯黄的白天版本（暗琥珀）。原暖色在浅底上只有 1.63:1，几乎不可见；标记必须两个模式下都看得见
 - **Neutral（`neutral`）**：接近白的冷灰。线稿与正文的墨色。
 - **Neutral Muted（`neutral-muted`）**：次要文字、HUD、别人说的话、空床的提示轮廓。
-- **Line（`line`）**：被占用的床位轮廓（床上有人）、场景结构线。
-- **Trace（`trace`）**：**睡痕的人名与轮廓**。比正常线稿更暗、更低饱和——睡痕是「留在这里的痕迹」，不是「在场的活人」，对比度必须明显低于在线者，一眼可辨。
-- **Claimed（`claimed`）**：**有主但空着的床**。比 `trace` 更淡，是三种床轮廓里最弱的一档——它只表达「这里是某个人的位置」，不应该抢走任何注意力。
+- **Line（`line`）**：床上**有活人**的轮廓、场景结构线。轮廓梯次里最强的一档。
+- **Trace（`trace`）**：**睡痕**的小人名字与轮廓。明显低于活人一档——睡痕是「留在这里的痕迹」，不是「在场的活人」。
+- **Claimed（`claimed`）**：**有主但空着的床**。轮廓梯次里最弱的一档，只表达「这里是某个人的位置」。
+
+**轮廓梯次必须单调且可辨**（WCAG 1.4.11 对图形对象要求 3:1）。在夜晚底色 `#0E1526` 上的实测对比度：
+
+| 档 | token | 值 | 对比度 |
+| :--- | :--- | :--- | :--- |
+| 床上有人 | `line` | `#C9D2E6` | 12.0:1 |
+| 睡痕 | `trace` | `#6E7996` | 4.2:1 |
+| 有主空床 | `claimed` | `#5A6480` | 3.1:1 |
+
+白天三档同构（底 `#F4F1EA`）：`day-line` 11.4:1 > `day-trace` 4.8:1 > `day-claimed` 3.1:1。
+
+> 这三个数字是用 WCAG 相对亮度公式算出来的，**未经目视校准**；真机低亮度下的可辨性属于实测项（卡 9）。
+
+> 历史坑：最早的 `claimed` 取 `#3E4760`（1.97:1），设计意图是「最弱的一档」，但实际在夜里几乎看不见——「满厅淡轮廓 = 床位认领得差不多了」这个效果就不成立。**弱不等于不可见。**
 
 白天组（同一套语义的反白版本）：
 
-- **Day BG（`day-bg`）**、**Day Surface（`day-surface`）**、**Day Ink（`day-ink`）**、**Day Ink Muted（`day-ink-muted`）**、**Day Line（`day-line`）**、**Day Trace（`day-trace`）**、**Day Claimed（`day-claimed`）**。
+- **Day BG（`day-bg`）**、**Day Surface（`day-surface`）**、**Day Ink（`day-ink`）**、**Day Ink Muted（`day-ink-muted`）**、**Day Line（`day-line`）**、**Day Trace（`day-trace`）**、**Day Claimed（`day-claimed`）**、**Day Tertiary（`tertiary-day`）**。
 - **换昼夜只换配色，不重画任何资源。**
 
 状态色：
@@ -260,7 +279,25 @@ components:
 | 组件 | 要点 |
 | :--- | :--- |
 | `world-night` / `world-day` | 世界画布的昼夜两组取值。铺满视口，只画场景、床位、小人、表情，**不渲染任何文字界面** |
-| `bed-occupied` / `bed-claimed` / `bed-claim-day` / `bed-own` / `bed-trace` | 床位的**两个正交维度**分开表达。<br>**轮廓**（梯次：亮线 > 暖灯 > 淡色 > 无）：床上有占用者 → `line`；无占用且是自己的床 → `tertiary`；无占用且是别人的床 → `claimed`；无主 → 不画。<br>**名字**：只有床上有占用者才画（睡痕用 `trace` 色，其余用 `neutral`）。<br>`bed-empty-hint` 是「可躺的空床」被点中时的瞬时反馈色 |
+| `bed-occupied` / `bed-trace` / `bed-claimed`（及各自白天版本） | **轮廓只回答两个问题**（完整真值表见下）。`bed-empty-hint` 是「可躺的空床」被点中时的瞬时反馈色 |
+| `marker-own` | **属于我的标记**：自己的小人脚下、自己的床位角落共用（一处概念、两处落地）。它与轮廓正交——所以暖灯色不需要参与轮廓梯次排序 |
+
+**床位轮廓真值表**（不得把两个维度合并成一个「床位状态」）：
+
+| 情形 | 轮廓 | `marker-own` | 名字 |
+| :--- | :--- | :--- | :--- |
+| 无主空床 | 不画 | 无 | 不画 |
+| 别人的床，空着 | `claimed` | 无 | 不画 |
+| 我的床，空着（我在厅里走动） | `claimed` | **有** | 不画 |
+| 别人的床，有人在睡 | `line` | 无 | 画 |
+| 别人的床，睡痕 | `trace` | 无 | 画，更暗 |
+| 我的床（我自己躺着） | `line` | **有** | **不画**（我知道我是谁） |
+
+三条配套约束：
+
+- **睡痕的小人整体降低不透明度**（不能只改轮廓与名字，否则「睡痕」与「睡着」只差颜色）
+- **轮廓不影响可点击性**：命中区域是床的占位区（无主床不画轮廓但它可以点）
+- **`marker-own` 有最小屏幕尺寸下限**：缩小时不得消失，否则「找不到我的床」
 | `chat-panel` / `chat-panel-day` | 常驻底部的聊天面板。自己的消息用 `neutral`，别人的用 `neutral-muted` |
 | `chat-message-own` / `chat-message-other` | 消息条目。系统提示（有人离开等）用 `caption` 与 `neutral-muted` |
 | `hud` / `hud-day` / `hud-numeric` | 角落的极简信息：大区名、自己床号、在线人数、当前昼夜 |
@@ -269,7 +306,7 @@ components:
 | `toast-recoverable` | **只对可恢复错误显示**（床位被占、名字不能用、消息过长）。静默类错误不显示 |
 | `presence-dot` | 「有人在线」的极小面积点缀 |
 | `name-bubble` | **选中某个人时弹出的唯一名字气泡**（见下） |
-| `self-marker` | 自己小人脚下的暖灯色小标记（人一多时用于找到自己） |
+| `marker-own` | **属于我的标记**：自己的小人脚下 + 自己的床位角落共用同一颗暖灯色小点 |
 
 ### 名字什么时候出现
 
@@ -279,7 +316,7 @@ components:
 | :--- | :--- | :--- |
 | 躺在床上的人（含睡痕） | **始终显示**，画在床位上 | 床的位置稳定，标签不会飘；而「这是谁的位置」本身就是产品要表达的 |
 | 漫游中的人（站着/走动） | **默认不显示**；被选中时显示唯一一个名字气泡 | 一百个人就是一百个随风飘的标签，画面会立刻变吵 |
-| 自己 | 不显示名字，但**小人脚下有暖灯色标记** | 人一多必须能找到自己 |
+| 自己 | **一律不画**（地上与床上都不画），靠 `marker-own` 识别 | 我知道我是谁。而且地上不画、床上却画是不对称的 |
 
 **选中态是一个概念、服务两件事**：点中某个小人（或床上的人）→ 弹出名字气泡 **且** 成为私聊目标。同一时刻只显示一个气泡，点地面则取消选中并走动。
 
@@ -294,7 +331,8 @@ components:
 - 睡痕必须一眼可辨——它比在线者暗得多，这是「这里曾有人睡过」的全部表达。
 - 昼夜切换只换配色令牌，不动任何资源。
 - 把床位的**归属**与**占用**当成两个独立维度推导，不要合并成一个「床位状态」。
-- 占用一旦成立就接管轮廓颜色（有人睡 > 谁的床）：亮线 > 暖灯 > 淡色 > 无。
+- 占用一旦成立就接管轮廓颜色（有人睡 > 谁的床）：`line` > `trace` > `claimed` > 不画。
+- **「是我的」靠一个独立的小标记**，不要用轮廓颜色表达（轮廓梯次只有三档，插入暖色会打乱排序）。
 - 有主但空的床只画淡轮廓、**不写名字**；名字只出现在床上有人的时候。
 - 暖色只用在床头灯与自己的床位标记上。
 
@@ -305,6 +343,8 @@ components:
 - 不要把聊天藏进弹出层或二级菜单。
 - 不要让地上的小人常显名字（一百个飘动的标签会把大厅变成名单）。
 - 不要在渲染聊天消息时临时去查人名（对方离开后那行名字会变空）——追加时就固化。
+- 不要把暖灯色用于整张床的轮廓（它在冷底上比亮线更抢眼，会颠倒「有人睡 > 谁的床」的优先级）。
+- 不要让轮廓梯次的相邻两档靠得太近（弱不等于不可见，也不等于分不清）。
 - 不要给睡着的人做逐帧呼吸动画——用整体透明度或轻微缩放的低频变化代替（256 个睡着的人逐帧动画会吃掉手机 CPU）。
 - 不要引入外部字体文件。
 - 不要在画布里渲染文字界面，也不要在 DOM 里重画世界。
