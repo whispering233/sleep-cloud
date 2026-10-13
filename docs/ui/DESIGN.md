@@ -90,6 +90,15 @@ components:
     backgroundColor: "{colors.day-trace}"
   presence-dot:
     backgroundColor: "{colors.live}"
+  name-bubble:
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.neutral}"
+    typography: "{typography.label}"
+    rounded: "{rounded.md}"
+    padding: "{spacing.xs}"
+  self-marker:
+    backgroundColor: "{colors.tertiary}"
+    rounded: "{rounded.full}"
   chat-panel:
     backgroundColor: "{colors.secondary}"
     textColor: "{colors.neutral}"
@@ -259,6 +268,20 @@ components:
 | `primary-action` / `text-input` | 入场与聊天输入的主要操作与输入框 |
 | `toast-recoverable` | **只对可恢复错误显示**（床位被占、名字不能用、消息过长）。静默类错误不显示 |
 | `presence-dot` | 「有人在线」的极小面积点缀 |
+| `name-bubble` | **选中某个人时弹出的唯一名字气泡**（见下） |
+| `self-marker` | 自己小人脚下的暖灯色小标记（人一多时用于找到自己） |
+
+### 名字什么时候出现
+
+名字是身份信息，不是陪伴信息。**「看到有人和我一样醒着」靠的是看到人本身。**
+
+| 对象 | 名字 | 理由 |
+| :--- | :--- | :--- |
+| 躺在床上的人（含睡痕） | **始终显示**，画在床位上 | 床的位置稳定，标签不会飘；而「这是谁的位置」本身就是产品要表达的 |
+| 漫游中的人（站着/走动） | **默认不显示**；被选中时显示唯一一个名字气泡 | 一百个人就是一百个随风飘的标签，画面会立刻变吵 |
+| 自己 | 不显示名字，但**小人脚下有暖灯色标记** | 人一多必须能找到自己 |
+
+**选中态是一个概念、服务两件事**：点中某个小人（或床上的人）→ 弹出名字气泡 **且** 成为私聊目标。同一时刻只显示一个气泡，点地面则取消选中并走动。
 
 **表情**是世界内的气泡，不需要界面组件。
 
@@ -280,6 +303,8 @@ components:
 - 不要用高饱和像素风或鲜艳渐变。那会让一个失眠大厅变吵闹（调研中已排除像素风方案）。
 - 不要用红色警报类配色做错误提示。
 - 不要把聊天藏进弹出层或二级菜单。
+- 不要让地上的小人常显名字（一百个飘动的标签会把大厅变成名单）。
+- 不要在渲染聊天消息时临时去查人名（对方离开后那行名字会变空）——追加时就固化。
 - 不要给睡着的人做逐帧呼吸动画——用整体透明度或轻微缩放的低频变化代替（256 个睡着的人逐帧动画会吃掉手机 CPU）。
 - 不要引入外部字体文件。
 - 不要在画布里渲染文字界面，也不要在 DOM 里重画世界。
