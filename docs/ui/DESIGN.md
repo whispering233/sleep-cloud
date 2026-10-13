@@ -10,12 +10,14 @@ colors:
   neutral-muted: "#8A94AC"
   line: "#C9D2E6"
   trace: "#5A6480"
+  claimed: "#3E4760"
   day-bg: "#F4F1EA"
   day-surface: "#FFFFFF"
   day-ink: "#22252B"
   day-ink-muted: "#646B78"
   day-line: "#2E3238"
   day-trace: "#A8A29A"
+  day-claimed: "#C9C4BA"
   alert: "#E08A76"
   live: "#7FBFA8"
 typography:
@@ -76,6 +78,10 @@ components:
     backgroundColor: "{colors.neutral-muted}"
   bed-occupied:
     backgroundColor: "{colors.line}"
+  bed-claimed:
+    backgroundColor: "{colors.claimed}"
+  bed-claimed-day:
+    backgroundColor: "{colors.day-claimed}"
   bed-own:
     backgroundColor: "{colors.tertiary}"
   bed-trace:
@@ -171,12 +177,13 @@ components:
 - **Tertiary（`tertiary`）**：暖灯黄。**全系统唯一允许出现的暖色**，用于床头灯光晕与「自己的床位」标记。
 - **Neutral（`neutral`）**：接近白的冷灰。线稿与正文的墨色。
 - **Neutral Muted（`neutral-muted`）**：次要文字、HUD、别人说的话、空床的提示轮廓。
-- **Line（`line`）**：被占用的床位轮廓、场景结构线。
-- **Trace（`trace`）**：**睡痕专用**。比正常线稿更暗、更低饱和——睡痕是「留在这里的痕迹」，不是「在场的活人」，对比度必须明显低于在线者，一眼可辨。
+- **Line（`line`）**：被占用的床位轮廓（床上有人）、场景结构线。
+- **Trace（`trace`）**：**睡痕的人名与轮廓**。比正常线稿更暗、更低饱和——睡痕是「留在这里的痕迹」，不是「在场的活人」，对比度必须明显低于在线者，一眼可辨。
+- **Claimed（`claimed`）**：**有主但空着的床**。比 `trace` 更淡，是三种床轮廓里最弱的一档——它只表达「这里是某个人的位置」，不应该抢走任何注意力。
 
 白天组（同一套语义的反白版本）：
 
-- **Day BG（`day-bg`）**、**Day Surface（`day-surface`）**、**Day Ink（`day-ink`）**、**Day Ink Muted（`day-ink-muted`）**、**Day Line（`day-line`）**、**Day Trace（`day-trace`）**。
+- **Day BG（`day-bg`）**、**Day Surface（`day-surface`）**、**Day Ink（`day-ink`）**、**Day Ink Muted（`day-ink-muted`）**、**Day Line（`day-line`）**、**Day Trace（`day-trace`）**、**Day Claimed（`day-claimed`）**。
 - **换昼夜只换配色，不重画任何资源。**
 
 状态色：
@@ -244,7 +251,7 @@ components:
 | 组件 | 要点 |
 | :--- | :--- |
 | `world-night` / `world-day` | 世界画布的昼夜两组取值。铺满视口，只画场景、床位、小人、表情，**不渲染任何文字界面** |
-| `bed-empty-hint` / `bed-occupied` / `bed-own` / `bed-trace` | 床位的四种可见状态。空床无标记、被占用用 `line`、自己的床用 `tertiary`、睡痕用 `trace`（明显更暗） |
+| `bed-empty-hint` / `bed-occupied` / `bed-claimed` / `bed-own` / `bed-trace` | 床位的**两个正交维度**分开表达：<br>**归属**（无主不画轮廓 / 别人的床 `claimed` 淡轮廓 / 自己的床 `tertiary` 暖灯色）<br>**占用**（无人不写名字 / 有人写名字/ 睡痕写名字且更暗）。`bed-empty-hint` 是「可躺的空床」被点中时的瞬时反馈色 |
 | `chat-panel` / `chat-panel-day` | 常驻底部的聊天面板。自己的消息用 `neutral`，别人的用 `neutral-muted` |
 | `chat-message-own` / `chat-message-other` | 消息条目。系统提示（有人离开等）用 `caption` 与 `neutral-muted` |
 | `hud` / `hud-day` / `hud-numeric` | 角落的极简信息：大区名、自己床号、在线人数、当前昼夜 |
@@ -263,6 +270,8 @@ components:
 - 用亮度差与边框表达层级，不用阴影。
 - 睡痕必须一眼可辨——它比在线者暗得多，这是「这里曾有人睡过」的全部表达。
 - 昼夜切换只换配色令牌，不动任何资源。
+- 把床位的**归属**与**占用**当成两个独立维度渲染，不要合并成一个「床位状态」。
+- 有主但空的床只画淡轮廓、**不写名字**；名字只出现在床上有人的时候。
 - 暖色只用在床头灯与自己的床位标记上。
 
 **Don't**
@@ -273,6 +282,7 @@ components:
 - 不要给睡着的人做逐帧呼吸动画——用整体透明度或轻微缩放的低频变化代替（256 个睡着的人逐帧动画会吃掉手机 CPU）。
 - 不要引入外部字体文件。
 - 不要在画布里渲染文字界面，也不要在 DOM 里重画世界。
+- 不要给 256 张床都写名字（那是名单，不是大厅）：文字只出现在有人的床上。
 - 不要先做桌面再“适配”手机（顺序反了会付出双倍布局返工）。
 - 不要把重要信息做成“悬停才显示”——手机上不存在悬停。
 - 不要让输入框字号低于 16px（会触发窄屏浏览器的页面自动缩放）。

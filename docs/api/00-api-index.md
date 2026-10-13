@@ -23,7 +23,7 @@
 | 方向 | 消息类型 |
 | :--- | :--- |
 | 上行（意图） | `hello` / `walk` / `lie` / `rise` / `sleep` / `chat` / `whisper` / `emote` |
-| 下行（事实） | `snapshot` / `join` / `leave` / `state` / `pos` / `chat` / `whisper` / `emote` / `error` |
+| 下行（事实） | **描述人**：`snapshot` / `join` / `leave` / `state` / `pos`；**描述床**：`bed`；**消息与错误**：`chat` / `whisper` / `emote` / `error` |
 
 详见 `20-api-ws.md`。
 
