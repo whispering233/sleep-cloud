@@ -142,4 +142,84 @@
     border: 0;
     border-radius: var(--radius-full);
   }
+
+  .action-primary:disabled {
+    opacity: 0.5;
+  }
+
+  /* ——— 入场层（每次进厅前都出现） ——— */
+
+  .entry-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    padding: calc(env(safe-area-inset-top) + var(--spacing-lg))
+      calc(env(safe-area-inset-right) + var(--spacing-lg))
+      calc(env(safe-area-inset-bottom) + var(--spacing-lg))
+      calc(env(safe-area-inset-left) + var(--spacing-lg));
+    background-color: var(--color-primary);
+  }
+
+  .entry-card {
+    display: grid;
+    gap: var(--spacing-md);
+    width: 100%;
+    max-width: 360px;
+    padding: var(--spacing-lg);
+    background-color: var(--color-secondary);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-lg);
+  }
+
+  .entry-title {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-title);
+    font-size: var(--text-title);
+    font-weight: var(--font-weight-title);
+    letter-spacing: var(--tracking-title);
+    line-height: var(--text-title--line-height);
+  }
+
+  .entry-field {
+    display: grid;
+    gap: var(--spacing-xs);
+  }
+
+  .field-label {
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  /* 整行都是触摸目标（勾选框本身只有 20px） */
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: 44px;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  .checkbox-row input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--color-neutral);
+  }
+
+  .form-error {
+    margin: 0;
+    color: var(--color-alert);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    letter-spacing: var(--tracking-label);
+  }
 }
