@@ -12,6 +12,11 @@ export interface TracePersonRow {
   appearance: string | null;
 }
 
+/** 床上但人已离线、**还在宽限期内**的一行：睡痕还没到，照样留在一个 `people` 条目里。 */
+export interface OfflineOccupantRow extends TracePersonRow {
+  state: 'lying' | 'asleep';
+}
+
 export interface SnapshotInput {
   hall: HallConfig;
   serverTs: number;
@@ -21,6 +26,8 @@ export interface SnapshotInput {
   myOwnedBedNo: number | null;
   /** 其它在线连接（**不含自己**） */
   others: ConnectionState[];
+  /** 床上、人已离线但还在宽限期内的占用者（没有连接 → 只能查库） */
+  offlineOccupants: OfflineOccupantRow[];
   /** 归属表：所有有主的床的床号 */
   ownedBeds: number[];
   traceRows: TracePersonRow[];
@@ -33,13 +40,13 @@ function selfPerson(connection: ConnectionState, myOwnedBedNo: number | null): S
   return person;
 }
 
-function tracePerson(row: TracePersonRow): Person {
+function personFromRow(row: TracePersonRow, state: 'lying' | 'asleep' | 'trace'): Person {
   const stored = row.appearance as Appearance | null;
   return {
     id: row.userId,
     name: row.name ?? '',
     appearance: stored && APPEARANCES.includes(stored) ? stored : appearanceFor(row.userId),
-    state: 'trace',
+    state,
     bedNo: row.bedNo,
   };
 }
@@ -66,6 +73,8 @@ export function splitLive(
  *
  * 两个正交维度在这里合流：归属走 `ownedBeds`（有主的床，不带名字），占用走 `people`（含睡痕条目）。
  * **已经在线的睡痕行不再重复出现在 `people` 里**——在线连接是更新的真相。
+ *
+ * `people` 必须覆盖**每一个占用者**，睡痕与宽限中的床上离线者都没有连接，因此只能查库补录。
  */
 export function buildSnapshot(input: SnapshotInput): SnapshotMessage {
   const connected = new Set([input.me.userId, ...input.others.map((other) => other.userId)]);
@@ -85,7 +94,8 @@ export function buildSnapshot(input: SnapshotInput): SnapshotMessage {
     ownedBeds: input.ownedBeds,
     people: [
       ...input.others.map(personFromConnection),
-      ...input.traceRows.filter((row) => !connected.has(row.userId)).map(tracePerson),
+      ...input.offlineOccupants.map((row) => personFromRow(row, row.state)),
+      ...input.traceRows.filter((row) => !connected.has(row.userId)).map((row) => personFromRow(row, 'trace')),
     ],
   };
 }

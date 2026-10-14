@@ -24,7 +24,7 @@
 | `owner_appearance` | 否 | TEXT | 枚举值 | 小人外观（第一版为固定几种） |
 | `owner_tz` | 否 | TEXT | IANA 时区名 | 用户本地时区。**当前不参与服务端任何判断**（含睡痕清理时刻，那是厅时区的 08:00）。保存它只为将来的「睡眠记录归属哪一晚」不需要补数据 |
 | `claimed_at` | 否 | INTEGER | epoch 毫秒 | 认领时刻 |
-| `last_seen_at` | 否 | INTEGER | epoch 毫秒 | 最后一次出现的时刻。归属释放的唯一依据（超过 30 天释放） |
+| `last_seen_at` | 否 | INTEGER | epoch 毫秒 | 最后一次出现的时刻。**连接建立与断开时各写一次**。两个用途：归属释放的依据（超过 30 天释放），以及**宽限 / 睡痕推导**（`state` 为 `lying` / `asleep` 而人已离线时，拿它算宽限到没到） |
 | `sleep_started_at` | 否 | INTEGER | epoch 毫秒 | 本次睡眠（躺下）的起始时刻。为空表示当前未在床上 |
 | `updated_at` | 是 | INTEGER | epoch 毫秒 | 最后一次状态变更时刻，用于调试与幂等判断 |
 
@@ -93,6 +93,8 @@
 | 自动或手动睡着 | `state` → `asleep` |
 | 起身 | `state` → `empty`；`sleep_started_at` 清空；**保留归属** |
 | 断线超宽限（在床上） | `state` → `trace` |
+| 宽限期内重连（在床上） | `state` 保持 `lying` / `asleep`（位置与路径由内存的宽限记录恢复；记录丢了就退回床边站着） |
+| 宽限已过后重连（床仍是自己的且是睡痕） | `state` → `lying`（人回到床上），归属与 `sleep_started_at` 不动 |
 | 次日 08:00（厅时区） | `state = trace` 的行 → `state` = `empty`；**保留归属** |
 | 最后出现超过 30 天 | 清空 `owner_*` 与 `sleep_started_at`；`state` → `empty`（床回到可认领池） |
 | 每次连接建立/断开 | 更新 `last_seen_at`（**不随心跳更新，避免写放大**） |

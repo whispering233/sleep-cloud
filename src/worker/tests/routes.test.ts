@@ -61,7 +61,7 @@ describe('匿名会话接口', () => {
   it('篡改 cookie 视为新会话（1001，并换发新 cookie）', async () => {
     const env = makeEnv();
     const cookie = await newCookie(env);
-    const tampered = cookie.replace(/u_[0-9a-f]/, 'u_f');
+    const tampered = cookie.replace(/u_[0-9a-f]/, (match) => (match === 'u_f' ? 'u_e' : 'u_f'));
 
     const res = await get('/api/me', env, tampered);
     expect((await body(res)).code).toBe('1001');

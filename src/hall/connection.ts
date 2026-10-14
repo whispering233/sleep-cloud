@@ -59,14 +59,16 @@ export const IDENTITY_HEADERS = {
 
 /**
  * 显示态的**推导**（正确性的真正来源，见 `10-hall-runtime.md` §4.3）：
- * 在床上清醒且无输入超过阈值 → 睡着。定时器只负责「让在看的人及时看到」，不负责正确性。
+ * 在床上清醒且无输入**满**阈值 → 睡着。边界与到期事件一致（`>=`，两边都算「到点」），
+ * 否则闹钟到点的那一刻推导会判成「还没到」，白白丢掉这次唤醒。
+ * 定时器只负责「让在看的人及时看到」，不负责正确性。
  */
 export function deriveDisplayState(
   connection: ConnectionState,
   now: number,
   autoSleepMs: number,
 ): ConnectionState['state'] {
-  if (connection.state === 'lying' && now - connection.lastInputAt > autoSleepMs) return 'asleep';
+  if (connection.state === 'lying' && now - connection.lastInputAt >= autoSleepMs) return 'asleep';
   return connection.state;
 }
 

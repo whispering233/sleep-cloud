@@ -37,6 +37,7 @@ describe('快照组装', () => {
       others: [],
       ownedBeds: [],
       traceRows: [],
+      offlineOccupants: [],
     });
 
     expect(snapshot.me).toMatchObject({ id: 'u_me', name: '我', state: 'roaming' });
@@ -61,10 +62,29 @@ describe('快照组装', () => {
       others: [],
       ownedBeds: [5],
       traceRows: [traceRow()],
+      offlineOccupants: [],
     });
 
     expect(snapshot.people).toEqual([{ id: 'u_trace', name: '夜猫', appearance: 'a2', state: 'trace', bedNo: 5 }]);
     expect(snapshot.ownedBeds).toEqual([5]);
+  });
+
+  it('宽限中的床上离线者照旧是 lying/asleep（睡痕还没到，占用不能凭空消失）', () => {
+    const snapshot = buildSnapshot({
+      hall: HALL,
+      serverTs: 1000,
+      online: 1,
+      me: connection(),
+      myOwnedBedNo: null,
+      others: [],
+      ownedBeds: [5],
+      traceRows: [],
+      offlineOccupants: [{ bedNo: 5, state: 'asleep', userId: 'u_sleeper', name: '阿雅', appearance: 'a2' }],
+    });
+
+    expect(snapshot.people).toEqual([
+      { id: 'u_sleeper', name: '阿雅', appearance: 'a2', state: 'asleep', bedNo: 5 },
+    ]);
   });
 
   it('库里外观值不合法时回落到按标识推导', () => {
@@ -77,6 +97,7 @@ describe('快照组装', () => {
       others: [],
       ownedBeds: [5],
       traceRows: [traceRow({ appearance: 'nope' })],
+      offlineOccupants: [],
     });
 
     const person = snapshot.people[0];
@@ -94,6 +115,7 @@ describe('快照组装', () => {
       others: [connection({ userId: 'u_trace', state: 'roaming' })],
       ownedBeds: [5],
       traceRows: [traceRow()],
+      offlineOccupants: [],
     });
 
     expect(snapshot.people).toEqual([
@@ -111,6 +133,7 @@ describe('快照组装', () => {
       others: [connection({ userId: 'u_sleeper', state: 'asleep', bedNo: 7 })],
       ownedBeds: [],
       traceRows: [],
+      offlineOccupants: [],
     });
 
     expect(snapshot.people[0]).toEqual({
@@ -156,6 +179,7 @@ describe('自己的归属位', () => {
       others: [],
       ownedBeds: [42],
       traceRows: [],
+      offlineOccupants: [],
     });
     expect(withBed.me).toMatchObject({ id: 'u_me', state: 'roaming', ownedBedNo: 42 });
 
@@ -168,6 +192,7 @@ describe('自己的归属位', () => {
       others: [],
       ownedBeds: [],
       traceRows: [],
+      offlineOccupants: [],
     });
     expect('ownedBedNo' in withoutBed.me).toBe(false);
   });

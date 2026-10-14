@@ -1,4 +1,5 @@
 import type { Appearance } from '../shared/protocol';
+import type { OccupiedBedRow } from './grace';
 
 /**
  * 床位占用状态（主体是**一张床**，见 `docs/db/schema.md`）。
@@ -22,6 +23,7 @@ interface RawBedRow {
   owner_user_id: string | null;
   owner_name: string | null;
   owner_appearance: string | null;
+  last_seen_at: number | null;
 }
 
 /** 按主键读单行（**不做全表读取**：行读取是最容易被放大到超额的维度）。 */
@@ -89,9 +91,68 @@ export function putInBed(sql: SqlStorage, input: PutInBedInput): void {
   );
 }
 
-/** 清醒度变化（`lying` ↔ `asleep`）。 */
-export function setBedOccupancy(sql: SqlStorage, bedNo: number, state: 'lying' | 'asleep', now: number): void {
+/** 占用状态变化：清醒度（`lying` ↔ `asleep`）或转睡痕（`trace`）。 */
+export function setBedOccupancy(
+  sql: SqlStorage,
+  bedNo: number,
+  state: 'lying' | 'asleep' | 'trace',
+  now: number,
+): void {
   sql.exec('UPDATE bed SET state = ?, updated_at = ? WHERE bed_no = ?', state, now, bedNo);
+}
+
+/**
+ * 有占用者的床位（行数 ≈ 当前并发，**不是全表**）：宽限推导与快照补录共用。
+ * 睡痕行不在其中——它们不需要推导，直接由 `state` 索引取出来显示。
+ */
+export function listOccupiedBeds(sql: SqlStorage): OccupiedBedRow[] {
+  return sql
+    .exec<RawBedRow>(
+      `SELECT bed_no, state, owner_user_id, owner_name, owner_appearance, last_seen_at
+       FROM bed WHERE state IN ('lying', 'asleep') AND owner_user_id IS NOT NULL`,
+    )
+    .toArray()
+    .map((row) => ({
+      bedNo: row.bed_no,
+      state: row.state as OccupiedBedRow['state'],
+      ownerUserId: row.owner_user_id as string,
+      ownerName: row.owner_name,
+      ownerAppearance: row.owner_appearance,
+      lastSeenAt: row.last_seen_at,
+    }));
+}
+
+/** 我的床是否正留着睡痕（宽限已过、人已离线）。走唯一索引 `owner_user_id` 取一行。 */
+export function findTraceBed(sql: SqlStorage, userId: string): number | undefined {
+  return sql
+    .exec<{ bed_no: number }>("SELECT bed_no FROM bed WHERE owner_user_id = ? AND state = 'trace'", userId)
+    .toArray()[0]?.bed_no;
+}
+
+export interface RestoreBedInput {
+  bedNo: number;
+  name: string;
+  appearance: Appearance;
+  timezone: string;
+  now: number;
+}
+
+/**
+ * 从睡痕恢复：床重新被占用（清醒）。**不是新的一次上床**——归属与 `sleep_started_at` 都不动，
+ * 只刷新名字快照（见 `docs/db/schema.md` §5）。
+ */
+export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): void {
+  sql.exec(
+    `UPDATE bed SET state = 'lying', owner_name = ?, owner_appearance = ?, owner_tz = ?,
+      last_seen_at = ?, updated_at = ?
+     WHERE bed_no = ?`,
+    input.name,
+    input.appearance,
+    input.timezone,
+    input.now,
+    input.now,
+    input.bedNo,
+  );
 }
 
 /** 起身 / 睡痕清理：床变空，**归属保留**（`sleep_started_at` 清空）。 */

@@ -93,9 +93,10 @@ describe('握手门槛', () => {
 describe('自动睡着是推导出来的（读取时推导，不挂定时器）', () => {
   const AUTO_SLEEP_MS = 300_000;
 
-  it('在床上清醒且无输入超过阈值 → 睡着', () => {
+  it('在床上清醒且无输入满阈值 → 睡着（边界算「到点」，与到期事件一致）', () => {
     const lying = connection({ state: 'lying', bedNo: 3, lastInputAt: 1000 });
-    expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS, AUTO_SLEEP_MS)).toBe('lying'); // 恰好到阈值还不算
+    expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS - 1, AUTO_SLEEP_MS)).toBe('lying');
+    expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS, AUTO_SLEEP_MS)).toBe('asleep');
     expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS + 1, AUTO_SLEEP_MS)).toBe('asleep');
   });
 
