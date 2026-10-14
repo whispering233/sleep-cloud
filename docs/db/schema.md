@@ -26,7 +26,7 @@
 | `claimed_at` | 否 | INTEGER | epoch 毫秒 | 认领时刻 |
 | `last_seen_at` | 否 | INTEGER | epoch 毫秒 | 最后一次出现的时刻。**连接建立与断开时各写一次**。两个用途：归属释放的依据（超过 30 天释放），以及**宽限 / 睡痕推导**（`state` 为 `lying` / `asleep` 而人已离线时，拿它算宽限到没到） |
 | `sleep_started_at` | 否 | INTEGER | epoch 毫秒 | 本次睡眠（躺下）的起始时刻。为空表示当前未在床上 |
-| `updated_at` | 是 | INTEGER | epoch 毫秒 | 最后一次状态变更时刻，用于调试与幂等判断 |
+| `updated_at` | 是 | INTEGER | epoch 毫秒 | 最后一次状态变更时刻，用于调试与幂等判断。**睡痕清理的判定依据**：在 `state = 'trace'` 的行上写的是**宽限到期的时刻**（`last_seen_at + 宽限期`，见 §5），清理只清「早于最近一个 08:00」的行（见 `10-hall-runtime.md` §7） |
 
 ### 状态取值语义
 
@@ -92,11 +92,11 @@
 | **每次上床（含从睡痕恢复）** | 刷新 `owner_name` = 当前会话昵称（因为只有此时的昵称才可能被显示） |
 | 自动或手动睡着 | `state` → `asleep` |
 | 起身 | `state` → `empty`；`sleep_started_at` 清空；**保留归属** |
-| 断线超宽限（在床上） | `state` → `trace` |
+| 断线超宽限（在床上） | `state` → `trace`；`updated_at` 写的是**宽限到期的时刻**（由 `last_seen_at + 宽限期` 推导），不是「发现它的时刻」——睡痕清理拿它当日界判据，写发现时刻会让远处过期的睡痕多活一天 |
 | 宽限期内重连（在床上） | `state` 保持 `lying` / `asleep`（位置与路径由内存的宽限记录恢复；记录丢了就退回床边站着） |
 | 宽限已过后重连（床仍是自己的且是睡痕） | `state` → `lying`（人回到床上），归属与 `sleep_started_at` 不动 |
-| 次日 08:00（厅时区） | `state = trace` 的行 → `state` = `empty`；**保留归属** |
-| 最后出现超过 30 天 | 清空 `owner_*` 与 `sleep_started_at`；`state` → `empty`（床回到可认领池） |
+| 次日 08:00（厅时区） | `state = 'trace'` 且 `updated_at` 早于最近一个 08:00 的行 → `state` = `empty`；**保留归属** |
+| 最后出现超过 30 天 | 清空 `owner_*` 与 `sleep_started_at`；`state` → `empty`（床回到可认领池）。`last_seen_at` 为 NULL 的**有主**床同样释放（认领必然伴随一次写 `last_seen_at`，这种行只可能来自历史数据；不释放等于这张床永远回不到池子） |
 | 每次连接建立/断开 | 更新 `last_seen_at`（**不随心跳更新，避免写放大**） |
 
 ## 6. 白送的副产品：睡眠记录

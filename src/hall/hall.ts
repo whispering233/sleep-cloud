@@ -9,7 +9,20 @@ import { AUTO_SLEEP_MS, GRACE_MS, MOVE_MS_PER_TILE, TICK_MS } from '../shared/co
 import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
 import { lieVerdictFor } from './bed-rules';
-import { clearBed, findTraceBed, listOccupiedBeds, putInBed, readBed, restoreBedOccupancy, setBedOccupancy } from './bed-store';
+import {
+  clearAllTraceBeds,
+  clearBed,
+  findTraceBed,
+  listExpiredOwnerships,
+  listOccupiedBeds,
+  listTraceBeds,
+  putInBed,
+  readBed,
+  releaseExpiredOwnerships,
+  restoreBedOccupancy,
+  setBedOccupancy,
+} from './bed-store';
+import { cleanupMessages, nextCleanupAt, previousCleanupAt } from './cleanup';
 import { graceVerdict } from './grace';
 import type { GraceSession } from './grace';
 import { advanceMover } from './movement';
@@ -657,7 +670,10 @@ export class Hall extends DurableObject<Env> {
         }
         continue;
       }
-      this.markTrace(row.bedNo, row.ownerUserId); // 在床上 → 睡痕，**不发 leave**
+      // 宽限到期时刻就是 `lastSeenAt + 宽限期`（`graceVerdict` 只在非空时判 `expired`）；
+      // 兜底用 `now`——写成 `now + 宽限期` 会变成未来戳，那条睡痕要等到明天才被清
+      const tracedAt = row.lastSeenAt === null ? now : row.lastSeenAt + GRACE_MS;
+      this.markTrace(row.bedNo, row.ownerUserId, tracedAt); // 在床上 → 睡痕，**不发 leave**
     }
 
     // 宽限记录只买「重连时位置还在」：到期的**不需要广播任何东西**——在地上的人一断线就发过 `leave` 了，
@@ -669,9 +685,14 @@ export class Hall extends DurableObject<Env> {
     return waiting;
   }
 
-  /** 变成睡痕：库里记上，再广播显示态（名字与轮廓由客户端按 `trace` 变暗）。 */
-  private markTrace(bedNo: number, userId: string): void {
-    setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', Date.now());
+  /**
+   * 变成睡痕：库里记上，再广播显示态（名字与轮廓由客户端按 `trace` 变暗）。
+   *
+   * `updated_at` 写的是**宽限到期的时刻**（`last_seen_at + 宽限期`），不是「发现它的时刻」：睡痕清理拿它
+   * 当日界判据（§7），写发现时刻会让远处过期的睡痕（例如宽限早过期、对象直到次日才醒）多活一天。
+   */
+  private markTrace(bedNo: number, userId: string, tracedAt: number): void {
+    setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
     this.broadcast({ t: 'state', id: userId, state: 'trace', bedNo });
   }
 
@@ -701,6 +722,22 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
+   * 排下一次每日清理（见 `10-hall-runtime.md` §7）。
+   * 每次清理执行完都要重排：`alarm()` 末尾的对账靠堆顶把槽位写到明天。
+   */
+  private armCleanup(): void {
+    this.due.upsert({ kind: 'cleanup', userId: '', at: nextCleanupAt(this.hall.timezone, Date.now()) });
+  }
+
+  /**
+   * 重建堆时排**最近一个** 08:00（见 `10-hall-runtime.md` §7）：堆只在内存里，而 08:00 唤醒的是
+   * 新实例——只排「下一个」会让当天这次清理永远不发生。已经过了 → `runDueEvents()` 当场补跑。
+   */
+  private armCleanupCatchUp(): void {
+    this.due.upsert({ kind: 'cleanup', userId: '', at: previousCleanupAt(this.hall.timezone, Date.now()) });
+  }
+
+  /**
    * 唤醒后重建到期事件堆，并与平台上已有的槽位对账（见 `10-hall-runtime.md` §3 步 4）。
    *
    * **不能在构造函数里做**：对象被唤醒时构造函数先于 `alarm()` 运行，那时写槽位会把平台刚排好的
@@ -712,6 +749,8 @@ export class Hall extends DurableObject<Env> {
     this.scheduled = true;
 
     this.due.clear();
+    // 清理事件是唯一「丢了就会真的漏掉」的一个（对象可能整夜休眠）→ 重建时排最近一个 08:00 以便补跑
+    this.armCleanupCatchUp();
     const live = this.liveUserIds();
     for (const ws of this.ctx.getWebSockets()) {
       const connection = readConnection(ws);
@@ -739,6 +778,34 @@ export class Hall extends DurableObject<Env> {
     const due = this.due.drainDue(Date.now());
     if (due.some((event) => event.kind === 'grace')) this.expireGrace();
     if (due.some((event) => event.kind === 'autosleep')) this.refreshDerivedStates();
+    if (due.some((event) => event.kind === 'cleanup')) this.runCleanup();
+  }
+
+  /**
+   * 每日清理（见 `10-hall-runtime.md` §7）：**先跑 SQL，再广播**。
+   * 两个任务各一条 `UPDATE` + 各一条取广播主体的 `SELECT`，不逐行更新、不分批；
+   * 也不启停位置节拍循环——处理器里留下内存定时器会让对象不休眠（§4.5）。
+   */
+  private runCleanup(): void {
+    const now = Date.now();
+    const sql = this.ctx.storage.sql;
+    // 边界 = 最近一个 08:00：补跑（实例重建）时只清本该在那个日界前清掉的行，当晚的睡痕不动
+    const boundary = previousCleanupAt(this.hall.timezone, now);
+
+    // 睡痕清空必须先于归属释放：反过来的话，同时满足两个条件的床已经被置空，睡痕那批就发不出 leave
+    const traces = listTraceBeds(sql, boundary);
+    clearAllTraceBeds(sql, now, boundary);
+    const released = listExpiredOwnerships(sql, now);
+    releaseExpiredOwnerships(sql, now);
+    this.armCleanup();
+
+    // 睡痕清掉 = 这个人从别人的 people 里消失（床仍是他的，淡轮廓留着）；
+    // 先睡痕后归属的次序由 `cleanupMessages` 保证（两者都命中同一张床时，先 leave 再 bed）
+    const messages = cleanupMessages(
+      traces.map((trace) => trace.ownerUserId),
+      released,
+    );
+    for (const message of messages) this.broadcast(message);
   }
 
   /**

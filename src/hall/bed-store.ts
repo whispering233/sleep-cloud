@@ -1,3 +1,4 @@
+import { BED_OWNERSHIP_TTL_MS } from '../shared/constants';
 import type { Appearance } from '../shared/protocol';
 import type { OccupiedBedRow } from './grace';
 
@@ -158,4 +159,61 @@ export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): vo
 /** 起身 / 睡痕清理：床变空，**归属保留**（`sleep_started_at` 清空）。 */
 export function clearBed(sql: SqlStorage, bedNo: number, now: number): void {
   sql.exec("UPDATE bed SET state = 'empty', sleep_started_at = NULL, updated_at = ? WHERE bed_no = ?", now, bedNo);
+}
+
+export interface TraceBedRow {
+  bedNo: number;
+  /** 睡痕行理论上必有归属；异常行为空时照样清，只是没有 `leave` 可发 */
+  ownerUserId: string | null;
+}
+
+/**
+ * 睡痕主体（走 `state` 索引，几十行量级）：每日清理前取出该发 `leave` 的人。
+ * `boundary` = 最近一个 08:00：**补跑时（实例重建）只清本该在那个日界前清掉的行**，
+ * 否则半夜刚形成的睡痕会被误清（判定的依据与理由见 `10-hall-runtime.md` §7）。
+ */
+export function listTraceBeds(sql: SqlStorage, boundary: number): TraceBedRow[] {
+  return sql
+    .exec<{ bed_no: number; owner_user_id: string | null }>(
+      "SELECT bed_no, owner_user_id FROM bed WHERE state = 'trace' AND updated_at < ?",
+      boundary,
+    )
+    .toArray()
+    .map((row) => ({ bedNo: row.bed_no, ownerUserId: row.owner_user_id }));
+}
+
+/** 睡痕清理：一条 `UPDATE` 清空这批睡痕行（**不逐行更新**），归属保留。与上一条用同一条判定。 */
+export function clearAllTraceBeds(sql: SqlStorage, now: number, boundary: number): void {
+  sql.exec(
+    `UPDATE bed SET state = 'empty', sleep_started_at = NULL, updated_at = ?
+     WHERE state = 'trace' AND updated_at < ?`,
+    now,
+    boundary,
+  );
+}
+
+/**
+ * 超期归属的床号：有归属且（`last_seen_at` 为空，或距今超过 `BED_OWNERSHIP_TTL_MS`）。
+ * 谓词与 `10-hall-runtime.md` §7 的表格逐字对应（SQL 里没法用函数谓词，测试直接跑真 SQL）。
+ */
+export function listExpiredOwnerships(sql: SqlStorage, now: number): number[] {
+  return sql
+    .exec<{ bed_no: number }>(
+      `SELECT bed_no FROM bed WHERE owner_user_id IS NOT NULL
+        AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+      now - BED_OWNERSHIP_TTL_MS,
+    )
+    .toArray()
+    .map((row) => row.bed_no);
+}
+
+/** 归属释放：一条 `UPDATE` 清空归属与占用，床回到可认领池。与上一条用同一条判定。 */
+export function releaseExpiredOwnerships(sql: SqlStorage, now: number): void {
+  sql.exec(
+    `UPDATE bed SET owner_user_id = NULL, owner_name = NULL, owner_appearance = NULL, owner_tz = NULL,
+      claimed_at = NULL, last_seen_at = NULL, sleep_started_at = NULL, state = 'empty', updated_at = ?
+     WHERE owner_user_id IS NOT NULL AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+    now,
+    now - BED_OWNERSHIP_TTL_MS,
+  );
 }

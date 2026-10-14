@@ -6,12 +6,12 @@
  * 因此这个堆不必持久化，对象重建时从当前连接集合与床位状态推导一遍即可（丢的只是通知）。
  */
 
-/** 到期事件的类型。每日清理在卡 15 接上（那时再加一种）。 */
-export type DueKind = 'grace' | 'autosleep';
+/** 到期事件的类型：宽限到期、自动睡着到期、每日清理。 */
+export type DueKind = 'grace' | 'autosleep' | 'cleanup';
 
 export interface DueEvent {
   kind: DueKind;
-  /** 关联主体（人） */
+  /** 关联主体（人）；每日清理没有主体，用空串占位 */
   userId: string;
   /** 到期时刻（epoch 毫秒） */
   at: number;
