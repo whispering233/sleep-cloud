@@ -12,6 +12,9 @@ dist/
 # 构建生成物（`npm run tokens` 从 docs/ui/DESIGN.md 导出）
 src/client/styles/tokens.css
 
+# 测试缓存（vitest 每次跑测试都会写）
+.vitest/
+
 # 系统与编辑器垃圾
 .DS_Store
 *.log
