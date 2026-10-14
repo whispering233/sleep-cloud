@@ -1,0 +1,145 @@
+@import 'tailwindcss';
+/* 由 `npm run tokens` 从 docs/ui/DESIGN.md 生成（design.md export --format css-tailwind），不要手改。 */
+@import './tokens.css';
+
+/* DESIGN.md 的 typography 带行高，但导出器当前不导出这一维度：在这里补齐，改设计时同步 DESIGN.md。 */
+@theme {
+  --text-title--line-height: 1.3;
+  --text-body--line-height: 1.6;
+  --text-input--line-height: 1.4;
+  --text-label--line-height: 1.4;
+  --text-caption--line-height: 1.4;
+  --text-numeric--line-height: 1.2;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: var(--color-neutral);
+    background-color: var(--color-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+}
+
+@layer components {
+  /* ——— 布局骨架：世界铺满视口，界面只占边缘（视野中央留给大厅本身） ——— */
+
+  .app-shell {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .world-layer {
+    position: absolute;
+    inset: 0;
+    background-color: var(--color-primary);
+  }
+
+  .hud {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding-block: calc(env(safe-area-inset-top) + var(--spacing-sm)) var(--spacing-sm);
+    padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
+      calc(env(safe-area-inset-right) + var(--spacing-md));
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    letter-spacing: var(--tracking-caption);
+  }
+
+  .chat-panel {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) calc(var(--spacing-md) + env(safe-area-inset-right))
+      calc(var(--spacing-md) + env(safe-area-inset-bottom))
+      calc(var(--spacing-md) + env(safe-area-inset-left));
+    background-color: var(--color-secondary);
+    border: 1px solid var(--color-claimed);
+    border-block-end: 0;
+    border-start-start-radius: var(--radius-md);
+    border-start-end-radius: var(--radius-md);
+  }
+
+  /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽 */
+  @media (min-width: 640px) {
+    .chat-panel {
+      inset-inline: var(--spacing-md);
+      inset-block-end: var(--spacing-md);
+      max-width: 560px;
+      margin-inline: auto;
+      border-block-end: 1px solid var(--color-claimed);
+      border-radius: var(--radius-md);
+    }
+  }
+
+  /* 宽档（桌面）：靠右停靠；世界仍然全屏，只是视野变宽 */
+  @media (min-width: 1024px) {
+    .chat-panel {
+      inset-inline-start: auto;
+      inset-inline-end: var(--spacing-lg);
+      inset-block-end: var(--spacing-lg);
+      width: 380px;
+      max-width: none;
+    }
+  }
+
+  /* ——— 控件 ——— */
+
+  /* 字号不低于 16px：更低会让窄屏浏览器在聚焦时缩放整个页面 */
+  .input-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    color: var(--color-neutral);
+    background-color: var(--color-primary);
+    font-family: var(--font-input);
+    font-size: var(--text-input);
+    line-height: var(--text-input--line-height);
+    letter-spacing: var(--tracking-input);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+  }
+
+  .input-field::placeholder {
+    color: var(--color-neutral-muted);
+  }
+
+  .input-field:focus-visible,
+  .action-primary:focus-visible {
+    outline: 2px solid var(--color-neutral);
+    outline-offset: 1px;
+  }
+
+  .action-primary {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--spacing-md);
+    color: var(--color-primary);
+    background-color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+    border: 0;
+    border-radius: var(--radius-full);
+  }
+}

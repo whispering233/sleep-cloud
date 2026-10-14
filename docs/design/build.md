@@ -13,8 +13,11 @@
 
 | 目的 | 命令 |
 | :--- | :--- |
-| 起后端 + 房间服务 + SQLite + 静态资源 | `npm run dev`（默认 http://localhost:8787） |
+| 起完整站点（后端 + 房间服务 + SQLite + 静态资源） | `npm run build && npm run dev`（http://localhost:8787） |
+| 前端热更新开发服务器（`/api` 代理到 8787，含 WebSocket） | `npm run dev:web`（http://localhost:5173） |
+| 单元测试 | `npm test` |
 | 类型检查 | `npm run typecheck` |
+| 设计令牌校验 / 生成 | `npm run lint:design` / `npm run tokens` |
 | 部署 | `npm run deploy` |
 
 | 目的 | 做法 |
@@ -30,7 +33,8 @@
 
 | 产物 | 说明 |
 | :--- | :--- |
-| 前端产物 | 静态资源目录（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**前端工程建立前是手写的 `./public` 占位页**，建立后改为前端构建输出目录 |
+| 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管 |
+| 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。PixiJS + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。

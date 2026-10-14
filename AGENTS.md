@@ -76,24 +76,25 @@
 ## 常用命令
 
 ```
-# 本地运行（Worker + 房间服务 + SQLite + 静态资源，默认 http://localhost:8787）
-npm run dev
+# 完整站点（后端 + 房间服务 + SQLite + 静态资源，http://localhost:8787）
+npm run build && npm run dev
 
-# 类型检查
+# 前端热更新开发服务器（/api 代理到 8787，含 WebSocket）
+npm run dev:web
+
+# 单元测试 / 类型检查
+npm test
 npm run typecheck
 
-# 单元测试
-npm test
-
-# 部署（需要平台的账号凭据，见 docs/design/build.md §4）
+# 部署（需要平台账号凭据，见 docs/design/build.md §4）
 npm run deploy
 
-# 视觉令牌校验与导出（0 error / 0 warning 是当前基线）
-npx @google/design.md lint docs/ui/DESIGN.md
-npx @google/design.md export docs/ui/DESIGN.md --format css-tailwind
+# 设计令牌：校验与导出（0 error / 0 warning 是当前基线；改 DESIGN.md 后重新导出）
+npm run lint:design
+npm run tokens
 ```
 
-完整说明（含构建产物与额度监控）见 `docs/design/build.md`。前端工程尚未建立，静态资源目录当前是手写的 `./public`。
+完整说明（含构建产物与额度监控）见 `docs/design/build.md`。
 
 ## 版本与变更
 

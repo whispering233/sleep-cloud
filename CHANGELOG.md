@@ -16,6 +16,8 @@
 - 本地开发、类型检查与部署命令（`npm run dev` / `npm run typecheck` / `npm run deploy`）
 - 共享契约层：错误码表、大厅协议的上下行消息类型、配置常量、场景数据类型；单元测试比对 `docs/api/error-code.md` 与 `docs/api/20-api-ws.md`，文档与代码不会静默漂移
 - 场景数据格式（`docs/design/config.md`）与协议枚举值（表情、外观、朝向）写入文档
+- 前端工程：Vite + React + TypeScript + Tailwind v4，产物由同一 Worker 托管；三档响应式布局骨架（窄 / 中 / 宽）、安全区内边距、44px 触摸目标、输入框字号不低于 16px
+- 设计令牌管线：`docs/ui/DESIGN.md` 为唯一来源，`npm run tokens` 导出 Tailwind 主题；组件样式只引用令牌变量，不写硬编码色值
 
 ### Changed
 

@@ -1,16 +1,26 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types"],
+    "types": [
+      "@cloudflare/workers-types"
+    ],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src"],
-  "exclude": ["src/**/tests/**"]
+  "include": [
+    "src/worker",
+    "src/hall",
+    "src/shared"
+  ],
+  "exclude": [
+    "src/**/tests/**"
+  ]
 }

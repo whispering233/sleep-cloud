@@ -4,7 +4,7 @@
 
 睡不着的人可以来这里躺下、走动、看看别人，也看看那些已经睡着的人。
 
-> **当前状态：开发中。** 骨架已经可跑（`npm run dev`），大厅业务功能尚未实现。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
+> **当前状态：开发中。** 前端骨架与令牌管线已可跑（`npm run build && npm run dev`），大厅业务功能尚未实现。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
 
 ## 它是什么
 
@@ -74,21 +74,21 @@
 
 先读 [`AGENTS.md`](AGENTS.md)（硬纪律与术语）与 [`docs/design/tasks.md`](docs/design/tasks.md)（当前任务卡片）。
 
-视觉令牌现在就可以校验：
-
-```bash
-npx @google/design.md lint docs/ui/DESIGN.md
-npx @google/design.md export docs/ui/DESIGN.md --format css-tailwind
-```
-
-本地运行与部署：
+本地运行：
 
 ```bash
 npm install
-npm run dev        # 本地起 Worker + 静态资源 + 房间服务（http://localhost:8787）
-npm run typecheck
+npm run build && npm run dev   # 完整站点（Worker + 房间服务 + 静态资源，http://localhost:8787）
+npm run dev:web                # 前端热更新开发服务器（/api 代理到 8787）
 npm test
-npm run deploy     # 部署（需先有平台账号凭据）
+npm run typecheck
+npm run deploy                 # 部署（需先有平台账号凭据）
+```
+
+设计令牌现在就可以校验（`docs/ui/DESIGN.md` 是唯一来源，`npm run tokens` 导出为 Tailwind 主题）：
+
+```bash
+npm run lint:design
 ```
 
 ## 许可

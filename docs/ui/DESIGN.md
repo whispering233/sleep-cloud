@@ -147,7 +147,7 @@ components:
     width: "44px"
     rounded: "{rounded.full}"
   text-input:
-    backgroundColor: "{colors.secondary}"
+    backgroundColor: "{colors.primary}"
     textColor: "{colors.neutral}"
     typography: "{typography.input}"
     rounded: "{rounded.md}"
