@@ -5,9 +5,11 @@ import type { HallConfig } from '../shared/hall-registry';
 import type { ErrorCode } from '../shared/error-code';
 import type { DownstreamMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage } from '../shared/protocol';
 import type { Env } from '../worker/env';
-import { MOVE_MS_PER_TILE, TICK_MS } from '../shared/constants';
-import { appearanceFor, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
+import { AUTO_SLEEP_MS, MOVE_MS_PER_TILE, TICK_MS } from '../shared/constants';
+import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
+import { lieVerdictFor } from './bed-rules';
+import { clearBed, putInBed, readBed, setBedOccupancy } from './bed-store';
 import { advanceMover } from './movement';
 import type { MoverState } from './movement';
 import { findPath } from './pathfinding';
@@ -94,6 +96,7 @@ export class Hall extends DurableObject<Env> {
       x: this.entry.x,
       y: this.entry.y,
       state: 'roaming',
+      lastInputAt: Date.now(),
       ready: false,
     } satisfies ConnectionState);
 
@@ -116,6 +119,8 @@ export class Hall extends DurableObject<Env> {
         return;
       case 'hello': {
         const ready: ConnectionState = { ...connection, ready: true };
+        // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
+        this.replaceOlderConnections(ws, ready.userId);
         ws.serializeAttachment(ready satisfies ConnectionState);
         this.touchLastSeen(ready.userId);
         ws.send(JSON.stringify(await this.snapshotFor(ws, ready)));
@@ -123,6 +128,23 @@ export class Hall extends DurableObject<Env> {
         this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready) });
         return;
       }
+    }
+  }
+
+  /**
+   * 同一个用户同时只保留最新的一条连接。
+   *
+   * 一个人 = 一张床 = 一份状态，两条连接会各自带一份附加数据：不顶掉旧的话，
+   * 旧连接上残留的目标会被重建回移动者集合（已经躺下的人又被推着走），
+   * `people` 里也会出现同一个 id 的两条条目。
+   */
+  private replaceOlderConnections(keep: WebSocket, userId: string): void {
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === keep) continue;
+      const connection = readConnection(ws);
+      if (connection?.userId !== userId) continue;
+      this.stopWalking(userId);
+      ws.close(1000, 'replaced');
     }
   }
 
@@ -136,16 +158,206 @@ export class Hall extends DurableObject<Env> {
     ws.send(JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
   }
 
-  /** 上行只表达意图；这里分派到各自的处理函数（躺下/起身在后续卡片接上）。 */
+  /** 上行只表达意图；每条意图都会刷新「最后输入时刻」（自动睡着由它推导）。 */
   private handleIntent(ws: WebSocket, connection: ConnectionState, message: UpstreamMessage): void {
-    if (message.t === 'walk') {
-      const x = Number(message.x);
-      const y = Number(message.y);
-      if (!Number.isInteger(x) || !Number.isInteger(y) || !this.grid.isWalkable(x, y)) {
-        this.sendError(ws, '3006');
+    const now = Date.now();
+    const fresh: ConnectionState = { ...connection, lastInputAt: now };
+    this.writeConnection(ws, fresh);
+    this.refreshDerivedStates();
+
+    switch (message.t) {
+      case 'walk': {
+        const x = Number(message.x);
+        const y = Number(message.y);
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !this.grid.isWalkable(x, y)) {
+          this.sendError(ws, '3006');
+          return;
+        }
+        // 在床上点地面 = 起身 + 走过去（一条命令完成，少点一次）
+        const standing = this.standUp(ws, fresh);
+        this.startWalking(ws, standing, { x, y });
         return;
       }
-      this.startWalking(ws, connection, { x, y });
+      case 'lie': {
+        const bedNo = Number(message.bedNo);
+        const verdict = lieVerdictFor({
+          bedNo,
+          capacity: this.hall.capacity,
+          inBed: fresh.state !== 'roaming',
+          userId: fresh.userId,
+          bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo) : undefined,
+        });
+        if (!verdict.ok) {
+          this.sendError(ws, verdict.code);
+          return;
+        }
+        this.approachBed(ws, fresh, bedNo);
+        return;
+      }
+      case 'rise':
+        if (fresh.state === 'roaming') this.sendError(ws, '3005');
+        else this.standUp(ws, fresh);
+        return;
+      case 'sleep':
+        if (fresh.state !== 'lying') {
+          this.sendError(ws, fresh.state === 'roaming' ? '3005' : '3004');
+          return;
+        }
+        this.fallAsleep(ws, fresh);
+        return;
+      case 'chat':
+      case 'whisper':
+      case 'emote':
+        // 睡着时说话或发表情：**自动醒**后处理，不报错（消息本身在后续卡片接上）
+        if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
+        return;
+      default:
+        return;
+    }
+  }
+
+  /**
+   * 走到床边再躺下（复合意图）：站在床边就直接躺，否则把「到达后动作」挂在路径上。
+   */
+  private approachBed(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
+    const spot = this.standSpotFor(bedNo, { x: connection.x, y: connection.y });
+    if (!spot) {
+      this.sendError(ws, '3006'); // 床四周没有可站的格（配置问题）
+      return;
+    }
+
+    if (spot.x === connection.x && spot.y === connection.y) {
+      this.lieDown(ws, connection, bedNo);
+      return;
+    }
+
+    const path = findPath(this.grid, { x: connection.x, y: connection.y }, spot);
+    if (!path || path.length === 0) {
+      this.sendError(ws, '3006');
+      return;
+    }
+
+    this.movers.set(connection.userId, {
+      mover: { x: connection.x, y: connection.y, path, legElapsedMs: 0 },
+      facing: facingFrom(connection.x, connection.y, path[0] as Tile),
+    });
+    this.writeConnection(ws, { ...connection, target: spot, arrivalAction: 'lie', arrivalBedNo: bedNo });
+    this.startTicking();
+  }
+
+  /** 床四周最近的、可达的站立格（床格本身不可行走）。 */
+  private standSpotFor(bedNo: number, from: Tile): Tile | undefined {
+    const position = this.grid.bedPosition(bedNo);
+    if (!position) return undefined;
+
+    let best: { tile: Tile; length: number } | undefined;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as Array<[number, number]>) {
+      const tile = { x: position.x + dx, y: position.y + dy };
+      if (!this.grid.isWalkable(tile.x, tile.y)) continue;
+      const path = findPath(this.grid, from, tile);
+      if (!path) continue;
+      if (!best || path.length < best.length) best = { tile, length: path.length };
+    }
+    return best?.tile;
+  }
+
+  /** 真的躺下：再次校验（走路期间床可能被别人占了），写库，然后**先发归属再发占用**。 */
+  private lieDown(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
+    const now = Date.now();
+    const verdict = lieVerdictFor({
+      bedNo,
+      capacity: this.hall.capacity,
+      inBed: connection.state !== 'roaming',
+      userId: connection.userId,
+      bed: readBed(this.ctx.storage.sql, bedNo),
+    });
+    if (!verdict.ok) {
+      this.sendError(ws, verdict.code);
+      return;
+    }
+
+    putInBed(this.ctx.storage.sql, {
+      bedNo,
+      userId: connection.userId,
+      name: connection.name,
+      appearance: connection.appearance,
+      timezone: connection.timezone,
+      now,
+      claiming: verdict.claiming,
+    });
+
+    const lying: ConnectionState = {
+      ...connection,
+      state: 'lying',
+      bedNo,
+      target: undefined,
+      arrivalAction: undefined,
+      arrivalBedNo: undefined,
+      lastInputAt: now,
+    };
+    this.writeConnection(ws, lying);
+
+    // 顺序有讲究：先归属后占用，否则客户端会短暂渲染出「床有人、但不在归属表里」
+    if (verdict.claiming) this.broadcast({ t: 'bed', bedNo, owned: true });
+    this.broadcastState(lying);
+  }
+
+  /** 起身：释放占用、**保留归属**，站在床边。 */
+  private standUp(ws: WebSocket, connection: ConnectionState): ConnectionState {
+    if (connection.state === 'roaming') return connection;
+
+    const now = Date.now();
+    if (connection.bedNo !== undefined) clearBed(this.ctx.storage.sql, connection.bedNo, now);
+    const roaming: ConnectionState = { ...connection, state: 'roaming', bedNo: undefined, lastInputAt: now };
+    this.writeConnection(ws, roaming);
+    this.broadcastState(roaming);
+    return roaming;
+  }
+
+  /** 手动睡着。 */
+  private fallAsleep(ws: WebSocket, connection: ConnectionState): void {
+    const now = Date.now();
+    if (connection.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'asleep', now);
+    const asleep: ConnectionState = { ...connection, state: 'asleep', lastInputAt: now };
+    this.writeConnection(ws, asleep);
+    this.broadcastState(asleep);
+  }
+
+  /** 睡着时说话：先醒过来（清醒度是「在床上」的一个维度，位置不变）。 */
+  private wakeUp(ws: WebSocket, connection: ConnectionState): void {
+    const now = Date.now();
+    if (connection.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'lying', now);
+    const awake: ConnectionState = { ...connection, state: 'lying', lastInputAt: now };
+    this.writeConnection(ws, awake);
+    this.broadcastState(awake);
+  }
+
+  /** 某人的显示态变化：发给所有人（**包括本人**——自己的 `me` 也要跟着变）。 */
+  private broadcastState(connection: ConnectionState): void {
+    this.broadcast({ t: 'state', id: connection.userId, ...placementOf(connection) });
+  }
+
+  /**
+   * 读取时推导：把已经该睡着的人翻过去（正确性来自推导，定时器只负责及时通知，见 §4.3）。
+   * 这里顺手把库里的占用状态也跟上——推导出来的事实同样要落库。
+   */
+  private refreshDerivedStates(): void {
+    const now = Date.now();
+    for (const ws of this.ctx.getWebSockets()) {
+      const connection = readConnection(ws);
+      if (!connection?.ready) continue;
+      const derived = deriveDisplayState(connection, now, AUTO_SLEEP_MS);
+      if (derived === connection.state) continue;
+
+      const next: ConnectionState = { ...connection, state: derived };
+      this.writeConnection(ws, next);
+      if (next.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, next.bedNo, derived === 'asleep' ? 'asleep' : 'lying', now);
+      this.broadcastState(next);
     }
   }
 
@@ -215,10 +427,13 @@ export class Hall extends DurableObject<Env> {
   /** 一个节拍：按**实际经过的时间**推进所有移动者，然后把变化合并成一条广播。 */
   private tick(): void {
     const now = Date.now();
+    this.refreshDerivedStates();
     const elapsed = Math.max(0, now - this.lastTickAt);
     this.lastTickAt = now;
 
     const updates: Array<[string, number, number, Facing]> = [];
+    const arrived: Array<{ ws: WebSocket; connection: ConnectionState }> = [];
+
     for (const [userId, entry] of [...this.movers]) {
       const ws = this.socketOf(userId);
       if (!ws) {
@@ -240,14 +455,24 @@ export class Hall extends DurableObject<Env> {
 
       if (result.arrived) {
         const connection = readConnection(ws);
-        if (connection) this.writeConnection(ws, { ...connection, target: undefined });
         this.movers.delete(userId);
+        if (connection) arrived.push({ ws, connection: { ...connection, target: undefined } });
       }
     }
 
+    // 顺序：**位置先于状态**。同一个节拍里最后一步的位置要排在「我躺下了」前面，
+    // 否则客户端会先看到状态变化、再收到一条对已经躺下的人的位置更新。
     if (updates.length > 0) {
       this.broadcast({ t: 'pos', ts: now, items: updates });
     }
+    for (const item of arrived) {
+      if (item.connection.arrivalAction === 'lie' && item.connection.arrivalBedNo !== undefined) {
+        this.lieDown(item.ws, item.connection, item.connection.arrivalBedNo);
+      } else {
+        this.writeConnection(item.ws, item.connection);
+      }
+    }
+
     if (this.movers.size === 0) this.stopTicking();
   }
 
@@ -302,6 +527,7 @@ export class Hall extends DurableObject<Env> {
 
   /** 全量快照：在线连接来自内存，**睡痕条目只能查库**（人已离线，内存里没有他）。 */
   private async snapshotFor(ws: WebSocket, me: ConnectionState): Promise<SnapshotMessage> {
+    this.refreshDerivedStates();
     const { online, others } = splitLive(
       this.ctx.getWebSockets().map((other) => ({
         self: other === ws,
@@ -349,6 +575,13 @@ export class Hall extends DurableObject<Env> {
 function readConnection(ws: WebSocket): ConnectionState | null {
   const attachment = ws.deserializeAttachment();
   return attachment ? (attachment as ConnectionState) : null;
+}
+
+/** 连接状态 → 协议里的「人在哪」（在床上带床号，否则带坐标）。 */
+function placementOf(connection: ConnectionState): { state: 'roaming'; x: number; y: number } | { state: 'lying' | 'asleep'; bedNo: number } {
+  return connection.state === 'roaming' || connection.bedNo === undefined
+    ? { state: 'roaming', x: connection.x, y: connection.y }
+    : { state: connection.state, bedNo: connection.bedNo };
 }
 
 /** 朝向：0 下 / 1 左 / 2 上 / 3 右（与 `docs/api/20-api-ws.md` §3.1 一致）。 */

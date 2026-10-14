@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { APPEARANCES } from '../../shared/protocol';
-import { appearanceFor, guardIncoming, parseUpstream, personFromConnection } from '../connection';
+import { appearanceFor, deriveDisplayState, guardIncoming, parseUpstream, personFromConnection } from '../connection';
 import type { ConnectionState } from '../connection';
 
 const SCENE = 'dorm-asia-01';
@@ -15,6 +15,7 @@ function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
     x: 1,
     y: 1,
     state: 'roaming',
+    lastInputAt: 0,
     ready: false,
     ...overrides,
   };
@@ -86,5 +87,25 @@ describe('握手门槛', () => {
     expect(guardIncoming(ready, '{"t":"walk","x":1,"y":1}', SCENE)).toMatchObject({ kind: 'business' });
     expect(guardIncoming(ready, `{"t":"hello","sceneGuid":"${SCENE}"}`, SCENE)).toEqual({ kind: 'ignore' });
     expect(guardIncoming(ready, 'garbage', SCENE)).toEqual({ kind: 'ignore' });
+  });
+});
+
+describe('自动睡着是推导出来的（读取时推导，不挂定时器）', () => {
+  const AUTO_SLEEP_MS = 300_000;
+
+  it('在床上清醒且无输入超过阈值 → 睡着', () => {
+    const lying = connection({ state: 'lying', bedNo: 3, lastInputAt: 1000 });
+    expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS, AUTO_SLEEP_MS)).toBe('lying'); // 恰好到阈值还不算
+    expect(deriveDisplayState(lying, 1000 + AUTO_SLEEP_MS + 1, AUTO_SLEEP_MS)).toBe('asleep');
+  });
+
+  it('刚有过输入就是清醒的；已经睡着的不受影响', () => {
+    const lying = connection({ state: 'lying', bedNo: 3, lastInputAt: 1000 });
+    expect(deriveDisplayState(lying, 2000, AUTO_SLEEP_MS)).toBe('lying');
+    expect(deriveDisplayState(connection({ state: 'asleep', bedNo: 3, lastInputAt: 0 }), 10_000_000, AUTO_SLEEP_MS)).toBe('asleep');
+  });
+
+  it('不在床上的人不会被推导成睡着（清醒度只在床上才有意义）', () => {
+    expect(deriveDisplayState(connection({ lastInputAt: 0 }), 10_000_000, AUTO_SLEEP_MS)).toBe('roaming');
   });
 });

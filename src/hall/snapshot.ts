@@ -1,5 +1,5 @@
 import { APPEARANCES } from '../shared/protocol';
-import type { Appearance, Person, SnapshotMessage } from '../shared/protocol';
+import type { Appearance, Person, SelfPerson, SnapshotMessage } from '../shared/protocol';
 import type { HallConfig } from '../shared/hall-registry';
 import { appearanceFor, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
@@ -24,6 +24,13 @@ export interface SnapshotInput {
   /** 归属表：所有有主的床的床号 */
   ownedBeds: number[];
   traceRows: TracePersonRow[];
+}
+
+/** 自己的条目：比 `people` 里多一个归属位（走路时也要知道哪张床是我的）。 */
+function selfPerson(connection: ConnectionState, myOwnedBedNo: number | null): SelfPerson {
+  const person: SelfPerson = personFromConnection(connection);
+  if (myOwnedBedNo !== null) person.ownedBedNo = myOwnedBedNo;
+  return person;
 }
 
 function tracePerson(row: TracePersonRow): Person {
@@ -74,10 +81,7 @@ export function buildSnapshot(input: SnapshotInput): SnapshotMessage {
       capacity: input.hall.capacity,
       online: input.online,
     },
-    me: {
-      ...personFromConnection(input.me),
-      ...(input.myOwnedBedNo === null ? {} : { ownedBedNo: input.myOwnedBedNo }),
-    },
+    me: selfPerson(input.me, input.myOwnedBedNo),
     ownedBeds: input.ownedBeds,
     people: [
       ...input.others.map(personFromConnection),

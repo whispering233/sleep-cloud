@@ -60,6 +60,17 @@ describe('客户端状态归约', () => {
     expect(getState().motion.has('u_other')).toBe(false);
   });
 
+  it('state：自己的状态变化也走这条消息，并补上归属位', () => {
+    applySnapshot(snapshot());
+    applyState({ t: 'state', id: 'u_me', state: 'lying', bedNo: 42 });
+
+    expect(getState().me).toMatchObject({ id: 'u_me', state: 'lying', bedNo: 42, ownedBedNo: 42 });
+    expect(getState().people.has('u_me')).toBe(false); // 自己不进 people
+
+    applyState({ t: 'state', id: 'u_me', state: 'roaming', x: 3, y: 4 });
+    expect(getState().me).toMatchObject({ state: 'roaming', x: 3, y: 4, ownedBedNo: 42 }); // 归属保留
+  });
+
   it('state：没见过的人直接忽略（等 join 或下一次快照）', () => {
     applyState({ t: 'state', id: 'u_ghost', state: 'asleep', bedNo: 9 });
     expect(getState().people.has('u_ghost')).toBe(false);

@@ -22,6 +22,12 @@ export interface ConnectionState {
    * 路径本身**不存这里**：附件体积要小，而且路径能由场景数据确定性重算（见 `movement.ts`）。
    */
   target?: { x: number; y: number };
+  /** 复合意图：走到目的地之后要做什么（「点床 = 走过去 + 躺下」就靠它） */
+  arrivalAction?: 'lie';
+  /** 到达后要躺的那张床 */
+  arrivalBedNo?: number;
+  /** 最后一次输入的时刻：自动睡着由它推导（读取时推导，不挂定时器） */
+  lastInputAt: number;
   /** 完成 `hello` 握手之前，不向该连接转发任何房间消息 */
   ready: boolean;
 }
@@ -50,6 +56,19 @@ export const IDENTITY_HEADERS = {
   name: 'x-sleep-name',
   timezone: 'x-sleep-tz',
 } as const;
+
+/**
+ * 显示态的**推导**（正确性的真正来源，见 `10-hall-runtime.md` §4.3）：
+ * 在床上清醒且无输入超过阈值 → 睡着。定时器只负责「让在看的人及时看到」，不负责正确性。
+ */
+export function deriveDisplayState(
+  connection: ConnectionState,
+  now: number,
+  autoSleepMs: number,
+): ConnectionState['state'] {
+  if (connection.state === 'lying' && now - connection.lastInputAt > autoSleepMs) return 'asleep';
+  return connection.state;
+}
 
 export type IncomingVerdict =
   | { kind: 'ignore' }

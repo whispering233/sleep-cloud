@@ -16,6 +16,7 @@ function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
     x: 1,
     y: 1,
     state: 'roaming',
+    lastInputAt: 0,
     ready: true,
     ...overrides,
   };

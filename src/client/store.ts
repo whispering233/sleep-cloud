@@ -77,9 +77,13 @@ export function applyPos(message: PosMessage): void {
   const people = new Map(state.people);
 
   for (const [id, x, y] of message.items) {
-    motion.set(id, nextMotion(motion.get(id), x, y, message.ts));
     const person = people.get(id);
-    if (person && person.state === 'roaming') people.set(id, { ...person, x, y });
+    // 已经躺在床上的人不需要插值窗口（位置就是那张床）；服务端也不会为他发位置，
+    // 这里只是防同一节拍里「状态先到、位置后到」的竞态
+    if (person && person.state !== 'roaming') continue;
+
+    motion.set(id, nextMotion(motion.get(id), x, y, message.ts));
+    if (person) people.set(id, { ...person, x, y });
   }
 
   setState({ motion, people });
@@ -112,14 +116,25 @@ export function applyJoin(message: JoinMessage): void {
 
 /** 某人显示态变化（躺下 / 睡着 / 变睡痕 / 起身）。名字与外观不变。 */
 export function applyState(message: StateMessage): void {
+  const placement = placementOf(message);
+  const motion = new Map(state.motion);
+  if (placement.state !== 'roaming') motion.delete(message.id); // 上了床就不再插值：位置就是那张床
+
+  // 自己的状态变化也走这条消息（服务端会发给自己）：自己的 `me` 必须跟着变
+  if (state.me && state.me.id === message.id) {
+    const next: SelfPerson = { ...withPlacement(state.me, placement) };
+    // 归属与占用是两个维度：在床上时床号就是我的床；起身后归属位继续留着（暖灯标记不能丢）
+    const ownedBedNo = placement.state === 'roaming' ? state.me.ownedBedNo : placement.bedNo;
+    if (ownedBedNo !== undefined) next.ownedBedNo = ownedBedNo;
+    setState({ me: next, motion });
+    return;
+  }
+
   const person = state.people.get(message.id);
   if (!person) return; // 没见过的人：等 join 或下一次快照（TCP 有序，正常不会发生）
 
   const people = new Map(state.people);
-  people.set(message.id, withPlacement(person, placementOf(message)));
-
-  const motion = new Map(state.motion);
-  if (message.state !== 'roaming') motion.delete(message.id); // 上了床就不再插值：位置就是那张床
+  people.set(message.id, withPlacement(person, placement));
   setState({ people, motion });
 }
 
