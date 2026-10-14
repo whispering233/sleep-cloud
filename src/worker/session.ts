@@ -39,9 +39,27 @@ export interface SessionRead {
 function sessionSecret(c: Context<{ Bindings: Env }>): string {
   const secret = c.env.SESSION_SECRET;
   if (secret) return secret;
-  const host = new URL(c.req.url).hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return DEV_SECRET;
-  throw new Error('SESSION_SECRET 未配置');
+  if (!isLocalRequest(c.req.raw)) throw new Error('SESSION_SECRET 未配置');
+  return DEV_SECRET;
+}
+
+/** 只有本机地址才回落开发密钥。平台给的 URL 一定可解析，解析失败按「不是本机」处理（宁可报错）。 */
+function isLocalRequest(request: Request): boolean {
+  try {
+    const host = new URL(request.url).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+  } catch {
+    return false;
+  }
+}
+
+/** 本地开发跑在 http 上，加 Secure 浏览器就不回传了。解析失败时按 HTTPS 处理（保守）。 */
+function isSecureRequest(request: Request): boolean {
+  try {
+    return new URL(request.url).protocol === 'https:';
+  } catch {
+    return true;
+  }
 }
 
 /** 由平台提供的时区挑选最接近的大区（本地开发可能没有该字段，回落到第一个大区）。 */
@@ -85,14 +103,27 @@ function parseSession(raw: string): Session | null {
   }
 }
 
-/** 读取会话；缺失或验签失败则签发新的匿名会话（全程没有注册步骤）。 */
-export async function readSession(c: Context<{ Bindings: Env }>): Promise<SessionRead> {
+/** 只读取验签通过的会话，不签发新的（WebSocket 升级用：不给身份就不升级）。 */
+export async function readExistingSession(c: Context<{ Bindings: Env }>): Promise<Session | null> {
+  return (await readCookieSession(c)).session;
+}
+
+async function readCookieSession(
+  c: Context<{ Bindings: Env }>,
+): Promise<{ session: Session | null; secret: string }> {
   const secret = sessionSecret(c);
   const raw = await getSignedCookie(c, secret, COOKIE_NAME);
   if (typeof raw === 'string') {
     const session = parseSession(raw);
-    if (session) return { session, invalid: false, secret };
+    if (session) return { session, secret };
   }
+  return { session: null, secret };
+}
+
+/** 读取会话；缺失或验签失败则签发新的匿名会话（全程没有注册步骤）。 */
+export async function readSession(c: Context<{ Bindings: Env }>): Promise<SessionRead> {
+  const { session, secret } = await readCookieSession(c);
+  if (session) return { session, invalid: false, secret };
   // 带了我们这个 cookie 却没用上：签名不合规、验签失败或内容不可解析，一律当「会话失效」处理
   const sentCookie = (c.req.raw.headers.get('cookie') ?? '').includes(`${COOKIE_NAME}=`);
   return { session: createSession(c), invalid: sentCookie, secret };
@@ -108,8 +139,7 @@ export async function writeSession(
     path: '/',
     httpOnly: true,
     sameSite: 'Lax',
-    // 本地开发跑在 http 上，加了 Secure 浏览器就不回传了
-    secure: new URL(c.req.url).protocol === 'https:',
+    secure: isSecureRequest(c.req.raw),
     maxAge: COOKIE_MAX_AGE_SEC,
   });
 }

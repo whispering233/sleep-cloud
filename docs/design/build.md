@@ -59,6 +59,8 @@
 | :--- | :--- |
 | `curl -s https://<worker>.workers.dev/api/health` 返回 `Recv failure: Connection reset by peer`，而 `curl -s http://<worker>.workers.dev/api/health`（同域名、明文 80）返回 `{"code":"0"}` | 部署是好的，被挡的是 `*workers.dev` 的 SNI |
 
+**本项目的生产入口**：`sleep-cloud.<zone>`（自定义域名，已实测 HTTPS 正常：HTTP/2 200 + `server: cloudflare`，证书 SAN 含该名字）。根域 `<zone>` 不使用，也不挂 Worker。
+
 **做法**：给 Worker 加一个自己域名的**自定义域名**（域名需在同账号下），SNI 就变成自己的域名：
 
 ```jsonc

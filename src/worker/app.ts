@@ -3,9 +3,10 @@ import { Hono } from 'hono';
 import { NICKNAME_MAX_LEN } from '../shared/constants';
 import { detect } from '../shared/content-filter';
 import { findHall, HALLS } from '../shared/hall-registry';
+import { IDENTITY_HEADERS } from '../hall/connection';
 import type { Env } from './env';
 import { fail, ok } from './respond';
-import { readSession, writeSession } from './session';
+import { readExistingSession, readSession, writeSession } from './session';
 import type { Session } from './session';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -107,6 +108,30 @@ app.post('/api/hall', async (c) => {
   const updated: Session = { ...session, hallId: hall.id };
   await writeSession(c, updated, secret);
   return invalid ? fail(c, '1001', sessionView(updated)) : ok(c, sessionView(updated));
+});
+
+/**
+ * WebSocket 升级：验签 cookie → 前置校验（未自述 `1002` / 未设昵称 `1003`）→ 归属校验，
+ * 通过后转发给该厅的房间服务（见 `docs/api/20-api-ws.md` §1）。
+ * 验签失败**不升级**，也不顺手签发新会话——否则会出现「连接用的是 A 身份、cookie 是 B 身份」。
+ */
+app.get('/api/halls/:hallId/ws', async (c) => {
+  const hallId = c.req.param('hallId');
+  if (!findHall(hallId)) return fail(c, '2001');
+
+  const session = await readExistingSession(c);
+  if (!session) return fail(c, '1001');
+  if (!session.ageConfirmed) return fail(c, '1002');
+  if (!session.nickname) return fail(c, '1003');
+  if (session.hallId !== hallId) return fail(c, '2001');
+
+  // 身份由 Worker 依据验签后的会话写入；客户端伪造的同名头会被这里覆盖
+  const forwarded = new Request(c.req.raw);
+  forwarded.headers.set(IDENTITY_HEADERS.userId, session.userId);
+  forwarded.headers.set(IDENTITY_HEADERS.name, encodeURIComponent(session.nickname));
+  forwarded.headers.set(IDENTITY_HEADERS.timezone, session.timezone);
+
+  return c.env.HALL.getByName(hallId).fetch(forwarded);
 });
 
 export default app;
