@@ -67,7 +67,7 @@
 | t | 字段 | 何时发送 |
 | :--- | :--- | :--- |
 | `snapshot` | 见 §4.1 | 握手完成后（进入或重连） |
-| `join` | `id`, `name`, `appearance`, `state`, `x`, `y`, `bedNo` | 有人进入厅 |
+| `join` | `id`, `name`, `appearance`, `state`, `x`, `y`, `bedNo` | 有人进入厅。**只发给其他人**：自己不需要收到自己的 `join`（自己在 `snapshot.me` 里，`people` 也不含自己） |
 | `leave` | `id` | 有人离开厅（宽限超时且不在床上；或睡痕被清理） |
 | `state` | `id`, `state`, `bedNo`, `x`, `y` | 某人显示态变化：躺下、起床、睡着、变成睡痕、睡痕恢复 |
 | `pos` | `ts`, `items` | 位置节拍（每 100 ms 一条，**已合并**） |

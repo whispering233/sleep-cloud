@@ -1,4 +1,15 @@
-import type { HallInfo, Person, PosMessage, SnapshotMessage, SelfPerson } from '../shared/protocol';
+import type {
+  BedMessage,
+  HallInfo,
+  JoinMessage,
+  LeaveMessage,
+  Person,
+  PersonPlacement,
+  PosMessage,
+  SnapshotMessage,
+  SelfPerson,
+  StateMessage,
+} from '../shared/protocol';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 
@@ -72,4 +83,59 @@ export function applyPos(message: PosMessage): void {
   }
 
   setState({ motion, people });
+}
+
+/** 从下行消息里取出「人在哪」的那一半（丢掉 `t`，别让它混进 Person）。 */
+function placementOf(source: PersonPlacement): PersonPlacement {
+  return source.state === 'roaming'
+    ? { state: 'roaming', x: source.x, y: source.y }
+    : { state: source.state, bedNo: source.bedNo };
+}
+
+function withPlacement(person: Person, placement: PersonPlacement): Person {
+  return { id: person.id, name: person.name, appearance: person.appearance, ...placement };
+}
+
+/** 有人进厅：插入条目（同 id 重复到达就覆盖，天然幂等）。 */
+export function applyJoin(message: JoinMessage): void {
+  const people = new Map(state.people);
+  people.set(message.id, {
+    id: message.id,
+    name: message.name,
+    appearance: message.appearance,
+    ...placementOf(message),
+  });
+  const motion = new Map(state.motion);
+  motion.delete(message.id); // 新出现的人先落位，插值从下一批 pos 开始
+  setState({ people, motion });
+}
+
+/** 某人显示态变化（躺下 / 睡着 / 变睡痕 / 起身）。名字与外观不变。 */
+export function applyState(message: StateMessage): void {
+  const person = state.people.get(message.id);
+  if (!person) return; // 没见过的人：等 join 或下一次快照（TCP 有序，正常不会发生）
+
+  const people = new Map(state.people);
+  people.set(message.id, withPlacement(person, placementOf(message)));
+
+  const motion = new Map(state.motion);
+  if (message.state !== 'roaming') motion.delete(message.id); // 上了床就不再插值：位置就是那张床
+  setState({ people, motion });
+}
+
+/** 有人离开厅（宽限超时且不在床上；或睡痕被清理）。 */
+export function applyLeave(message: LeaveMessage): void {
+  const people = new Map(state.people);
+  people.delete(message.id);
+  const motion = new Map(state.motion);
+  motion.delete(message.id);
+  setState({ people, motion });
+}
+
+/** 床位归属变化：认领或释放（占用完全由「人」的那一类消息派生，不走这里）。 */
+export function applyBed(message: BedMessage): void {
+  const ownedBeds = new Set(state.ownedBeds);
+  if (message.owned) ownedBeds.add(message.bedNo);
+  else ownedBeds.delete(message.bedNo);
+  setState({ ownedBeds });
 }

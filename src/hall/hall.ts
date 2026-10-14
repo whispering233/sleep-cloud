@@ -6,7 +6,7 @@ import type { ErrorCode } from '../shared/error-code';
 import type { DownstreamMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage } from '../shared/protocol';
 import type { Env } from '../worker/env';
 import { MOVE_MS_PER_TILE, TICK_MS } from '../shared/constants';
-import { appearanceFor, guardIncoming, IDENTITY_HEADERS } from './connection';
+import { appearanceFor, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
 import { advanceMover } from './movement';
 import type { MoverState } from './movement';
@@ -119,6 +119,8 @@ export class Hall extends DurableObject<Env> {
         ws.serializeAttachment(ready satisfies ConnectionState);
         this.touchLastSeen(ready.userId);
         ws.send(JSON.stringify(await this.snapshotFor(ws, ready)));
+        // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）
+        this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready) });
         return;
       }
     }
@@ -257,6 +259,15 @@ export class Hall extends DurableObject<Env> {
     }
   }
 
+  /** 除了某个连接之外的所有在线者（入厅广播用：自己不需要收到自己的 join）。 */
+  private broadcastExcept(except: WebSocket, message: DownstreamMessage): void {
+    const payload = JSON.stringify(message);
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === except) continue;
+      if (readConnection(ws)?.ready) ws.send(payload);
+    }
+  }
+
   private socketOf(userId: string): WebSocket | undefined {
     return this.ctx
       .getWebSockets()
@@ -276,13 +287,17 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 断线：从移动者集合同步移除（三个移除来源之一：路径走完 / 断线 / 被新意图取代）。
-   * 位置与目标是连接附加数据上的东西，连接销毁后就读不到了——宽限会话的抄写在后续卡片接上。
+   * 断线：从移动者集合同步移除（三个移除来源之一：路径走完 / 断线 / 被新意图取代），
+   * 并广播 `leave`。
+   *
+   * 位置与目标是连接附加数据上的东西，连接销毁后就读不到了——**宽限会话的抄写在卡 13 接上**：
+   * 那时这里会先搬位置、再等 60 秒宽限，超时才发 `leave`。
    */
   async webSocketClose(ws: WebSocket): Promise<void> {
     const connection = readConnection(ws);
     if (!connection) return;
     this.stopWalking(connection.userId);
+    if (connection.ready) this.broadcast({ t: 'leave', id: connection.userId });
   }
 
   /** 全量快照：在线连接来自内存，**睡痕条目只能查库**（人已离线，内存里没有他）。 */
