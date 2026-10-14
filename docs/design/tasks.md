@@ -3,14 +3,6 @@
 > 规则：按端到端垂直切片；一张卡必须能独立提交、独立验证、独立回滚。**完成后从本文件删除**（它不是历史记录）。
 > 依据：`00-master-design.md`、`architecture.md`、`10-hall-runtime.md`、`config.md`、`build.md`、`../db/schema.md`、`../api/`、`../ui/DESIGN.md`、`../../AGENTS.md`（硬纪律）。
 
-## 卡 1 项目脚手架
-
-- [x] 一个 Worker 同时提供静态资源与接口；本地一条命令可起、一条命令可部署（`npm run dev` / `npm run deploy`）
-- [x] **验收（本地部分已实测）**：根路径返回占位页；`/api/health` 返回 JSON（证明 `/api/*` 确实落到 Worker）；静态资源由托管层返回（`run_worker_first` 只放行 `/api/*`，所以静态资源请求不计入每日接口额度）
-- [x] **验收（部署已在边缘生效）**：`GET /api/health` 与首页均由云端边缘返回（明文 80 + 正确 Host 头实测通过）
-- [x] **验收（自定义域名已生效）**：生产入口 = `sleep-cloud.<zone>`，HTTPS 实测 HTTP/2 200 + `server: cloudflare`（`*.workers.dev` 在本机网络被 SNI 阻断，诊断见 `docs/design/build.md` §4.1）
-- [ ] **依赖**：无
-
 ## 卡 9 世界渲染（静态）
 
 - [ ] PixiJS 画场景与全部床位，按厅时区昼夜配色，按 y 排序解决遮挡
