@@ -56,7 +56,7 @@
 | :--- | :--- | :--- |
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
-| `routes` | `[{ pattern: "sleep-cloud.<zone>", custom_domain: true }]` | 生产入口只有这一个域名（见 §4.1） |
+| `routes` | `[{ pattern: "sleep-cloud.<zone>", custom_domain: true }]` | 生产入口只有这一个域名（理由见 §4.2） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：忘了注入 `SESSION_SECRET`**
