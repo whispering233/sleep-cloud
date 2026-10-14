@@ -82,6 +82,9 @@ npm run dev
 # 类型检查
 npm run typecheck
 
+# 单元测试
+npm test
+
 # 部署（需要平台的账号凭据，见 docs/design/build.md §4）
 npm run deploy
 

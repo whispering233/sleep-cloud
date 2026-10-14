@@ -11,5 +11,6 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/worker", "src/shared"]
+  "include": ["src"],
+  "exclude": ["src/**/tests/**"]
 }

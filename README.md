@@ -87,6 +87,7 @@ npx @google/design.md export docs/ui/DESIGN.md --format css-tailwind
 npm install
 npm run dev        # 本地起 Worker + 静态资源 + 房间服务（http://localhost:8787）
 npm run typecheck
+npm test
 npm run deploy     # 部署（需先有平台账号凭据）
 ```
 

@@ -14,6 +14,8 @@
 - 项目骨架：单个 Worker 同时托管前端静态资源（平台免费且不计请求额度）与 `/api/*` 接口
 - `GET /api/health`：部署冒烟检查用的健康检查接口
 - 本地开发、类型检查与部署命令（`npm run dev` / `npm run typecheck` / `npm run deploy`）
+- 共享契约层：错误码表、大厅协议的上下行消息类型、配置常量、场景数据类型；单元测试比对 `docs/api/error-code.md` 与 `docs/api/20-api-ws.md`，文档与代码不会静默漂移
+- 场景数据格式（`docs/design/config.md`）与协议枚举值（表情、外观、朝向）写入文档
 
 ### Changed
 
