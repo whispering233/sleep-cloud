@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { SnapshotMessage } from '../../shared/protocol';
+import { CHAT_LOG_MAX } from '../../shared/constants';
 import {
   applyBed,
+  applyChat,
   applyJoin,
   applyLeave,
   applyPos,
@@ -99,5 +101,35 @@ describe('客户端状态归约', () => {
     const state = getState();
     expect(state.motion.get('u_other')).toMatchObject({ fromX: 5, fromY: 7, toX: 5, toY: 7 });
     expect(state.people.get('u_other')).toMatchObject({ x: 5, y: 7 });
+  });
+});
+
+describe('客户端聊天消息', () => {
+  it('追加时固化名字：发送者随后离开，那一行的名字不变', () => {
+    applySnapshot(snapshot());
+    applyChat({ t: 'chat', id: 'u_other', text: '我也睡不着', ts: 1_000_200 });
+    expect(getState().messages[0]).toMatchObject({ name: '阿夜', text: '我也睡不着', own: false });
+
+    applyLeave({ t: 'leave', id: 'u_other' });
+    expect(getState().people.has('u_other')).toBe(false);
+    expect(getState().messages[0]?.name).toBe('阿夜');
+  });
+
+  it('自己的消息 own 为真，名字取自 me', () => {
+    applySnapshot(snapshot());
+    applyChat({ t: 'chat', id: 'u_me', text: '有人吗', ts: 1_000_200 });
+    expect(getState().messages[0]).toMatchObject({ name: '我', own: true });
+  });
+
+  it('超过上限只保留最后 N 条，最旧的被丢掉', () => {
+    applySnapshot(snapshot());
+    for (let n = 0; n < CHAT_LOG_MAX + 3; n += 1) {
+      applyChat({ t: 'chat', id: 'u_other', text: `第 ${n} 条`, ts: 1_000_200 + n });
+    }
+
+    const messages = getState().messages;
+    expect(messages).toHaveLength(CHAT_LOG_MAX);
+    expect(messages[0]?.text).toBe('第 3 条');
+    expect(messages[messages.length - 1]?.text).toBe(`第 ${CHAT_LOG_MAX + 2} 条`);
   });
 });

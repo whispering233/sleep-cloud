@@ -4,6 +4,7 @@ import {
   AUTO_SLEEP_MS,
   BED_OWNERSHIP_TTL_MS,
   CHAT_MAX_LEN,
+  CHAT_LOG_MAX,
   GRACE_MS,
   MOVE_MS_PER_TILE,
   NICKNAME_MAX_LEN,
@@ -27,6 +28,7 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(UPSTREAM_RATE_PER_SEC).toBe(5);
     expect(NICKNAME_MAX_LEN).toBe(16);
     expect(CHAT_MAX_LEN).toBe(200);
+    expect(CHAT_LOG_MAX).toBe(50);
     expect(SCENE_BED_COUNT).toBe(256);
   });
 });

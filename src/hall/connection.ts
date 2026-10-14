@@ -2,6 +2,7 @@ import { APPEARANCES } from '../shared/protocol';
 import { UPSTREAM_TYPES } from '../shared/protocol';
 import type { Appearance, Person, UpstreamMessage, UpstreamType } from '../shared/protocol';
 import type { ErrorCode } from '../shared/error-code';
+import type { RateWindow } from './rate-limit';
 
 /**
  * 一条连接上的附加数据（存 WebSocket 的 attachment，跨休眠存活，见 `10-hall-runtime.md` §2）。
@@ -30,6 +31,11 @@ export interface ConnectionState {
   lastInputAt: number;
   /** 完成 `hello` 握手之前，不向该连接转发任何房间消息 */
   ready: boolean;
+  /**
+   * 上行限流的固定窗口计数（见 `rate-limit.ts`）。放附件里是因为它必须**跨休眠存活**：
+   * 另开一张内存表会在对象被驱逐后清零，限流就被绕过了。
+   */
+  rate?: RateWindow;
 }
 
 /** 外观由用户标识推导：第一版不提供选择入口，但同一个人每次进来长得一样。 */

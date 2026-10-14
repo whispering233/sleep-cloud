@@ -71,7 +71,7 @@
     inset-block-end: 0;
     inset-inline: 0;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: var(--spacing-sm);
     padding: var(--spacing-md) calc(var(--spacing-md) + env(safe-area-inset-right))
       calc(var(--spacing-md) + env(safe-area-inset-bottom))
@@ -81,6 +81,37 @@
     border-block-end: 0;
     border-start-start-radius: var(--radius-md);
     border-start-end-radius: var(--radius-md);
+  }
+
+  /* 消息日志：滚动区，而不是把面板越掑越高（视野中央留给大厅） */
+  .chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    max-height: 30vh;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+  }
+
+  .chat-message-own {
+    color: var(--color-neutral);
+  }
+
+  .chat-message-other {
+    color: var(--color-neutral-muted);
+  }
+
+  .chat-message-name {
+    font-weight: var(--font-weight-label);
+  }
+
+  .chat-composer {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
   }
 
   /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽 */

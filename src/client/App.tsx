@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 
 import type { HallSummary, SessionView } from '../shared/http-api';
 import { loadHalls, loadSession } from './api';
+import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
-import { PrimaryAction } from './components/PrimaryAction';
-import { TextInput } from './components/TextInput';
 import { WorldCanvas } from './components/WorldCanvas';
 import { connectHall } from './ws';
 
@@ -16,7 +15,6 @@ export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
   const [halls, setHalls] = useState<HallSummary[]>([]);
   const [entered, setEntered] = useState(false);
-  const [draft, setDraft] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -51,19 +49,7 @@ export function App() {
             {session?.nickname ? <span>{session.nickname}</span> : null}
           </header>
 
-          <section className="chat-panel" aria-label="聊天">
-            <TextInput
-              className="chat-composer-input"
-              value={draft}
-              placeholder="说点什么…"
-              aria-label="聊天输入框"
-              enterKeyHint="send"
-              onChange={(event) => setDraft(event.target.value)}
-            />
-            <PrimaryAction className="chat-composer-send" type="button">
-              发送
-            </PrimaryAction>
-          </section>
+          <ChatPanel />
         </>
       ) : null}
 

@@ -5,10 +5,11 @@ import type { HallConfig } from '../shared/hall-registry';
 import type { ErrorCode } from '../shared/error-code';
 import type { DownstreamMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage } from '../shared/protocol';
 import type { Env } from '../worker/env';
-import { AUTO_SLEEP_MS, GRACE_MS, MOVE_MS_PER_TILE, TICK_MS } from '../shared/constants';
+import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, MOVE_MS_PER_TILE, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
 import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
 import { lieVerdictFor } from './bed-rules';
+import { chatVerdictFor } from './chat';
 import {
   clearAllTraceBeds,
   clearBed,
@@ -34,6 +35,7 @@ import { loadScene } from './scene';
 import type { SceneGrid } from './scene';
 import { createDueHeap } from './scheduler';
 import type { DueEvent } from './scheduler';
+import { consumeUpstream } from './rate-limit';
 import { buildSnapshot, splitLive } from './snapshot';
 import type { OfflineOccupantRow } from './snapshot';
 
@@ -244,7 +246,13 @@ export class Hall extends DurableObject<Env> {
   /** 上行只表达意图；每条意图都会刷新「最后输入时刻」（自动睡着由它推导）。 */
   private handleIntent(ws: WebSocket, connection: ConnectionState, message: UpstreamMessage): void {
     const now = Date.now();
-    const fresh: ConnectionState = { ...connection, lastInputAt: now };
+    const gate = consumeUpstream({ window: connection.rate, now, limit: UPSTREAM_RATE_PER_SEC });
+    if (!gate.allowed) {
+      // 被限流：不写附件（省一次写入），也不刷新任何状态
+      this.sendError(ws, '4002');
+      return;
+    }
+    const fresh: ConnectionState = { ...connection, lastInputAt: now, rate: gate.window };
     this.writeConnection(ws, fresh);
     this.armAutoSleep(fresh); // 输入刷新了「自动睡着」的到期时刻
     this.refreshDerivedStates();
@@ -289,10 +297,21 @@ export class Hall extends DurableObject<Env> {
         }
         this.fallAsleep(ws, fresh);
         return;
-      case 'chat':
+      case 'chat': {
+        // 睡着时说话：**自动醒**后处理，不报错
+        if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
+        const verdict = chatVerdictFor(message.text, CHAT_MAX_LEN);
+        if (!verdict.ok) {
+          this.sendError(ws, verdict.code);
+          return;
+        }
+        // 发给所有人（**含发送者本人**）：客户端靠这一条显示自己的消息，不做本地乐观回显
+        this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts: Date.now() });
+        return;
+      }
       case 'whisper':
       case 'emote':
-        // 睡着时说话或发表情：**自动醒**后处理，不报错（消息本身在后续卡片接上）
+        // 睡着时发表情或私聊：**自动醒**后处理（内容本身在后面的卡片接上）
         if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
         return;
       default:

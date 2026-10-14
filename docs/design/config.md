@@ -38,6 +38,7 @@
 | `UPSTREAM_RATE_PER_SEC` | 5 | 每连接上行限流（条/秒），超出丢弃 |
 | `NICKNAME_MAX_LEN` | 16 | 昵称长度上限（按字符计） |
 | `CHAT_MAX_LEN` | 200 | 全局聊天消息长度上限（按字符计） |
+| `CHAT_LOG_MAX` | 50 | 客户端本地保留的最近消息条数（只用于显示；服务端不存历史，见 `backlog.md`） |
 | `SCENE_BED_COUNT` | 256 | 场景数据中的床位数，**必须等于该厅的 `capacity`**；不一致视为配置错误（启动时校验并报错） |
 | `ENTRY_REQUIRE_AGE_CONFIRM` | true | 入场是否要求 18 岁自述确认 |
 

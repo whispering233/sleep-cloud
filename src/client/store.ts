@@ -1,5 +1,6 @@
 import type {
   BedMessage,
+  ChatMessage,
   HallInfo,
   JoinMessage,
   LeaveMessage,
@@ -10,8 +11,18 @@ import type {
   SelfPerson,
   StateMessage,
 } from '../shared/protocol';
+import { CHAT_LOG_MAX } from '../shared/constants';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
+
+/** 一行聊天消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
+export interface ChatLine {
+  id: string;
+  name: string;
+  text: string;
+  ts: number;
+  own: boolean;
+}
 
 /**
  * 世界渲染读的那一份状态。**刻意不放 React**：位置与插值不进框架的渲染循环，
@@ -30,6 +41,8 @@ export interface ClientState {
   motion: Map<string, Motion>;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
+  /** 最近收到的全局消息（只用于显示；服务端不存历史） */
+  messages: ChatLine[];
 }
 
 const emptyState = (): ClientState => ({
@@ -38,6 +51,7 @@ const emptyState = (): ClientState => ({
   people: new Map(),
   motion: new Map(),
   clockOffsetMs: 0,
+  messages: [],
 });
 
 let state: ClientState = emptyState();
@@ -68,7 +82,20 @@ export function applySnapshot(message: SnapshotMessage): void {
     motion: new Map(),
     // 客户端据此换算服务端时间轴：插值一律按服务端时间戳算
     clockOffsetMs: message.serverTs - Date.now(),
+    // 重连以新快照为准、不做增量补偿 → 旧的消息流不保留
+    messages: [],
   });
+}
+
+/**
+ * 全局消息：**追加那一刻就把发送者名字固化到这一行**。
+ * 渲染时不能回头查 `people`——对方离开后那行名字会变空（见 `docs/ui/DESIGN.md`）。
+ */
+export function applyChat(message: ChatMessage): void {
+  const own = state.me?.id === message.id;
+  const name = (own ? state.me?.name : state.people.get(message.id)?.name) ?? '某人';
+  const line: ChatLine = { id: message.id, name, text: message.text, ts: message.ts, own };
+  setState({ messages: [...state.messages, line].slice(-CHAT_LOG_MAX) });
 }
 
 /** 一批权威位置（已合并）→ 插值窗口。 */

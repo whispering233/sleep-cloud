@@ -34,5 +34,8 @@ export const NICKNAME_MAX_LEN = 16;
 /** 全局聊天消息长度上限（按字符计）。 */
 export const CHAT_MAX_LEN = 200;
 
+/** 客户端本地保留的最近消息条数（只用于显示；服务端不存历史）。 */
+export const CHAT_LOG_MAX = 50;
+
 /** 场景数据中的床位数，必须等于该厅的 capacity。 */
 export const SCENE_BED_COUNT = 256;

@@ -1,10 +1,10 @@
 import type { DownstreamMessage } from '../shared/protocol';
-import { applyBed, applyJoin, applyLeave, applyPos, applySnapshot, applyState, setState } from './store';
+import { applyBed, applyChat, applyJoin, applyLeave, applyPos, applySnapshot, applyState, setState } from './store';
 
 /**
  * 进入大厅：建连后第一条必须是 `hello`（带场景标识），通过后才收得到快照。
  *
- * 增量事件：`pos` / `join` / `leave` / `state` / `bed` 都已接上（`chat` / `whisper` / `emote` 在后面几张卡）。
+ * 增量事件：`pos` / `join` / `leave` / `state` / `bed` / `chat` 都已接上（`whisper` / `emote` 在后面几张卡）。
  * 重连语义见 `docs/api/20-api-ws.md` §5（重连后以新的快照为准，不做增量补偿）。
  */
 let active: WebSocket | null = null;
@@ -45,8 +45,11 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
       case 'bed':
         applyBed(message);
         return;
+      case 'chat':
+        applyChat(message);
+        return;
       default:
-        return; // chat / whisper / emote / error 在后续卡片接上
+        return; // whisper / emote / error 在后续卡片接上
     }
   });
 
@@ -63,4 +66,10 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
 export function sendWalk(x: number, y: number): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'walk', x, y }));
+}
+
+/** 全局消息：空消息与超长都由服务端判定（`4003` / `4001`），客户端不做重复校验。 */
+export function sendChat(text: string): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'chat', text }));
 }
