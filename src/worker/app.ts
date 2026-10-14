@@ -11,6 +11,17 @@ import type { Session } from './session';
 
 const app = new Hono<{ Bindings: Env }>();
 
+/**
+ * 未捕获的异常一律变成 JSON 错误码。
+ *
+ * 平台的默认 500 是 `text/plain` 的 "Internal Server Error"——前端 `res.json()` 会直接抛 SyntaxError，
+ * 界面上什么提示都出不来（控制台只留一句「Unexpected token 'I'」）。真实原因进日志（`wrangler tail` / 平台日志）。
+ */
+app.onError((error, c) => {
+  console.error('请求处理失败：', error);
+  return fail(c, '9001');
+});
+
 // 部署冒烟检查用（见 docs/design/build.md §4）
 app.get('/api/health', (c) => c.json({ code: '0', msg: 'success', data: { status: 'ok' } }));
 

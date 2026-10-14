@@ -5,6 +5,7 @@ dist/
 # 密钥与本地变量：绝不入库（wrangler dev 会读 .dev.vars 与 .env）
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 .env
 .env.*
 !.env.example

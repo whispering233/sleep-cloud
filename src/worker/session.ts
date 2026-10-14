@@ -16,8 +16,6 @@ const COOKIE_NAME = 'sc_session';
 /** 平台允许的上限是 400 天；每次响应重签，等于「持续刷新」。 */
 const COOKIE_MAX_AGE_SEC = 400 * 24 * 60 * 60;
 
-const DEV_SECRET = 'sleep-cloud-local-dev-secret';
-
 export interface Session {
   userId: string;
   /** 所属厅：不放在会话里，服务端就不知道该把请求交给哪个厅 */
@@ -36,21 +34,17 @@ export interface SessionRead {
   secret: string;
 }
 
+/**
+ * 密钥只有一处来源：注入（生产 `wrangler secret put SESSION_SECRET`，本机 `.dev.vars`）。
+ *
+ * **不做任何「按域名猜是不是本机」的回落**：生产与本机可能用同一个域名
+ * （配了自定义域名路由后，本地 dev 的 request.url 就是生产域名），一旦按域名判本机，
+ * 生产就会静默用上一个可猜的密钥——那等于没有会话安全。
+ */
 function sessionSecret(c: Context<{ Bindings: Env }>): string {
   const secret = c.env.SESSION_SECRET;
-  if (secret) return secret;
-  if (!isLocalRequest(c.req.raw)) throw new Error('SESSION_SECRET 未配置');
-  return DEV_SECRET;
-}
-
-/** 只有本机地址才回落开发密钥。平台给的 URL 一定可解析，解析失败按「不是本机」处理（宁可报错）。 */
-function isLocalRequest(request: Request): boolean {
-  try {
-    const host = new URL(request.url).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
-  } catch {
-    return false;
-  }
+  if (!secret) throw new Error('SESSION_SECRET 未配置');
+  return secret;
 }
 
 /** 本地开发跑在 http 上，加 Secure 浏览器就不回传了。解析失败时按 HTTPS 处理（保守）。 */

@@ -1,0 +1,3 @@
+# 本机开发用：复制成 .dev.vars 即可（.dev.vars 不进仓库）。
+# 生产用 `npx wrangler secret put SESSION_SECRET` 注入，两边都不写进代码。
+SESSION_SECRET=local-dev-only-not-a-real-secret

@@ -13,6 +13,7 @@
 
 | 目的 | 命令 |
 | :--- | :--- |
+| 准备本机密钥（一次） | `cp .dev.vars.example .dev.vars`——会话签名密钥本机也要显式给，代码里没有任何回落 |
 | 起完整站点（后端 + 房间服务 + SQLite + 静态资源） | `npm run build && npm run dev`（http://localhost:8787） |
 | 前端热更新开发服务器（`/api` 代理到 8787，含 WebSocket） | `npm run dev:web`（http://localhost:5173） |
 | 单元测试 | `npm test` |
@@ -45,11 +46,24 @@
 | 步骤 | 说明 |
 | :--- | :--- |
 | 0. 登录 | 本机需先有平台账号凭据（`wrangler login`），凭据不写仓库 |
-| 1. 注入密钥 | 会话签名密钥（`SESSION_SECRET`）通过平台密钥存储注入，不写仓库 |
+| 1. 注入密钥 | 会话签名密钥：`npx wrangler secret put SESSION_SECRET`（随便一串 32 字节以上的随机值）。**缺了它生产环境会 500**，不写仓库 |
 | 2. 部署 | `npm run deploy` 同时更新 Worker 代码与静态资源 |
 | 3. 冒烟检查 | `GET /api/health` 返回 `{"code":"0"}`；打开页面可见；再走完整循环：入场 → 走动 → 躺下 → 另一个客户端确认可见 |
 
-### 4.1 生产入口必须是自定义域名
+### 4.1 生产配置（都在 `wrangler.jsonc` 里，别在面板上改）
+
+| 项 | 值 | 为什么 |
+| :--- | :--- | :--- |
+| `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
+| `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
+| `routes` | `[{ pattern: "sleep-cloud.<zone>", custom_domain: true }]` | 生产入口只有这一个域名（见 §4.1） |
+| `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
+
+**典型症状：忘了注入 `SESSION_SECRET`**
+`/api/me` 与 `/api/halls` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
+`Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
+
+### 4.2 生产入口必须是自定义域名
 
 部署默认给出的 `*.workers.dev` 地址在部分网络里**整个域名的 SNI 被阻断**（本机实测：同一个 Cloudflare IP，SNI 换成 `cloudflare.com` 能握手，换成 `workers.dev` 系列直接收到 TCP RST）。
 

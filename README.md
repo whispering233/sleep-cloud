@@ -4,6 +4,8 @@
 
 睡不着的人可以来这里躺下、走动、看看别人，也看看那些已经睡着的人。
 
+> **线上入口：<https://sleep-cloud.<zone>>**（`workers.dev` 与 Preview URLs 已关闭，生产入口写死在 `wrangler.jsonc` 的 `routes` 里。）
+>
 > **当前状态：开发中。** 前端骨架与令牌管线已可跑（`npm run build && npm run dev`），大厅业务功能尚未实现。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
 
 ## 它是什么

@@ -8,7 +8,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
     ...init,
     headers: init?.body ? { 'content-type': 'application/json', ...init.headers } : init?.headers,
   });
-  return (await res.json()) as ApiResponse<T>;
+  try {
+    return (await res.json()) as ApiResponse<T>;
+  } catch {
+    // 网关/平台出错时给的不是 JSON（例如 500 的纯文本），别让前端崩在解析上
+    return { code: '9001', msg: 'internal error' };
+  }
 }
 
 const postJson = <T>(path: string, payload: unknown) =>

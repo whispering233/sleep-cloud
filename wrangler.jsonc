@@ -3,27 +3,25 @@
   "name": "sleep-cloud",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-14",
+
+  // 生产入口只有下面的自定义域名：workers.dev 与 Preview URLs 一律关掉。
+  // 本机开发不受影响（wrangler dev 照常在 localhost:8787 起）。
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "sleep-cloud.<zone>", "custom_domain": true }],
+
+  // 打开后能在平台面板里看 Worker 日志（排查生产问题就靠它）
+  "observability": { "enabled": true },
+
+  // 前端与接口同源：静态资源由平台托管（免费、不计请求额度），/api/* 交给 Worker（与房间服务）。
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*"
-    ]
+    "run_worker_first": ["/api/*"]
   },
+
   "durable_objects": {
-    "bindings": [
-      {
-        "name": "HALL",
-        "class_name": "Hall"
-      }
-    ]
+    "bindings": [{ "name": "HALL", "class_name": "Hall" }]
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "Hall"
-      ]
-    }
-  ]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hall"] }]
 }
