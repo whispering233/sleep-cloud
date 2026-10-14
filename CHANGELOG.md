@@ -19,6 +19,8 @@
 - 前端工程：Vite + React + TypeScript + Tailwind v4，产物由同一 Worker 托管；三档响应式布局骨架（窄 / 中 / 宽）、安全区内边距、44px 触摸目标、输入框字号不低于 16px
 - 设计令牌管线：`docs/ui/DESIGN.md` 为唯一来源，`npm run tokens` 导出 Tailwind 主题；组件样式只引用令牌变量，不写硬编码色值
 - 内容过滤模块：敏感词表 + 干扰字符 / 空白 / 零宽字符 / 大小写归一化，提供「检测」（昵称命中即拒）与「打码」（聊天命中替换为等长 `*` 后照常放行）两个入口
+- 匿名会话：`GET /api/me` 签发 HMAC 签名 cookie（HttpOnly、SameSite=Lax、每次响应刷新有效期），无注册步骤；验签失败当作新会话并返回 `1001`
+- 厅注册表（亚洲 / 欧洲 / 美洲三个厅）成为唯一人工维护的配置，并有单测保证它与 `docs/design/config.md` 逐条一致
 
 ### Changed
 

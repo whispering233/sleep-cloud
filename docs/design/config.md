@@ -12,11 +12,11 @@
 
 第一版注册表：
 
-| id | name | timezone | capacity |
-| :--- | :--- | :--- | :--- |
-| `asia-1` | 亚洲厅 | `Asia/Shanghai` | 256 |
-| `europe-1` | 欧洲厅 | `Europe/Berlin` | 256 |
-| `america-1` | 美洲厅 | `America/New_York` | 256 |
+| id | name | timezone | sceneGuid | capacity |
+| :--- | :--- | :--- | :--- | :--- |
+| `asia-1` | 亚洲厅 | `Asia/Shanghai` | `dorm-asia-01` | 256 |
+| `europe-1` | 欧洲厅 | `Europe/Berlin` | `dorm-europe-01` | 256 |
+| `america-1` | 美洲厅 | `America/New_York` | `dorm-america-01` | 256 |
 
 **满员怎么办**：手动在此表加一条（例如 `asia-2`），部署即生效。老用户不受影响。不做自动扩厅（见 `backlog.md`）。
 
@@ -44,10 +44,11 @@
 
 | 名称 | 用途 | 存放 |
 | :--- | :--- | :--- |
-| 会话签名密钥 | 会话 cookie 的 HMAC 签名 | 平台密钥存储（`wrangler secret`），**不写入仓库** |
+| `SESSION_SECRET` | 会话 cookie 的 HMAC 签名 | 平台密钥存储（`wrangler secret`），**不写入仓库** |
+
+本地开发在 `localhost` / `127.0.0.1` 下回落到内置开发密钥；**其他地址缺少该密钥时直接报错**，不静默使用可猜的密钥。
 
 密钥轮换会导致所有现有会话失效（用户在宽限内重连会变成新会话，但床位归属仍由 cookie 中的用户标识决定，影响可控）。
-
 ## 5. 场景数据（每个厅一份，手写 JSON）
 
 | 字段 | 类型 | 说明 |
