@@ -35,6 +35,81 @@ export function markerRadius(scale: number, tile: number): number {
   return Math.min(Math.max(floorRadius, tile * 0.12), ceilingRadius);
 }
 
+/**
+ * 轻点命中（屏幕点已换算成**格坐标的浮点值**）：人 > 空床 > 地面（见 `docs/ui/DESIGN.md`）。
+ * 命中判定与 Pixi 无关，可单测。
+ */
+
+/** 人物当前位置（格坐标的浮点值；整数部分是格子号）。 */
+export interface PersonSpot {
+  id: string;
+  x: number;
+  y: number;
+}
+
+/** 轻点的命中半径（格）。比一格小得多：点人是有意为之，不是「附近有人就算」。 */
+export const PERSON_HIT_TILES = 0.6;
+
+const inReach = (spot: PersonSpot, point: { x: number; y: number }, radiusTiles: number): boolean =>
+  Math.hypot(spot.x - point.x, spot.y - point.y) <= radiusTiles;
+
+/** 半径内的人：命中多个时取 **y 最大**者（画面上更靠下 = 更靠前，与按 y 排序的遮挡一致）。 */
+export function personHit(
+  spots: readonly PersonSpot[],
+  point: { x: number; y: number },
+  radiusTiles: number,
+): PersonSpot | undefined {
+  let best: PersonSpot | undefined;
+  for (const spot of spots) {
+    if (!inReach(spot, point, radiusTiles)) continue;
+    if (!best || spot.y > best.y) best = spot;
+  }
+  return best;
+}
+
+export type TapTarget =
+  | { kind: 'select'; id: string }
+  | { kind: 'lie'; bedNo: number }
+  | { kind: 'walk'; x: number; y: number }
+  | { kind: 'none' };
+
+interface TapInput {
+  /** 轻点的格坐标浮点值 */
+  point: { x: number; y: number };
+  spots: readonly PersonSpot[];
+  selfId?: string;
+  /** 该格床上的占用者 id（含自己）；空床为 `undefined` */
+  residentId?: string;
+  bedNo?: number;
+  walkable: boolean;
+}
+
+/**
+ * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 什么都不做；
+ * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的地面 → 走过去；⑥ 其余 → 什么都不做。
+ *
+ * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
+ * `walk` 的 x/y 已向下取整成格号（意图是「我要去这一格」）。
+ */
+export function tapTargetFor(input: TapInput): TapTarget {
+  const { point, spots, selfId, residentId, bedNo, walkable } = input;
+
+  const other = personHit(
+    spots.filter((spot) => spot.id !== selfId),
+    point,
+    PERSON_HIT_TILES,
+  );
+  if (other) return { kind: 'select', id: other.id };
+
+  // 点自己：不做任何动作（我知道我是谁）
+  if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_TILES))) {
+    return { kind: 'none' };
+  }
+
+  if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };
+  return walkable ? { kind: 'walk', x: Math.floor(point.x), y: Math.floor(point.y) } : { kind: 'none' };
+}
+
 export const DAY_START_HOUR = 6;
 export const DAY_END_HOUR = 18;
 

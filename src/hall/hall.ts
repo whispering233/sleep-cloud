@@ -3,13 +3,14 @@ import { DurableObject } from 'cloudflare:workers';
 import { findHall } from '../shared/hall-registry';
 import type { HallConfig } from '../shared/hall-registry';
 import type { ErrorCode } from '../shared/error-code';
-import type { DownstreamMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage } from '../shared/protocol';
+import type { DownstreamMessage, EmoteMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage, WhisperMessage } from '../shared/protocol';
 import type { Env } from '../worker/env';
 import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, MOVE_MS_PER_TILE, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
 import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
 import { lieVerdictFor } from './bed-rules';
 import { chatVerdictFor } from './chat';
+import { emoteVerdictFor } from './emote';
 import {
   clearAllTraceBeds,
   clearBed,
@@ -309,11 +310,42 @@ export class Hall extends DurableObject<Env> {
         this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts: Date.now() });
         return;
       }
-      case 'whisper':
-      case 'emote':
-        // 睡着时发表情或私聊：**自动醒**后处理（内容本身在后面的卡片接上）
+      case 'whisper': {
+        // 睡着时私聊：**自动醒**后处理，与聊天一致
         if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
+        // 文本规则与全局聊天完全相同，区别只在投递范围
+        const verdict = chatVerdictFor(message.text, CHAT_MAX_LEN);
+        if (!verdict.ok) {
+          this.sendError(ws, verdict.code);
+          return;
+        }
+        const toId = String(message.toId);
+        const target = this.socketOf(toId);
+        if (!target) {
+          // 对方不在厅：静默类错误，发送者拿不到任何反馈（见 `docs/api/20-api-ws.md` §4.7）
+          this.sendError(ws, '2005');
+          return;
+        }
+        // 发送者与接收者收到**同一条 payload**；第三人一条都收不到，所以不走 broadcast
+        const payload = JSON.stringify({
+          t: 'whisper',
+          fromId: fresh.userId,
+          toId,
+          text: verdict.text,
+          ts: Date.now(),
+        } satisfies WhisperMessage);
+        ws.send(payload);
+        if (target !== ws) target.send(payload);
         return;
+      }
+      case 'emote': {
+        // 睡着时发表情：**自动醒**后处理
+        if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
+        const verdict = emoteVerdictFor(message.id);
+        if (!verdict.ok) return; // 非法枚举值：静默丢弃，不回错误码
+        this.broadcast({ t: 'emote', id: fresh.userId, emoteId: verdict.emoteId } satisfies EmoteMessage);
+        return;
+      }
       default:
         return;
     }

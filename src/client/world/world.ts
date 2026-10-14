@@ -1,12 +1,14 @@
 import { Application, Container, Graphics, Text } from 'pixi.js';
 
 import type { Person, PersonState } from '../../shared/protocol';
+import { EMOTE_LABELS } from '../emotes';
 import { getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { positionAt, INTERPOLATION_DELAY_MS } from '../motion';
 import { palette } from './palette';
 import type { WorldPalette } from './palette';
-import { bedOutline, isDaytime, markerRadius, personAlpha, shouldDrawName } from './rules';
+import { bedOutline, isDaytime, markerRadius, personAlpha, shouldDrawName, tapTargetFor } from './rules';
+import type { PersonSpot } from './rules';
 import { loadSceneIndex, TILE } from './scene';
 import type { SceneIndex } from './scene';
 
@@ -25,6 +27,10 @@ const MAX_SCALE = 2.5;
 const LINE_PX = 1.5;
 /** 名字按屏幕像素给：不随缩放变大变小。 */
 const NAME_PX = 12;
+/** 气泡内边距与圆角（屏幕像素；气泡整体按 1/scale 缩放，所以它就是屏幕上看到的尺寸）。 */
+const BUBBLE_PAD_X = NAME_PX * 0.6;
+const BUBBLE_PAD_Y = NAME_PX * 0.35;
+const BUBBLE_RADIUS = NAME_PX * 0.5;
 /** 设备像素比上限：兼顾清晰与低端机性能。 */
 const MAX_DPR = 2;
 
@@ -52,9 +58,31 @@ function occupantsOf(state: ClientState): Map<number, PersonState> {
   return occupants;
 }
 
+/** 床号 → 占用者 id（含自己）：命中判定要区分「空床可躺」与「床上有人」。 */
+function residentOf(state: ClientState, bedNo: number): string | undefined {
+  for (const person of state.people.values()) {
+    if (person.state !== 'roaming' && person.bedNo === bedNo) return person.id;
+  }
+  if (state.me && state.me.state !== 'roaming' && state.me.bedNo === bedNo) return state.me.id;
+  return undefined;
+}
+
+/** 还有没到期的表情：显示期内要持续重画，到期后这个条件自然变假（不会长期占 CPU）。 */
+function hasVisibleEmote(state: ClientState): boolean {
+  const now = Date.now();
+  for (const emote of state.emotes.values()) if (emote.expiresAt > now) return true;
+  return false;
+}
+
 export interface WorldHandlers {
   /** 点地面 = 「我要去这一格」（客户端只发意图，怎么走由服务端定） */
   onWalk(tile: { x: number; y: number }): void;
+  /** 点小人 = 选中（唯一选中对象：名字气泡 + 私聊目标） */
+  onSelect(id: string): void;
+  /** 点地面 = 取消选中 */
+  onClearSelection(): void;
+  /** 点空床 = 躺下 */
+  onLie(bedNo: number): void;
 }
 
 export async function createWorld(host: HTMLElement, handlers: WorldHandlers): Promise<WorldHandle> {
@@ -87,6 +115,8 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   let scene: SceneIndex | null = null;
   let loadedGuid: string | undefined;
   let dirty = true;
+  /** 上一帧人物的格坐标（命中判定用；1 帧延迟可接受） */
+  let spots: PersonSpot[] = [];
   let background = palette(modeOf(getState())).background;
 
   const markDirty = (): void => {
@@ -176,14 +206,19 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     const head = TILE * 0.26;
     const persons: Person[] = [...state.people.values()];
     if (state.me) persons.push(state.me);
+    const now = Date.now();
+    const nextSpots: PersonSpot[] = [];
 
     for (const person of persons) {
-      const spot = person.state === 'roaming' ? roamSpot(person, state, serverNow) : bedSpot(person.bedNo);
-      if (!spot) continue;
+      const grid = person.state === 'roaming' ? roamGrid(person, state, serverNow) : bedGrid(person.bedNo);
+      if (!grid) continue;
+
+      // 命中判定用的格坐标（**跳过自己**：点自己不做任何动作，不需要参与命中）
+      if (person.id !== state.me?.id) nextSpots.push({ id: person.id, x: grid.x, y: grid.y });
 
       const node = new Container();
-      node.position.set(spot.x, spot.y);
-      node.zIndex = spot.y; // 按 y 排序解决遮挡
+      node.position.set(grid.x * TILE, grid.y * TILE);
+      node.zIndex = grid.y * TILE; // 按 y 排序解决遮挡
       node.alpha = personAlpha(person.state); // 睡痕整体更暗（不能只改轮廓与名字）
       people.addChild(node);
 
@@ -213,20 +248,33 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
       }
       node.addChild(body);
 
-      // 名字只出现在有人的床上，且自己不画（我知道我是谁）
+      const selected = person.id === state.selectedId;
+      // 名字只出现在有人的床上，且自己不画（我知道我是谁）；
+      // 选中时把那个名字**改成气泡样式**（不叠第二个），漫游者则只在自己被选中时才有
       if (shouldDrawName(person, state.me?.id)) {
-        const label = new Text({
-          text: person.name,
-          style: {
-            fontFamily,
-            fontSize: NAME_PX,
-            fill: person.state === 'trace' ? pal.bed.trace : pal.ink,
-          },
-        });
-        label.anchor.set(0.5, 1);
-        label.position.set(0, -TILE * 0.62);
-        label.scale.set(1 / camera.scale); // 名字不随缩放变大变小
-        node.addChild(label);
+        if (selected) drawBubble(node, person.name, -TILE * 0.62, pal);
+        else {
+          const label = new Text({
+            text: person.name,
+            style: {
+              fontFamily,
+              fontSize: NAME_PX,
+              fill: person.state === 'trace' ? pal.bed.trace : pal.ink,
+            },
+          });
+          label.anchor.set(0.5, 1);
+          label.position.set(0, -TILE * 0.62);
+          label.scale.set(1 / camera.scale); // 名字不随缩放变大变小
+          node.addChild(label);
+        }
+      } else if (selected) {
+        drawBubble(node, person.name, -TILE * 0.62, pal);
+      }
+
+      // 表情气泡：比名字再高一点；过期靠渲染时比较 `expiresAt`，不挂定时器
+      const emote = state.emotes.get(person.id);
+      if (emote && emote.expiresAt > now) {
+        drawBubble(node, EMOTE_LABELS[emote.emoteId], -TILE * 0.98, pal);
       }
 
       if (state.me && person.id === state.me.id && person.state === 'roaming') {
@@ -234,38 +282,104 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
       }
     }
 
+    spots = nextSpots;
+
     // 我的床位角落（我在厅里走动时也要找得到它）
     const myBed = state.me?.ownedBedNo;
     if (myBed !== undefined) {
-      const spot = bedSpot(myBed);
-      if (spot) {
+      const grid = bedGrid(myBed);
+      if (grid) {
         const marker = new Graphics();
-        marker.zIndex = spot.y + 1;
-        drawMarker(marker, spot.x + TILE * 0.32, spot.y + TILE * 0.32, pal);
+        marker.zIndex = grid.y * TILE + 1;
+        drawMarker(marker, grid.x * TILE + TILE * 0.32, grid.y * TILE + TILE * 0.32, pal);
         people.addChild(marker);
       }
     }
   }
 
-  function bedSpot(bedNo: number): { x: number; y: number } | undefined {
-    const tile = scene?.bedAt(bedNo);
-    return tile ? { x: (tile.x + 0.5) * TILE, y: (tile.y + 0.5) * TILE } : undefined;
+  /**
+   * 名字 / 表情气泡：`secondary` 底 + `neutral` 字（令牌语义见 DESIGN 的 `name-bubble`），
+   * 压在同款文字下面；**整体按 1/scale 缩放**，所以不随镜头缩放变大变小。
+   */
+  function drawBubble(node: Container, text: string, y: number, pal: WorldPalette): void {
+    const label = new Text({
+      text,
+      style: { fontFamily, fontSize: NAME_PX, fill: pal.ink },
+    });
+    label.anchor.set(0.5, 1);
+
+    const bubble = new Graphics();
+    bubble
+      .roundRect(
+        -label.width / 2 - BUBBLE_PAD_X,
+        -label.height - BUBBLE_PAD_Y,
+        label.width + BUBBLE_PAD_X * 2,
+        label.height + BUBBLE_PAD_Y * 2,
+        BUBBLE_RADIUS,
+      )
+      .fill({ color: pal.bubble });
+
+    const group = new Container();
+    group.position.set(0, y);
+    group.scale.set(1 / camera.scale);
+    group.addChild(bubble, label);
+    node.addChild(group);
   }
 
-  /** 漫游者的画点：有插值窗口就按服务端时间插值，否则用权威坐标直画。 */
-  function roamSpot(person: Person, state: ClientState, serverNow: number): { x: number; y: number } | undefined {
+  /** 床号的格坐标（取格中心：+0.5）。 */
+  function bedGrid(bedNo: number): { x: number; y: number } | undefined {
+    const tile = scene?.bedAt(bedNo);
+    return tile ? { x: tile.x + 0.5, y: tile.y + 0.5 } : undefined;
+  }
+
+  /** 漫游者的格坐标（有插值窗口就按服务端时间插值，否则用权威坐标）。 */
+  function roamGrid(person: Person, state: ClientState, serverNow: number): { x: number; y: number } | undefined {
     if (person.state !== 'roaming') return undefined;
     const motion = state.motion.get(person.id);
     const tile = motion ? positionAt(motion, serverNow) : { x: person.x, y: person.y };
-    return { x: (tile.x + 0.5) * TILE, y: (tile.y + 0.5) * TILE };
+    return { x: tile.x + 0.5, y: tile.y + 0.5 };
   }
 
-  /** 屏幕坐标 → 格坐标（点地面用）。 */
-  function tileAt(screenX: number, screenY: number): { x: number; y: number } {
+  /** 屏幕坐标 → 格坐标（**浮点值**，轻点的命中判定用）。 */
+  function gridAt(screenX: number, screenY: number): { x: number; y: number } {
     return {
-      x: Math.floor((screenX - camera.x) / camera.scale / TILE),
-      y: Math.floor((screenY - camera.y) / camera.scale / TILE),
+      x: (screenX - camera.x) / camera.scale / TILE,
+      y: (screenY - camera.y) / camera.scale / TILE,
     };
+  }
+
+  /** 轻点：命中优先级是纯函数给的（人 > 空床 > 地面），这里只负责查表和分派。 */
+  function dispatchTap(screenX: number, screenY: number): void {
+    if (!scene) return;
+    const point = gridAt(screenX, screenY);
+    const tile = { x: Math.floor(point.x), y: Math.floor(point.y) };
+    const bedNo = scene.bedNoAt(tile.x, tile.y);
+    const state = getState();
+
+    const target = tapTargetFor({
+      point,
+      spots,
+      selfId: state.me?.id,
+      residentId: bedNo !== undefined ? residentOf(state, bedNo) : undefined,
+      bedNo,
+      walkable: scene.isWalkable(tile.x, tile.y),
+    });
+
+    switch (target.kind) {
+      case 'select':
+        handlers.onSelect(target.id);
+        return;
+      case 'lie':
+        handlers.onLie(target.bedNo);
+        return;
+      case 'walk':
+        // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
+        handlers.onClearSelection();
+        handlers.onWalk({ x: target.x, y: target.y });
+        return;
+      default:
+        return;
+    }
   }
 
   function renderFrame(state: ClientState): void {
@@ -297,10 +411,17 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     drawPeople(state, pal, serverNow);
   }
 
+  /**
+   * 表情要在显示期内持续重画，而且**消失的那一帧也得重画一次**——
+   * 否则「最后画过气泡的那帧」会留在画布上（没人走动时 ticker 就不再渲染了）。
+   */
+  let emoteShown = false;
   app.ticker.add(() => {
     const current = getState();
+    const emoteVisible = hasVisibleEmote(current);
     // 有人在动就每帧重画（插值走 ticker，不进 React 的渲染循环）
-    if (current.motion.size > 0) dirty = true;
+    if (current.motion.size > 0 || emoteVisible || emoteShown) dirty = true;
+    emoteShown = emoteVisible;
     if (!dirty) return;
     dirty = false;
     renderFrame(current);
@@ -358,10 +479,10 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     if (pointers.size < 2) pinchDistance = 0;
     if (app.canvas.hasPointerCapture(event.pointerId)) app.canvas.releasePointerCapture(event.pointerId);
 
-    // 轻点（未拖动、时间短）才是「我要去这一格」；拖拽是平移镜头
+    // 轻点（未拖动、时间短）才是一次意图；拖拽是平移镜头
     if (tapStart && pointers.size === 0) {
       const moved = Math.hypot(point.x - tapStart.x, point.y - tapStart.y);
-      if (moved < 8 && Date.now() - tapStart.at < 350) handlers.onWalk(tileAt(point.x, point.y));
+      if (moved < 8 && Date.now() - tapStart.at < 350) dispatchTap(point.x, point.y);
     }
     tapStart = null;
   };

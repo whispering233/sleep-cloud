@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Person } from '../../../shared/protocol';
-import { bedOutline, hourIn, isDaytime, markerRadius, personAlpha, shouldDrawName } from '../rules';
+import {
+  bedOutline,
+  hourIn,
+  isDaytime,
+  markerRadius,
+  PERSON_HIT_TILES,
+  personAlpha,
+  personHit,
+  shouldDrawName,
+  tapTargetFor,
+} from '../rules';
+import type { PersonSpot } from '../rules';
 
 const TILE = 32;
 
@@ -35,6 +46,75 @@ describe('名字与不透明度', () => {
     expect(personAlpha('trace')).toBeLessThan(1);
     expect(personAlpha('roaming')).toBe(1);
     expect(personAlpha('asleep')).toBe(1);
+  });
+});
+
+describe('轻点命中', () => {
+  const upper: PersonSpot = { id: 'u_other', x: 3.2, y: 4.1 };
+  const lower: PersonSpot = { id: 'u_below', x: 3.4, y: 4.4 };
+  const self: PersonSpot = { id: 'u_me', x: 5.5, y: 5.5 };
+
+  it('半径内取 y 最大者（更靠下 = 更靠前，与按 y 排序的遮挡一致）', () => {
+    expect(personHit([upper, lower], { x: 3.3, y: 4.2 }, PERSON_HIT_TILES)?.id).toBe('u_below');
+    expect(personHit([lower, upper], { x: 3.3, y: 4.2 }, PERSON_HIT_TILES)?.id).toBe('u_below');
+    expect(personHit([upper], { x: 5, y: 5 }, PERSON_HIT_TILES)).toBeUndefined();
+  });
+
+  it('半径边界：正好等于半径算命中，超出不算', () => {
+    const spot: PersonSpot = { id: 'u_a', x: 0, y: 0 };
+    expect(personHit([spot], { x: PERSON_HIT_TILES, y: 0 }, PERSON_HIT_TILES)?.id).toBe('u_a');
+    expect(personHit([spot], { x: PERSON_HIT_TILES + 0.01, y: 0 }, PERSON_HIT_TILES)).toBeUndefined();
+  });
+
+  it('优先级：人 > 床 > 地面', () => {
+    expect(tapTargetFor({ point: { x: 3.2, y: 4.1 }, spots: [upper], bedNo: 7, walkable: true })).toEqual({
+      kind: 'select',
+      id: 'u_other',
+    });
+    expect(tapTargetFor({ point: { x: 3, y: 3 }, spots: [], bedNo: 7, walkable: true })).toEqual({
+      kind: 'lie',
+      bedNo: 7,
+    });
+    expect(tapTargetFor({ point: { x: 3, y: 3 }, spots: [], walkable: true })).toEqual({ kind: 'walk', x: 3, y: 3 });
+  });
+
+  it('点自己：不做任何动作（即使自己站在空床上）', () => {
+    expect(
+      tapTargetFor({ point: { x: 5.5, y: 5.5 }, spots: [self], selfId: 'u_me', bedNo: 9, walkable: false }),
+    ).toEqual({ kind: 'none' });
+  });
+
+  it('排除自己：自己与别人同时命中时选别人', () => {
+    const spots = [self, { id: 'u_other', x: 5.6, y: 5.4 }];
+    expect(tapTargetFor({ point: { x: 5.5, y: 5.5 }, spots, selfId: 'u_me', walkable: true })).toEqual({
+      kind: 'select',
+      id: 'u_other',
+    });
+  });
+
+  it('空床可以躺（不管有没有主）；床上有人时什么都不做且绝不落成 walk', () => {
+    expect(tapTargetFor({ point: { x: 2, y: 2 }, spots: [], bedNo: 42, walkable: false })).toEqual({
+      kind: 'lie',
+      bedNo: 42,
+    });
+    expect(
+      tapTargetFor({ point: { x: 2, y: 2 }, spots: [], selfId: 'u_me', residentId: 'u_me', bedNo: 42, walkable: false }),
+    ).toEqual({ kind: 'none' });
+    expect(
+      tapTargetFor({ point: { x: 2, y: 2 }, spots: [], residentId: 'u_other', bedNo: 42, walkable: false }),
+    ).toEqual({ kind: 'none' });
+  });
+
+  it('不可走的格子（墙 / 厅外）：什么都不做', () => {
+    expect(tapTargetFor({ point: { x: -1, y: 0 }, spots: [], walkable: false })).toEqual({ kind: 'none' });
+  });
+
+  it('走动的目标是整格（向下取整），不是浮点值——不然服务端会回 3006', () => {
+    expect(tapTargetFor({ point: { x: 3.9, y: 4.2 }, spots: [], walkable: true })).toEqual({
+      kind: 'walk',
+      x: 3,
+      y: 4,
+    });
   });
 });
 

@@ -1,10 +1,21 @@
-import type { DownstreamMessage } from '../shared/protocol';
-import { applyBed, applyChat, applyJoin, applyLeave, applyPos, applySnapshot, applyState, setState } from './store';
+import type { DownstreamMessage, EmoteId } from '../shared/protocol';
+import {
+  applyBed,
+  applyChat,
+  applyEmote,
+  applyJoin,
+  applyLeave,
+  applyPos,
+  applySnapshot,
+  applyState,
+  applyWhisper,
+  setState,
+} from './store';
 
 /**
  * 进入大厅：建连后第一条必须是 `hello`（带场景标识），通过后才收得到快照。
  *
- * 增量事件：`pos` / `join` / `leave` / `state` / `bed` / `chat` 都已接上（`whisper` / `emote` 在后面几张卡）。
+ * 下行消息全部已接上（`error` 的第二版提示映射见卡 18）。
  * 重连语义见 `docs/api/20-api-ws.md` §5（重连后以新的快照为准，不做增量补偿）。
  */
 let active: WebSocket | null = null;
@@ -48,8 +59,14 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
       case 'chat':
         applyChat(message);
         return;
+      case 'whisper':
+        applyWhisper(message);
+        return;
+      case 'emote':
+        applyEmote(message);
+        return;
       default:
-        return; // whisper / emote / error 在后续卡片接上
+        return; // error 在卡 18 接上（静默类本就不提示）
     }
   });
 
@@ -72,4 +89,34 @@ export function sendWalk(x: number, y: number): void {
 export function sendChat(text: string): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'chat', text }));
+}
+
+/** 私聊：文本规则与全局聊天相同，由服务端判定。 */
+export function sendWhisper(toId: string, text: string): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'whisper', toId, text }));
+}
+
+/** 表情：一次点击即发（不进二级菜单）。 */
+export function sendEmote(id: EmoteId): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'emote', id }));
+}
+
+/** 躺到某张床上：走过去 + 躺下是服务端的一条复合意图。 */
+export function sendLie(bedNo: number): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'lie', bedNo }));
+}
+
+/** 起身：从床上回到床边站立（服务端决定站在哪一格）。 */
+export function sendRise(): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'rise' }));
+}
+
+/** 手动表示「我睡了」（自动睡着由服务端按时间推导，客户端不需要定时器）。 */
+export function sendSleep(): void {
+  if (active?.readyState !== WebSocket.OPEN) return;
+  active.send(JSON.stringify({ t: 'sleep' }));
 }

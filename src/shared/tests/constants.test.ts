@@ -5,6 +5,7 @@ import {
   BED_OWNERSHIP_TTL_MS,
   CHAT_MAX_LEN,
   CHAT_LOG_MAX,
+  EMOTE_MS,
   GRACE_MS,
   MOVE_MS_PER_TILE,
   NICKNAME_MAX_LEN,
@@ -22,6 +23,7 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(MOVE_MS_PER_TILE).toBe(250);
     expect(SLEEP_TRACE_CLEAR_HOUR).toBe(8);
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(EMOTE_MS).toBe(2500);
   });
 
   it('限制', () => {

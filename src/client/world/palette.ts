@@ -14,6 +14,8 @@ export interface WorldPalette {
   bed: { line: number; trace: number; claimed: number };
   /** 暖灯标记（只用于「是我的」与床头灯） */
   marker: number;
+  /** 名字 / 表情气泡底（令牌 `name-bubble` 的 secondary） */
+  bubble: number;
   ink: number;
   inkMuted: number;
 }
@@ -35,6 +37,7 @@ export function palette(mode: 'day' | 'night'): WorldPalette {
       claimed: color(day ? 'day-claimed' : 'claimed'),
     },
     marker: color(day ? 'tertiary-day' : 'tertiary'),
+    bubble: color(day ? 'day-surface' : 'secondary'),
     ink: color(day ? 'day-ink' : 'neutral'),
     inkMuted: color(day ? 'day-ink-muted' : 'neutral-muted'),
   };

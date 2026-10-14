@@ -114,6 +114,63 @@
     gap: var(--spacing-sm);
   }
 
+  /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉） */
+  .whisper-target {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    color: var(--color-neutral);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--tracking-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+  }
+
+  .whisper-target-clear {
+    min-width: 44px;
+    min-height: 44px;
+    margin-inline-start: auto;
+    color: var(--color-neutral-muted);
+    background-color: transparent;
+    font-size: var(--text-label);
+    border: 0;
+  }
+
+  /* 表情按钮行：常驻在输入行上方，一次点击即发（窄屏放不下就换行） */
+  .emote-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+
+  .emote-button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--spacing-sm);
+    color: var(--color-neutral);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
+  }
+
+  /* 床上动作行：只在自己躺在床上时出现（不躺着时这里没有按钮） */
+  .bed-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  /* 私聊行的「私聊 ·」标记：只给标记降调，行本身的配色仍由 own / other 决定 */
+  .chat-message-kind {
+    color: var(--color-neutral-muted);
+  }
+
   /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽 */
   @media (min-width: 640px) {
     .chat-panel {
@@ -160,7 +217,9 @@
   }
 
   .input-field:focus-visible,
-  .action-primary:focus-visible {
+  .action-primary:focus-visible,
+  .emote-button:focus-visible,
+  .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;
   }

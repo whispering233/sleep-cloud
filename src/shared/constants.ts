@@ -25,6 +25,9 @@ export const SLEEP_TRACE_CLEAR_HOUR = 8;
 /** 归属释放阈值：最后一次出现距今超过 30 天。 */
 export const BED_OWNERSHIP_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** 表情在世界内的显示时长。**只用于客户端渲染时推导过期**，服务端不记状态。 */
+export const EMOTE_MS = 2500;
+
 /** 每连接上行限流（条/秒），超出丢弃。 */
 export const UPSTREAM_RATE_PER_SEC = 5;
 

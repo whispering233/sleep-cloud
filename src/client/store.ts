@@ -1,6 +1,8 @@
 import type {
   BedMessage,
   ChatMessage,
+  EmoteId,
+  EmoteMessage,
   HallInfo,
   JoinMessage,
   LeaveMessage,
@@ -10,18 +12,21 @@ import type {
   SnapshotMessage,
   SelfPerson,
   StateMessage,
+  WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_LOG_MAX } from '../shared/constants';
+import { CHAT_LOG_MAX, EMOTE_MS } from '../shared/constants';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 
-/** 一行聊天消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
+/** 一行消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
 export interface ChatLine {
   id: string;
   name: string;
   text: string;
   ts: number;
   own: boolean;
+  /** 全局消息还是私聊（只影响显示：私聊行加前缀与类名） */
+  kind: 'chat' | 'whisper';
 }
 
 /**
@@ -41,8 +46,12 @@ export interface ClientState {
   motion: Map<string, Motion>;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
-  /** 最近收到的全局消息（只用于显示；服务端不存历史） */
+  /** 最近收到的消息（只用于显示；服务端不存历史） */
   messages: ChatLine[];
+  /** **全局唯一的选中对象**：同时决定名字气泡与私聊目标（见 `docs/ui/DESIGN.md`） */
+  selectedId?: string;
+  /** 人物 id → 表情。过期只靠渲染时比较 `expiresAt`，**不挂定时器** */
+  emotes: Map<string, { emoteId: EmoteId; expiresAt: number }>;
 }
 
 const emptyState = (): ClientState => ({
@@ -52,6 +61,7 @@ const emptyState = (): ClientState => ({
   motion: new Map(),
   clockOffsetMs: 0,
   messages: [],
+  emotes: new Map(),
 });
 
 let state: ClientState = emptyState();
@@ -84,6 +94,8 @@ export function applySnapshot(message: SnapshotMessage): void {
     clockOffsetMs: message.serverTs - Date.now(),
     // 重连以新快照为准、不做增量补偿 → 旧的消息流不保留
     messages: [],
+    selectedId: undefined,
+    emotes: new Map(),
   });
 }
 
@@ -94,8 +106,46 @@ export function applySnapshot(message: SnapshotMessage): void {
 export function applyChat(message: ChatMessage): void {
   const own = state.me?.id === message.id;
   const name = (own ? state.me?.name : state.people.get(message.id)?.name) ?? '某人';
-  const line: ChatLine = { id: message.id, name, text: message.text, ts: message.ts, own };
+  const line: ChatLine = { id: message.id, name, text: message.text, ts: message.ts, own, kind: 'chat' };
   setState({ messages: [...state.messages, line].slice(-CHAT_LOG_MAX) });
+}
+
+/**
+ * 私聊：发送者与接收者收到同一份 payload，收件人靠「发送者是不是我」区分（见 `docs/api/20-api-ws.md` §4.7）。
+ * 名字同样在追加那一刻固化：`own` 时我必然就是发送者（`me.id === fromId`），所以行内 id 一律是发送者。
+ */
+export function applyWhisper(message: WhisperMessage): void {
+  const own = state.me?.id === message.fromId;
+  const name = (own ? state.me?.name : state.people.get(message.fromId)?.name) ?? '某人';
+  const line: ChatLine = {
+    id: message.fromId,
+    name,
+    text: message.text,
+    ts: message.ts,
+    own,
+    kind: 'whisper',
+  };
+  setState({ messages: [...state.messages, line].slice(-CHAT_LOG_MAX) });
+}
+
+/**
+ * 表情：只写「到什么时候为止」，同一个人后来的表情覆盖前一条。
+ * 过期由渲染侧比较 `expiresAt` 推导——**不挂 `setTimeout`/`setInterval`**，内存定时器会让页面无法休眠。
+ */
+export function applyEmote(message: EmoteMessage): void {
+  const emotes = new Map(state.emotes);
+  emotes.set(message.id, { emoteId: message.emoteId, expiresAt: Date.now() + EMOTE_MS });
+  setState({ emotes });
+}
+
+/** 选中某个人：同一时刻只有一个选中对象（所以只有一个名字气泡、一个私聊目标）。 */
+export function selectPerson(id: string): void {
+  setState({ selectedId: id });
+}
+
+/** 取消选中：点地面、点 ×、目标离开都走这里。 */
+export function clearSelection(): void {
+  setState({ selectedId: undefined });
 }
 
 /** 一批权威位置（已合并）→ 插值窗口。 */
@@ -171,7 +221,16 @@ export function applyLeave(message: LeaveMessage): void {
   people.delete(message.id);
   const motion = new Map(state.motion);
   motion.delete(message.id);
-  setState({ people, motion });
+  const patch: Partial<ClientState> = { people, motion };
+  // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）
+  if (state.selectedId === message.id) patch.selectedId = undefined;
+  // 走了就不该再留着他的表情：同一个 id 在 EMOTE_MS 内重连会带着旧气泡复现
+  if (state.emotes.has(message.id)) {
+    const emotes = new Map(state.emotes);
+    emotes.delete(message.id);
+    patch.emotes = emotes;
+  }
+  setState(patch);
 }
 
 /** 床位归属变化：认领或释放（占用完全由「人」的那一类消息派生，不走这里）。 */
