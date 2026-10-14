@@ -49,6 +49,26 @@
 | 2. 部署 | `npm run deploy` 同时更新 Worker 代码与静态资源 |
 | 3. 冒烟检查 | `GET /api/health` 返回 `{"code":"0"}`；打开页面可见；再走完整循环：入场 → 走动 → 躺下 → 另一个客户端确认可见 |
 
+### 4.1 生产入口必须是自定义域名
+
+部署默认给出的 `*.workers.dev` 地址在部分网络里**整个域名的 SNI 被阻断**（本机实测：同一个 Cloudflare IP，SNI 换成 `cloudflare.com` 能握手，换成 `workers.dev` 系列直接收到 TCP RST）。
+
+这条阻断**不能用 hosts 改 IP 绕过**：SNI 是 TLS 明文段，换哪个 IP 都会被同一个中间盒 RST。
+
+| 现象 | 判定 |
+| :--- | :--- |
+| `curl -s https://<worker>.workers.dev/api/health` 返回 `Recv failure: Connection reset by peer`，而 `curl -s http://<worker>.workers.dev/api/health`（同域名、明文 80）返回 `{"code":"0"}` | 部署是好的，被挡的是 `*workers.dev` 的 SNI |
+
+**做法**：给 Worker 加一个自己域名的**自定义域名**（域名需在同账号下），SNI 就变成自己的域名：
+
+```jsonc
+"routes": [{ "pattern": "sleep.<你的域名>", "custom_domain": true }]
+```
+
+或走面板：Workers & Pages → 该 Worker → Settings → Domains & Routes → Add → Custom Domain。
+
+HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带 `Secure`，本地 http 开发才不加。
+
 **部署对已连接用户的影响**：平台在运行时更新时会给出宽限窗口，之后进程可能终止，已建立的连接会被关闭。对应到我们的设计：关闭即进入宽限期，睡痕逻辑照常生效，用户重连后恢复到他的床边或床上。**所以部署是安全的，不需要停服公告。**
 
 ## 5. 免费额度监控（第一版必看）

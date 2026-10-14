@@ -7,7 +7,8 @@
 
 - [x] 一个 Worker 同时提供静态资源与接口；本地一条命令可起、一条命令可部署（`npm run dev` / `npm run deploy`）
 - [x] **验收（本地部分已实测）**：根路径返回占位页；`/api/health` 返回 JSON（证明 `/api/*` 确实落到 Worker）；静态资源由托管层返回（`run_worker_first` 只放行 `/api/*`，所以静态资源请求不计入每日接口额度）
-- [ ] **验收（未完成）**：部署后公网可见 —— 本机还没有平台账号凭据（`wrangler login`）与会话签名密钥
+- [x] **验收（部署已在边缘生效）**：`GET /api/health` 与首页均由云端边缘返回（明文 80 + 正确 Host 头实测通过）
+- [ ] **验收（待自定义域名）**：本机网络对 `*.workers.dev` 整个域名的 SNI 做阻断（TLS 直接 RST，换优选 IP 无效），因此 HTTPS 要能对外访问必须配自定义域名；诊断与做法见 `docs/design/build.md` §4.1
 - [ ] **依赖**：无
 
 ## 卡 8 WebSocket 握手与全量快照
