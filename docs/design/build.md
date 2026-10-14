@@ -35,6 +35,7 @@
 | :--- | :--- |
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管 |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量 |
+| 场景数据 | `public/scenes/{guid}.json` 被前端构建复制到 `dist/scenes/`（客户端从这里取）；服务端在构建时读入同一份文件，不存在第二份副本 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。PixiJS + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。

@@ -9,5 +9,21 @@
     "run_worker_first": [
       "/api/*"
     ]
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HALL",
+        "class_name": "Hall"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Hall"
+      ]
+    }
+  ]
 }

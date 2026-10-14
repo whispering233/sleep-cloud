@@ -17,7 +17,7 @@
 | "1001" | "invalid session" | 会话 cookie 缺失或验签失败 | 静默重新签发会话，不打扰用户 |
 | "1002" | "age confirmation required" | 未完成 18 岁自述确认 | 「进入前请先确认」 |
 | "1003" | "nickname required" | 尚未设置昵称 | 「给自己起个名字吧」 |
-| "1004" | "nickname too long" | 昵称超长 | 「名字最多 16 个字」 |
+| "1004" | "nickname too long" | 昵称长度不在 1~16 之间（含去空白后为空） | 「名字 1~16 个字」 |
 | "1005" | "nickname contains blocked words" | 昵称命中敏感词 | 「这个名字不能用，换一个」 |
 | "1006" | "invalid timezone" | 上报的时区无法识别 | 静默回退到厅时区 |
 | "2001" | "hall not found" | 厅标识不在注册表中 | 「这个大厅不存在」 |

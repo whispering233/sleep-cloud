@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const docsRoot = new URL('../../../docs/', import.meta.url);
-
-/** 读取 `docs/` 下的文档（路径相对 `docs/`）。 */
+/** 读取 `docs/` 下的文档（路径相对 `docs/`；测试从仓库根目录跑）。 */
 export function readDoc(path: string): string {
-  return readFileSync(new URL(path, docsRoot), 'utf8');
+  return readFileSync(join(process.cwd(), 'docs', path), 'utf8');
 }
 
 /**
