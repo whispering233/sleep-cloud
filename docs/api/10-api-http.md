@@ -10,6 +10,9 @@
 | GET | `/api/halls` | 厅列表（大区选择用，含元信息） | 是 |
 | POST | `/api/hall` | 切换所属大区 | 是 |
 | GET | `/api/halls/{hallId}/ws` | WebSocket 升级（进入大厅） | — |
+| GET | `/api/health` | 部署冒烟检查 | 本节 |
+
+`GET /api/health` 不返回任何业务数据，前端不调用：它只用来确认「静态资源之外的路由确实落到了 Worker」。
 
 **没有的接口**：注册、登录、退出、找回床位、删除账号。第一版全部不存在。
 

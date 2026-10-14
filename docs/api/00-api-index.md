@@ -17,6 +17,7 @@
 | GET | `/api/halls` | 厅列表（大区选择） | `10-api-http.md` |
 | POST | `/api/hall` | 切换所属大区 | `10-api-http.md` |
 | GET | `/api/halls/{hallId}/ws` | WebSocket 升级（进入大厅） | `20-api-ws.md` |
+| GET | `/api/health` | 部署冒烟检查（无业务数据） | `10-api-http.md` |
 
 ## WebSocket 协议
 

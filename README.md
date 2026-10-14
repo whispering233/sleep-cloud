@@ -4,7 +4,7 @@
 
 睡不着的人可以来这里躺下、走动、看看别人，也看看那些已经睡着的人。
 
-> **当前状态：设计阶段。** 仓库里只有设计文档与项目骨架，尚无可运行代码。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
+> **当前状态：开发中。** 骨架已经可跑（`npm run dev`），大厅业务功能尚未实现。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
 
 ## 它是什么
 
@@ -79,6 +79,15 @@
 ```bash
 npx @google/design.md lint docs/ui/DESIGN.md
 npx @google/design.md export docs/ui/DESIGN.md --format css-tailwind
+```
+
+本地运行与部署：
+
+```bash
+npm install
+npm run dev        # 本地起 Worker + 静态资源 + 房间服务（http://localhost:8787）
+npm run typecheck
+npm run deploy     # 部署（需先有平台账号凭据）
 ```
 
 ## 许可

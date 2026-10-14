@@ -75,15 +75,22 @@
 
 ## 常用命令
 
-代码尚未初始化。以下命令现在即可用：
-
 ```
+# 本地运行（Worker + 房间服务 + SQLite + 静态资源，默认 http://localhost:8787）
+npm run dev
+
+# 类型检查
+npm run typecheck
+
+# 部署（需要平台的账号凭据，见 docs/design/build.md §4）
+npm run deploy
+
 # 视觉令牌校验与导出（0 error / 0 warning 是当前基线）
 npx @google/design.md lint docs/ui/DESIGN.md
 npx @google/design.md export docs/ui/DESIGN.md --format css-tailwind
 ```
 
-本地运行、构建、部署命令在代码初始化后补入本文件，并同步到 `docs/design/build.md`。
+完整说明（含构建产物与额度监控）见 `docs/design/build.md`。前端工程尚未建立，静态资源目录当前是手写的 `./public`。
 
 ## 版本与变更
 

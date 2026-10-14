@@ -11,6 +11,10 @@
 
 ### Added
 
+- 项目骨架：单个 Worker 同时托管前端静态资源（平台免费且不计请求额度）与 `/api/*` 接口
+- `GET /api/health`：部署冒烟检查用的健康检查接口
+- 本地开发、类型检查与部署命令（`npm run dev` / `npm run typecheck` / `npm run deploy`）
+
 ### Changed
 
 ### Fixed

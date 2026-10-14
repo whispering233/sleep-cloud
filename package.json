@@ -1,0 +1,25 @@
+{
+  "name": "sleep-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "跑在 Cloudflare 上的线上睡眠大厅",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whispering233/sleep-cloud.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261014.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.151.0"
+  }
+}
