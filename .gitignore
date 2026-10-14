@@ -1,5 +1,17 @@
 node_modules/
 .wrangler/
 dist/
+
+# 密钥与本地变量：绝不入库（wrangler dev 会读 .dev.vars 与 .env）
 .dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+
+# 构建生成物（`npm run tokens` 从 docs/ui/DESIGN.md 导出）
 src/client/styles/tokens.css
+
+# 系统与编辑器垃圾
+.DS_Store
+*.log
