@@ -44,10 +44,19 @@
     background-color: var(--color-primary);
   }
 
-  .hud {
+  /* 顶部区域（HUD + 提示条）是同一条自上而下的流：提示条不必去猜 HUD 有多高 */
+  .hud-stack {
     position: absolute;
     inset-block-start: 0;
     inset-inline: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    /* 顶部只放文字信息：不吃「点地面走路」的点击 */
+    pointer-events: none;
+  }
+
+  .hud {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
@@ -55,9 +64,25 @@
     padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
       calc(env(safe-area-inset-right) + var(--spacing-md));
     color: var(--color-neutral-muted);
+    background-color: var(--color-primary);
     font-size: var(--text-caption);
     line-height: var(--text-caption--line-height);
     letter-spacing: var(--tracking-caption);
+  }
+
+  /* 白天组：只换令牌，不动布局与排版（昼夜切换不换任何资源） */
+  .hud-day {
+    color: var(--color-day-ink-muted);
+    background-color: var(--color-day-bg);
+  }
+
+  /* HUD 里的数值（床号、在线人数）用等宽：数字跳动时不推挤旁边的文字 */
+  .hud-numeric {
+    font-family: var(--font-numeric);
+    font-size: var(--text-numeric);
+    font-weight: var(--font-weight-numeric);
+    line-height: var(--text-numeric--line-height);
+    letter-spacing: var(--tracking-numeric);
   }
 
   .world-canvas {
@@ -317,5 +342,50 @@
     font-family: var(--font-label);
     font-size: var(--text-label);
     letter-spacing: var(--tracking-label);
+  }
+
+  /* ——— 提示条：只对可恢复错误出现，几秒后自行消失 ——— */
+
+  /* 动画末帧停在透明，`animationend` 一到组件就自己卸下（见 `Toast.tsx`，那边不挂定时器） */
+  @keyframes toast-recoverable-fade {
+    0% {
+      opacity: 0;
+    }
+
+    5% {
+      opacity: 1;
+    }
+
+    85% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .toast-host {
+    display: flex;
+    justify-content: center;
+    padding-inline: var(--spacing-lg);
+  }
+
+  .toast-recoverable {
+    width: fit-content;
+    max-width: 100%;
+    padding: var(--spacing-sm);
+    color: var(--color-alert);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--tracking-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+    /* 提示条不是操作目标：挡住地面就会让「点一下走路」在几秒内失效 */
+    pointer-events: none;
+    animation: toast-recoverable-fade 4s ease-out both;
   }
 }

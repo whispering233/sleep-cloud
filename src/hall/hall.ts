@@ -37,7 +37,7 @@ import type { SceneGrid } from './scene';
 import { createDueHeap } from './scheduler';
 import type { DueEvent } from './scheduler';
 import { consumeUpstream } from './rate-limit';
-import { buildSnapshot, splitLive } from './snapshot';
+import { buildSnapshot, onlineCountOf, splitLive } from './snapshot';
 import type { OfflineOccupantRow } from './snapshot';
 
 /**
@@ -168,8 +168,9 @@ export class Hall extends DurableObject<Env> {
         this.due.remove('grace', ready.userId);
         this.armAutoSleep(ready);
         ws.send(JSON.stringify(await this.snapshotFor(ws, ready)));
-        // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）
-        this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready) });
+        // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）。
+        // 此刻新连接已经 ready，所以人数算上他自己
+        this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready), online: this.onlineCount() });
         return;
       }
     }
@@ -478,7 +479,12 @@ export class Hall extends DurableObject<Env> {
 
   /** 某人的显示态变化：发给所有人（**包括本人**——自己的 `me` 也要跟着变）。 */
   private broadcastState(connection: ConnectionState): void {
-    this.broadcast({ t: 'state', id: connection.userId, ...placementOf(connection) });
+    this.broadcast({
+      t: 'state',
+      id: connection.userId,
+      ...placementOf(connection),
+      online: this.onlineCount(),
+    });
   }
 
   /**
@@ -683,7 +689,9 @@ export class Hall extends DurableObject<Env> {
     this.stopWalking(connection.userId);
     this.due.remove('autosleep', connection.userId); // 人已经不在线，「该不该睡着」不再适用于他
     if (connection.bedNo === undefined) {
-      this.broadcast({ t: 'leave', id: connection.userId });
+      // 要排除**正在关闭的这一条**：平台在关闭事件里仍会把它列在 `getWebSockets()` 里，
+      // 不排除就会把自己也算成在线
+      this.broadcast({ t: 'leave', id: connection.userId, online: this.onlineCount(ws) });
     } else {
       // 在床上：不发 leave，等宽限到期后由床位行推导转成睡痕
       this.due.upsert({ kind: 'grace', userId: connection.userId, at: now + GRACE_MS });
@@ -744,7 +752,21 @@ export class Hall extends DurableObject<Env> {
    */
   private markTrace(bedNo: number, userId: string, tracedAt: number): void {
     setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
-    this.broadcast({ t: 'state', id: userId, state: 'trace', bedNo });
+    // 床上的人断线不广播任何东西，人数降下来就发生在这一条上（宽限到期转睡痕）
+    this.broadcast({ t: 'state', id: userId, state: 'trace', bedNo, online: this.onlineCount() });
+  }
+
+  /**
+   * 在线人数：**按人去重**的已握手连接数（与快照同一份实现）。`except` 用于排除正在关闭的那条连接
+   * （`webSocketClose` 里平台还会列出它）。只数内存里的连接，不查库、不做整表读。
+   */
+  private onlineCount(except?: WebSocket): number {
+    return onlineCountOf(
+      this.ctx
+        .getWebSockets()
+        .filter((ws) => ws !== except)
+        .map((ws) => ({ connection: readConnection(ws) })),
+    );
   }
 
   /** 在线的用户标识（只算握过手的连接）：问「这个人还在不在线」用。 */
@@ -852,9 +874,11 @@ export class Hall extends DurableObject<Env> {
 
     // 睡痕清掉 = 这个人从别人的 people 里消失（床仍是他的，淡轮廓留着）；
     // 先睡痕后归属的次序由 `cleanupMessages` 保证（两者都命中同一张床时，先 leave 再 bed）
+    // 睡痕都在离线状态（有连接就不会是 trace），人数不因清理而变化：取当前值即可
     const messages = cleanupMessages(
       traces.map((trace) => trace.ownerUserId),
       released,
+      this.onlineCount(),
     );
     for (const message of messages) this.broadcast(message);
   }
@@ -898,6 +922,7 @@ export class Hall extends DurableObject<Env> {
         self: other === ws,
         connection: readConnection(other),
       })),
+      me.userId,
     );
 
     const sql = this.ctx.storage.sql;

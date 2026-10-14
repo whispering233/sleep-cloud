@@ -70,14 +70,17 @@ function cleanupAt(timezone: string, now: number, direction: 1 | -1): number {
  * 归属释放逐床一条 `bed`（`owned: false`，轮廓消失）。
  *
  * 归属为空的历史睡痕行跳过——**不能发出 `id: null`**；两个任务都没命中时（补跑是常态）返回空数组。
+ *
+ * `leave` 也带 `online`（与 §4 一致）：睡痕本来就不在线，所以这个数是当下的人数，清理不改变它。
  */
 export function cleanupMessages(
   traceOwners: readonly (string | null)[],
   releasedBedNos: readonly number[],
+  online: number,
 ): DownstreamMessage[] {
   const messages: DownstreamMessage[] = [];
   for (const owner of traceOwners) {
-    if (owner !== null) messages.push({ t: 'leave', id: owner });
+    if (owner !== null) messages.push({ t: 'leave', id: owner, online });
   }
   for (const bedNo of releasedBedNos) messages.push({ t: 'bed', bedNo, owned: false });
   return messages;

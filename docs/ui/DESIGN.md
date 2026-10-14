@@ -130,16 +130,13 @@ components:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.neutral-muted}"
     typography: "{typography.caption}"
-    rounded: "{rounded.sm}"
     padding: "{spacing.sm}"
   hud-day:
     backgroundColor: "{colors.day-bg}"
     textColor: "{colors.day-ink-muted}"
     typography: "{typography.caption}"
-    rounded: "{rounded.sm}"
     padding: "{spacing.sm}"
   hud-numeric:
-    textColor: "{colors.neutral-muted}"
     typography: "{typography.numeric}"
   primary-action:
     backgroundColor: "{colors.neutral}"
@@ -279,7 +276,7 @@ components:
 ## Shapes
 
 - **线稿是等宽的**：小人、床、装饰、场景结构用同一线宽，靠形态区分，不靠粗细。
-- 圆角只出现在界面控件上：`sm` 用于小标记与 HUD，`md` 用于面板与输入框，`lg` 用于入场层，`full` 用于主要操作按钮。
+- 圆角只出现在界面控件上：`sm` 用于小标记，`md` 用于面板与输入框，`lg` 用于入场层，`full` 用于主要操作按钮。HUD 是贴顶的通栏，不画圆角。
 - 小人造型使用**圆头 + 点眼 + 简化四肢**的线稿形态；躺下时以「被子盖住身体、只露脸」表达。这是整套视觉里辨识度最高的一笔，不要改。
 
 ## Components
@@ -308,10 +305,10 @@ components:
 - **`marker-own` 有最小屏幕尺寸下限**：缩小时不得消失，否则「找不到我的床」
 | `chat-panel` / `chat-panel-day` | 常驻底部的聊天面板。自己的消息用 `neutral`，别人的用 `neutral-muted` |
 | `chat-message-own` / `chat-message-other` | 消息条目。系统提示（有人离开等）用 `caption` 与 `neutral-muted` |
-| `hud` / `hud-day` / `hud-numeric` | 角落的极简信息：大区名、自己床号、在线人数、当前昼夜 |
+| `hud` / `hud-day` / `hud-numeric` | 贴顶通栏的极简信息：大区名、自己床号、在线人数、当前昼夜。**还没有床时不显示床号项**，白天的数值用 `hud-numeric` 等宽字体 |
 | `entry-overlay` | 入场层：昵称输入 + 18 岁自述 + 大区选择，一次走完 |
 | `primary-action` / `text-input` | 入场与聊天输入的主要操作与输入框 |
-| `toast-recoverable` | **只对可恢复错误显示**（床位被占、名字不能用、消息过长）。静默类错误不显示 |
+| `toast-recoverable` | **只对可恢复错误显示**（床位被占、名字不能用、消息过长）。静默类错误不显示；出现过几秒后自行消失，不需要用户关掉它 |
 | `presence-dot` | 「有人在线」的极小面积点缀 |
 | `name-bubble` | **选中对象的名字气泡**（见下）：表情气泡用同一套底色与形状，靠里面的内容区分（一个是名字，一个是表情短标签） |
 | `whisper-target` | 私聊目标行：选中某个人后出现在聊天输入行上方（「私聊 阿夜 ×」），点 × 取消选中；此后面板发出的是私聊 |

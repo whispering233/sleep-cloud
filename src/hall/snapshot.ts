@@ -52,20 +52,43 @@ function personFromRow(row: TracePersonRow, state: 'lying' | 'asleep' | 'trace')
 }
 
 /**
+ * 「在线人数」的定义**只有这一处**：按 `userId` 去重的、已握手（ready）的连接数。
+ *
+ * 为什么按人去重、而不直接数连接：同一个人开新标签页时，旧连接由服务端 `close()`，但平台的
+ * `getWebSockets()` 要等关闭事件派发后才摘掉它——那段窗口里数连接会把同一个人算两次，
+ * 而且没有后续消息会纠正它（旧连接的 close 处理以为自己被顶掉，直接早退、不发 `leave`）。
+ * 未握手的连接不算数（还没向厅里宣布自己）。
+ */
+export function onlineCountOf(live: ReadonlyArray<{ connection: ConnectionState | null }>): number {
+  const ids = new Set<string>();
+  for (const item of live) {
+    if (item.connection?.ready) ids.add(item.connection.userId);
+  }
+  return ids.size;
+}
+
+/**
  * 把活着的连接分成「在线人数」与「别人的列表」：
- * 未握手的连接不算数（还没向厅里宣布自己），自己只计数、不进 `people`（自己在 `me` 里）。
+ * 人数口径与 `onlineCountOf` 共用同一份实现；自己只计数、不进 `people`（自己在 `me` 里）。
+ *
+ * `selfId` 用来排掉**同一个人的其它连接**（开新标签页时旧连接还没被平台摘掉）：
+ * 不排掉的话新快照的 `people` 里会出现一条 id 就是自己的条目，而且没有后续消息能纠正它
+ * （旧连接的 close 会早退不发 `leave`，`join` 只发给别人，客户端对 `id === me.id` 的 `state` 也不动 `people`）。
  */
 export function splitLive(
   live: Array<{ self: boolean; connection: ConnectionState | null }>,
+  selfId?: string,
 ): { online: number; others: ConnectionState[] } {
   const others: ConnectionState[] = [];
-  let online = 0;
+  const seen = new Set<string>();
   for (const item of live) {
-    if (!item.connection?.ready) continue;
-    online += 1;
-    if (!item.self) others.push(item.connection);
+    const connection = item.connection;
+    if (!connection?.ready || item.self || connection.userId === selfId) continue;
+    if (seen.has(connection.userId)) continue; // 同一个人的旧连接只留一条
+    seen.add(connection.userId);
+    others.push(connection);
   }
-  return { online, others };
+  return { online: onlineCountOf(live), others };
 }
 
 /**

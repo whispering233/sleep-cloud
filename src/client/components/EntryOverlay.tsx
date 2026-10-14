@@ -1,21 +1,12 @@
-import { NICKNAME_MAX_LEN } from '../../shared/constants';
 import type { HallSummary, SessionView } from '../../shared/http-api';
 import { confirmAge, setNickname, switchHall } from '../api';
+import { ERROR_FALLBACK_TEXT, errorTextFor } from '../error-text';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
 import { useState } from 'react';
 
-/** 入场层专用文案（通用的错误码到文案映射在错误反馈层）。 */
-const ERROR_TEXT: Record<string, string> = {
-  '1002': '进入前请先确认',
-  '1004': `名字最多 ${NICKNAME_MAX_LEN} 个字`,
-  '1005': '这个名字不能用，换一个',
-  '2001': '这个大厅不存在',
-  '2002': '这个大厅满了，换个厅试试',
-  '9001': '出了点问题，稍后再试',
-};
-
-const errorText = (code: string) => ERROR_TEXT[code] ?? '出了点问题，稍后再试';
+/** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
+const errorText = (code: string) => errorTextFor(code) ?? ERROR_FALLBACK_TEXT;
 
 /** 浏览器本地时区（服务端无从得知，必须由客户端上报一次）。 */
 const localTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
@@ -65,7 +56,7 @@ export function EntryOverlay({ session, halls, onDone }: EntryOverlayProps) {
       if (hallId !== current.hallId) current = await runStep(() => switchHall(hallId), current);
       onDone(current);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '出了点问题，稍后再试');
+      setError(cause instanceof Error ? cause.message : ERROR_FALLBACK_TEXT);
     } finally {
       setBusy(false);
     }

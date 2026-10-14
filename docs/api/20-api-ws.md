@@ -68,15 +68,21 @@
 | t | 字段 | 何时发送 |
 | :--- | :--- | :--- |
 | `snapshot` | 见 §4.1 | 握手完成后（进入或重连） |
-| `join` | `id`, `name`, `appearance`, `state`, `x`, `y`, `bedNo` | 有人进入厅。**只发给其他人**：自己不需要收到自己的 `join`（自己在 `snapshot.me` 里，`people` 也不含自己） |
-| `leave` | `id` | 有人离开厅（**不在床上的人一断线就发**；或睡痕被清理） |
-| `state` | `id`, `state`, `bedNo`, `x`, `y` | 某人显示态变化：躺下、起床、睡着、变成睡痕、睡痕恢复。**也发给本人**——自己的 `me` 要跟着变（`people` 里不含自己，收不到就永远不知道自己躺下了） |
+| `join` | `id`, `name`, `appearance`, `state`, `x`, `y`, `bedNo`, `online` | 有人进入厅。**只发给其他人**：自己不需要收到自己的 `join`（自己在 `snapshot.me` 里，`people` 也不含自己） |
+| `leave` | `id`, `online` | 有人离开厅（**不在床上的人一断线就发**；或睡痕被清理） |
+| `state` | `id`, `state`, `bedNo`, `x`, `y`, `online` | 某人显示态变化：躺下、起床、睡着、变成睡痕、睡痕恢复。**也发给本人**——自己的 `me` 要跟着变（`people` 里不含自己，收不到就永远不知道自己躺下了） |
 | `pos` | `ts`, `items` | 位置节拍（每 100 ms 一条，**已合并**） |
 | **`bed`** | `bedNo`, `owned` | **床位归属变化**：某张床被认领（`owned: true`）或归属被释放（`owned: false`）（见 §4.5） |
 | `chat` | `id`, `text`, `ts` | 全局消息（发给厅内所有人，**含发送者本人**） |
 | `whisper` | `fromId`, `toId`, `text`, `ts` | 私聊：**只发给发送者与接收者，两边各一条**，第三人零流量 |
 | `emote` | `id`, `emoteId` | 表情：广播给厅内所有人（含自己），显示时长由客户端决定 |
 | `error` | `code` | 见 `error-code.md` |
+
+**`online`（在线人数）只挂在会改变它的三条消息上**：`join` / `leave` / `state`（外加 `snapshot` 里的 `hall.online`）。
+
+它是**服务端的事实**，客户端从 `people` 推导不出来：`people` 里既有睡痕（人已离线），也有床上断线、还在宽限期里的人——两者都不是在线，但客户端分辨不出。
+
+`state` 也必须带着它，因为**床上的人断线不广播任何东西**：人数降下来的唯一时点是宽限到期转睡痕（或睡痕醒来重连）那一条 `state`。
 
 ### 4.1 snapshot（全量，仅进入/重连时一次）
 
@@ -243,9 +249,9 @@ people        ：可见的人 Map<id, { name, state, x, y, bedNo? }>
 | 收到 | 动作 |
 | :--- | :--- |
 | `snapshot` | 用服务端内容整体覆盖三块状态 |
-| `join` | 插入/覆盖 `people` 条目 |
-| `leave` | 删除 `people` 条目（该床上的占用随之消失） |
-| `state` | 更新 `people` 条目的显示态（含 `trace`） |
+| `join` | 插入/覆盖 `people` 条目；把 `hall.online` 刷新为消息里的值 |
+| `leave` | 删除 `people` 条目（该床上的占用随之消失）；刷新 `hall.online` |
+| `state` | 更新 `people` 条目的显示态（含 `trace`）；刷新 `hall.online` |
 | `pos` | 更新 `people` 条目的位置，按 `ts` 插值 |
 | `bed` | 更新 `ownedBeds` 集合：`owned` 为真则加入，`false` 则移出 |
 | `chat` / `whisper` / `emote` | 追加到消息流或触发世界内表现。**追加时就把发送者当时的名字固化到该行**（否则对方离开后去 `people` 里查不到，那行的名字会变空） |

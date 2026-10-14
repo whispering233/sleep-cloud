@@ -3,6 +3,7 @@ import {
   applyBed,
   applyChat,
   applyEmote,
+  applyError,
   applyJoin,
   applyLeave,
   applyPos,
@@ -15,7 +16,7 @@ import {
 /**
  * 进入大厅：建连后第一条必须是 `hello`（带场景标识），通过后才收得到快照。
  *
- * 下行消息全部已接上（`error` 的第二版提示映射见卡 18）。
+ * 下行消息全部已接上（`error` 交给文案层：静默类错误什么都不做，可恢复类才出提示条）。
  * 重连语义见 `docs/api/20-api-ws.md` §5（重连后以新的快照为准，不做增量补偿）。
  */
 let active: WebSocket | null = null;
@@ -65,8 +66,11 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
       case 'emote':
         applyEmote(message);
         return;
+      case 'error':
+        applyError(message.code);
+        return;
       default:
-        return; // error 在卡 18 接上（静默类本就不提示）
+        return; // 未知类型直接忽略：服务端可能先上了新消息，前端不该为此崩掉
     }
   });
 

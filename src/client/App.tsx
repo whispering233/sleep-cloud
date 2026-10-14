@@ -4,6 +4,8 @@ import type { HallSummary, SessionView } from '../shared/http-api';
 import { loadHalls, loadSession } from './api';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
+import { Hud } from './components/Hud';
+import { Toast } from './components/Toast';
 import { WorldCanvas } from './components/WorldCanvas';
 import { connectHall } from './ws';
 
@@ -44,10 +46,11 @@ export function App() {
 
       {entered ? (
         <>
-          <header className="hud">
-            <span>{hall?.name ?? ''}</span>
-            {session?.nickname ? <span>{session.nickname}</span> : null}
-          </header>
+          <div className="hud-stack">
+            <Hud />
+
+            <Toast />
+          </div>
 
           <ChatPanel />
         </>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HALLS } from '../../shared/hall-registry';
 import type { ConnectionState } from '../connection';
-import { buildSnapshot, splitLive } from '../snapshot';
+import { buildSnapshot, onlineCountOf, splitLive } from '../snapshot';
 import type { TracePersonRow } from '../snapshot';
 
 const HALL = HALLS[0];
@@ -150,21 +150,58 @@ describe('在线人数与别人的列表', () => {
   const ready = connection({ userId: 'u_ready' });
   const notReady = connection({ userId: 'u_not_ready', ready: false });
 
-  it('自己只计数、不进 others；未握手的连接不算数（自己不会算两次）', () => {
+  it('自己只计数、不进 others；未握手的连接不算数', () => {
+    const me = connection(); // 自己的 userId 是 u_me，与下面的 u_ready 不同人
     expect(
       splitLive([
-        { self: true, connection: ready },
+        { self: true, connection: me },
         { self: false, connection: ready },
         { self: false, connection: notReady },
         { self: false, connection: null },
       ]),
     ).toEqual({ online: 2, others: [ready] });
 
-    expect(splitLive([{ self: true, connection: ready }])).toEqual({ online: 1, others: [] });
+    expect(splitLive([{ self: true, connection: me }])).toEqual({ online: 1, others: [] });
   });
 
   it('空厅是 0 人', () => {
     expect(splitLive([])).toEqual({ online: 0, others: [] });
+  });
+
+  it('同一个人两条连接只算一人（旧连接被顶掉前还在连接列表里）', () => {
+    const older = connection({ userId: 'u_ready' });
+    expect(onlineCountOf([{ connection: ready }, { connection: older }])).toBe(1);
+    expect(splitLive([
+      { self: false, connection: ready },
+      { self: false, connection: older },
+    ]).online).toBe(1);
+  });
+
+  it('未握手的连接不算人数', () => {
+    expect(onlineCountOf([{ connection: notReady }, { connection: null }])).toBe(0);
+  });
+
+  it('同一个人的其它连接不进 others（开新标签页时旧连接还没被摘掉）', () => {
+    const mine = connection(); // 自己的 userId 是 u_me
+    const olderMe = connection();
+    const { online, others } = splitLive(
+      [
+        { self: true, connection: mine },
+        { self: false, connection: olderMe },
+        { self: false, connection: ready },
+      ],
+      mine.userId,
+    );
+    expect(online).toBe(2);
+    expect(others).toEqual([ready]);
+  });
+
+  it('别人的两条连接只进 others 一次', () => {
+    const first = connection({ userId: 'u_other' });
+    const second = connection({ userId: 'u_other' });
+    expect(splitLive([{ self: false, connection: first }, { self: false, connection: second }]).others).toEqual([
+      first,
+    ]);
   });
 });
 

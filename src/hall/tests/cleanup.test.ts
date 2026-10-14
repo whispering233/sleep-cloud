@@ -128,20 +128,20 @@ describe('注册表里每个厅时区都算得出 08:00（含无夏令时的上�
 });
 
 describe('清理要发的下行消息', () => {
-  it('睡痕逐人一条 leave，归属释放逐床一条 bed，且先睡痕后归属', () => {
-    expect(cleanupMessages(['u_a', 'u_b'], [7, 9])).toEqual([
-      { t: 'leave', id: 'u_a' },
-      { t: 'leave', id: 'u_b' },
+  it('睡痕逐人一条 leave（带当下人数），归属释放逐床一条 bed，且先睡痕后归属', () => {
+    expect(cleanupMessages(['u_a', 'u_b'], [7, 9], 5)).toEqual([
+      { t: 'leave', id: 'u_a', online: 5 },
+      { t: 'leave', id: 'u_b', online: 5 },
       { t: 'bed', bedNo: 7, owned: false },
       { t: 'bed', bedNo: 9, owned: false },
     ]);
   });
 
   it('归属为空的历史睡痕行不发 leave（不能发出 id: null）', () => {
-    expect(cleanupMessages([null, 'u_a'], [])).toEqual([{ t: 'leave', id: 'u_a' }]);
+    expect(cleanupMessages([null, 'u_a'], [], 0)).toEqual([{ t: 'leave', id: 'u_a', online: 0 }]);
   });
 
   it('两个任务都没命中时不发任何消息（实例重建的补跑是常态）', () => {
-    expect(cleanupMessages([], [])).toEqual([]);
+    expect(cleanupMessages([], [], 12)).toEqual([]);
   });
 });

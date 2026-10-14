@@ -58,15 +58,21 @@ export interface SnapshotMessage {
   people: Person[];
 }
 
-export type JoinMessage = { t: 'join' } & Person;
+/**
+ * `online` 是**服务端算出来的事实**（**按用户去重后的**已握手人数），客户端从 `people` 推导不出来：
+ * `people` 里既有睡痕（人已离线），也有床上断线、还在宽限期内的人——两者都不是在线。
+ * 所以它只挂在会改变它的三条下行消息上（见 `docs/api/20-api-ws.md` §4）。
+ */
+export type JoinMessage = { t: 'join'; online: number } & Person;
 
 export interface LeaveMessage {
   t: 'leave';
   id: string;
+  online: number;
 }
 
 /** 某人显示态变化：躺下、起床、睡着、变成睡痕、睡痕恢复。不携带名字与外观。 */
-export type StateMessage = { t: 'state'; id: string } & PersonPlacement;
+export type StateMessage = { t: 'state'; id: string; online: number } & PersonPlacement;
 
 /** 位置节拍（每 100 ms 一条，已合并）：`[用户id, x, y, 朝向]`。 */
 export interface PosMessage {

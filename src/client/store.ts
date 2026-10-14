@@ -15,6 +15,7 @@ import type {
   WhisperMessage,
 } from '../shared/protocol';
 import { CHAT_LOG_MAX, EMOTE_MS } from '../shared/constants';
+import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 
@@ -27,6 +28,12 @@ export interface ChatLine {
   own: boolean;
   /** 全局消息还是私聊（只影响显示：私聊行加前缀与类名） */
   kind: 'chat' | 'whisper';
+}
+
+/** 一条错误提示：文案已按错误码翻译好，提示条只负责显示它。 */
+export interface Notice {
+  id: number;
+  text: string;
 }
 
 /**
@@ -48,6 +55,11 @@ export interface ClientState {
   clockOffsetMs: number;
   /** 最近收到的消息（只用于显示；服务端不存历史） */
   messages: ChatLine[];
+  /**
+   * 可恢复错误的提示条（静默类错误不写这里）。`id` 自增是为了让提示条重新挂载、
+   * CSS 动画从头播——动画结束由 `animationend` 清掉，不挂定时器。
+   */
+  notice?: Notice;
   /** **全局唯一的选中对象**：同时决定名字气泡与私聊目标（见 `docs/ui/DESIGN.md`） */
   selectedId?: string;
   /** 人物 id → 表情。过期只靠渲染时比较 `expiresAt`，**不挂定时器** */
@@ -177,6 +189,15 @@ function withPlacement(person: Person, placement: PersonPlacement): Person {
   return { id: person.id, name: person.name, appearance: person.appearance, ...placement };
 }
 
+/**
+ * 在线人数是**服务端的事实**（`people` 里既有睡痕、也有还在宽限期的床上离线者，客户端分辨不出来），
+ * 所以 `join` / `leave` / `state` 每条都带着它。快照之前 `hall` 还没到，那就先不动（不凭空造一个厅）。
+ */
+function onlinePatch(online: number): Partial<ClientState> {
+  const hall = state.hall;
+  return hall ? { hall: { ...hall, online } } : {};
+}
+
 /** 有人进厅：插入条目（同 id 重复到达就覆盖，天然幂等）。 */
 export function applyJoin(message: JoinMessage): void {
   const people = new Map(state.people);
@@ -188,7 +209,7 @@ export function applyJoin(message: JoinMessage): void {
   });
   const motion = new Map(state.motion);
   motion.delete(message.id); // 新出现的人先落位，插值从下一批 pos 开始
-  setState({ people, motion });
+  setState({ people, motion, ...onlinePatch(message.online) });
 }
 
 /** 某人显示态变化（躺下 / 睡着 / 变睡痕 / 起身）。名字与外观不变。 */
@@ -203,16 +224,20 @@ export function applyState(message: StateMessage): void {
     // 归属与占用是两个维度：在床上时床号就是我的床；起身后归属位继续留着（暖灯标记不能丢）
     const ownedBedNo = placement.state === 'roaming' ? state.me.ownedBedNo : placement.bedNo;
     if (ownedBedNo !== undefined) next.ownedBedNo = ownedBedNo;
-    setState({ me: next, motion });
+    setState({ me: next, motion, ...onlinePatch(message.online) });
     return;
   }
 
   const person = state.people.get(message.id);
-  if (!person) return; // 没见过的人：等 join 或下一次快照（TCP 有序，正常不会发生）
+  if (!person) {
+    // 没见过的人：等 join 或下一次快照（TCP 有序，正常不会发生）；人数这一条仍要落下来
+    setState(onlinePatch(message.online));
+    return;
+  }
 
   const people = new Map(state.people);
   people.set(message.id, withPlacement(person, placement));
-  setState({ people, motion });
+  setState({ people, motion, ...onlinePatch(message.online) });
 }
 
 /** 有人离开厅（宽限超时且不在床上；或睡痕被清理）。 */
@@ -221,7 +246,7 @@ export function applyLeave(message: LeaveMessage): void {
   people.delete(message.id);
   const motion = new Map(state.motion);
   motion.delete(message.id);
-  const patch: Partial<ClientState> = { people, motion };
+  const patch: Partial<ClientState> = { people, motion, ...onlinePatch(message.online) };
   // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）
   if (state.selectedId === message.id) patch.selectedId = undefined;
   // 走了就不该再留着他的表情：同一个 id 在 EMOTE_MS 内重连会带着旧气泡复现
@@ -231,6 +256,20 @@ export function applyLeave(message: LeaveMessage): void {
     patch.emotes = emotes;
   }
   setState(patch);
+}
+
+/** 提示条自增序号：只增不减，保证新提示的 `id` 必然不同（同一条文案也可能连着来两次）。 */
+let noticeSeq = 0;
+
+/**
+ * 可恢复错误的提示：**只有文案层给得出文案的码才写 `notice`**，静默类什么都不做
+ * （点墙、重复躺下这类失败用户无法处理，弹提示只会让他更焦虑，见 `docs/api/error-code.md` §3）。
+ */
+export function applyError(code: string): void {
+  const text = errorTextFor(code);
+  if (text === undefined) return;
+  noticeSeq += 1;
+  setState({ notice: { id: noticeSeq, text } });
 }
 
 /** 床位归属变化：认领或释放（占用完全由「人」的那一类消息派生，不走这里）。 */
