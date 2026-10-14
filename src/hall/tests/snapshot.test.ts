@@ -32,6 +32,7 @@ describe('快照组装', () => {
       serverTs: 1000,
       online: 1,
       me: connection(),
+      myOwnedBedNo: null,
       others: [],
       ownedBeds: [],
       traceRows: [],
@@ -55,6 +56,7 @@ describe('快照组装', () => {
       serverTs: 1000,
       online: 1,
       me: connection(),
+      myOwnedBedNo: null,
       others: [],
       ownedBeds: [5],
       traceRows: [traceRow()],
@@ -70,6 +72,7 @@ describe('快照组装', () => {
       serverTs: 1000,
       online: 1,
       me: connection(),
+      myOwnedBedNo: null,
       others: [],
       ownedBeds: [5],
       traceRows: [traceRow({ appearance: 'nope' })],
@@ -86,6 +89,7 @@ describe('快照组装', () => {
       serverTs: 1000,
       online: 2,
       me: connection(),
+      myOwnedBedNo: null,
       others: [connection({ userId: 'u_trace', state: 'roaming' })],
       ownedBeds: [5],
       traceRows: [traceRow()],
@@ -102,6 +106,7 @@ describe('快照组装', () => {
       serverTs: 1000,
       online: 2,
       me: connection(),
+      myOwnedBedNo: null,
       others: [connection({ userId: 'u_sleeper', state: 'asleep', bedNo: 7 })],
       ownedBeds: [],
       traceRows: [],
@@ -136,5 +141,33 @@ describe('在线人数与别人的列表', () => {
 
   it('空厅是 0 人', () => {
     expect(splitLive([])).toEqual({ online: 0, others: [] });
+  });
+});
+
+describe('自己的归属位', () => {
+  it('有床时 me 带 ownedBedNo；没有床时不带这个字段', () => {
+    const withBed = buildSnapshot({
+      hall: HALL,
+      serverTs: 1000,
+      online: 1,
+      me: connection({ state: 'roaming' }),
+      myOwnedBedNo: 42,
+      others: [],
+      ownedBeds: [42],
+      traceRows: [],
+    });
+    expect(withBed.me).toMatchObject({ id: 'u_me', state: 'roaming', ownedBedNo: 42 });
+
+    const withoutBed = buildSnapshot({
+      hall: HALL,
+      serverTs: 1000,
+      online: 1,
+      me: connection({ state: 'roaming' }),
+      myOwnedBedNo: null,
+      others: [],
+      ownedBeds: [],
+      traceRows: [],
+    });
+    expect('ownedBedNo' in withoutBed.me).toBe(false);
   });
 });

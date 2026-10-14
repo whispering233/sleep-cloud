@@ -1,0 +1,37 @@
+import { useEffect, useRef } from 'react';
+
+import type { WorldHandle } from '../world/world';
+
+/**
+ * 世界画布的宿主：React 只负责挂载与卸载。
+ * 画什么、什么时候重画由 Pixi 的 ticker 与 store 决定——**画布不参与 React 的渲染循环**。
+ */
+export function WorldCanvas() {
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    let world: WorldHandle | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Pixi 单独成块：上场层不必等这几百 KB 下载完（手机是主场景）
+        const { createWorld } = await import('../world/world');
+        const handle = await createWorld(host);
+        if (cancelled) handle.destroy();
+        else world = handle;
+      } catch {
+        // 画布起不来不该把界面拖垮
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      world?.destroy();
+    };
+  }, []);
+
+  return <div className="world-layer" ref={hostRef} />;
+}

@@ -26,6 +26,8 @@ export interface HallSummary {
   id: string;
   name: string;
   timezone: string;
+  /** 场景标识：客户端建连时首条 `hello` 必须带上它 */
+  sceneGuid: string;
   capacity: number;
   /** **归属数**（已被认领的床位数），不是在线人数 */
   acceptedBeds: number;

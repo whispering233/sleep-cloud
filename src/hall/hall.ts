@@ -151,7 +151,21 @@ export class Hall extends DurableObject<Env> {
         appearance: row.owner_appearance,
       }));
 
-    return buildSnapshot({ hall: this.hall, serverTs: Date.now(), online, me, others, ownedBeds, traceRows });
+    // 我自己的床（归属）：走唯一索引取一行——客户端走路时也要知道哪张床是我的
+    const myOwnedBedNo = sql
+      .exec<{ bed_no: number }>('SELECT bed_no FROM bed WHERE owner_user_id = ?', me.userId)
+      .toArray()[0]?.bed_no ?? null;
+
+    return buildSnapshot({
+      hall: this.hall,
+      serverTs: Date.now(),
+      online,
+      me,
+      myOwnedBedNo,
+      others,
+      ownedBeds,
+      traceRows,
+    });
   }
 }
 

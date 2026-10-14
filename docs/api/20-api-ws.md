@@ -84,7 +84,7 @@
 | `sceneGuid` | 是 | 场景标识，客户端据此加载场景资源 |
 | `serverTs` | 是 | 服务端当前时间（epoch 毫秒），客户端据此校准插值时钟 |
 | `hall` | 是 | `{ id, name, timezone, capacity, online }` |
-| `me` | 是 | `{ id, name, appearance, state, x, y, bedNo? }` 自己的完整状态 |
+| `me` | 是 | `{ id, name, appearance, state, x, y, bedNo?, ownedBedNo? }` 自己的完整状态。**`bedNo` 是占用**（我在床上时才有），**`ownedBedNo` 是归属**（我的床是哪张，走路时也带着）——客户端靠它在厅里走动时也能画出「我的床」的暖灯标记 |
 | `ownedBeds` | 是 | **归属表**：bedNo 数组，包含**所有有主的床**（见 §4.2）。**不带名字**：归属不需要名字，名字全部来自下面的人 |
 | `people` | 是 | 厅内可见的人：`[{ id, name, appearance, state, x, y, bedNo? }]`。**含睡痕条目**——服务端在生成快照时按床位的 `state` 索引取出 `trace` 行并填入（名字取自 `owner_name`）；在线的人则来自活着的连接。**不含自己**（自己在 `me` 里），因此客户端不必去重 |
 

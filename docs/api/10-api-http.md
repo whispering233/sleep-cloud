@@ -129,6 +129,7 @@
 | halls[].id | 是 | string | 厅标识 |
 | halls[].name | 是 | string | 显示名 |
 | halls[].timezone | 是 | string | 厅固定时区（决定厅的昼夜） |
+| halls[].sceneGuid | 是 | string | 场景标识。客户端建连时首条 `hello` 必须带上它（对不上会被断开） |
 | halls[].capacity | 是 | number | 床位数 |
 | halls[].acceptedBeds | 是 | number | **已被认领的床位数**（用于提示「快满了」） |
 | halls[].current | 是 | boolean | 是否为当前所属大区 |

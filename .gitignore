@@ -9,12 +9,36 @@ dist/
 .env.*
 !.env.example
 
-# 构建生成物（`npm run tokens` 从 docs/ui/DESIGN.md 导出）
+# 构建生成物（`npm run tokens` 从 docs/ui/DESIGN.md 导出，CSS 与 JSON 两份）
 src/client/styles/tokens.css
+src/client/styles/tokens.json
 
 # 测试缓存（vitest 每次跑测试都会写）
 .vitest/
 
-# 系统与编辑器垃圾
+# 测试与覆盖率
+coverage/
+.nyc_output/
+
+# 类型缓存
+*.tsbuildinfo
+
+# 本地数据库副本（真源在 .wrangler/ 下，这里防把手工导出的库文件入库）
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# 工程导出的临时数据（例如本地脚本 dump 出来的）
+*.tmp.json
+
+# 编辑器与系统垃圾（这台机器是 WSL，Windows 宿主也会往挂载目录里丢东西）
 .DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# 日志
 *.log

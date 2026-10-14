@@ -5,10 +5,12 @@ import { loadHalls, loadSession } from './api';
 import { EntryOverlay } from './components/EntryOverlay';
 import { PrimaryAction } from './components/PrimaryAction';
 import { TextInput } from './components/TextInput';
+import { WorldCanvas } from './components/WorldCanvas';
+import { connectHall } from './ws';
 
 /**
  * 页面骨架：世界层铺满视口（DOM 界面浮在它之上，只占边缘）。
- * 入场层每次进厅前都出现；会连接、走动与聊天在后续卡片接上。
+ * 入场层每次进厅前都出现；进厅之后才建连——昵称只在建连之前改变，所以协议里不需要「改名」消息。
  */
 export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
@@ -30,11 +32,17 @@ export function App() {
   }, []);
 
   const hall = halls.find((item) => item.id === session?.hallId);
+  const hallId = session?.hallId;
+  const sceneGuid = hall?.sceneGuid;
+
+  useEffect(() => {
+    if (!entered || !hallId || !sceneGuid) return;
+    return connectHall({ hallId, sceneGuid });
+  }, [entered, hallId, sceneGuid]);
 
   return (
     <div className="app-shell">
-      {/* 世界层：PixiJS 画布将挂在这里（画布不参与 DOM 界面渲染） */}
-      <div className="world-layer" aria-hidden="true" />
+      <WorldCanvas />
 
       {entered ? (
         <>
@@ -60,10 +68,14 @@ export function App() {
       ) : null}
 
       {session && !entered ? (
-        <EntryOverlay session={session} halls={halls} onDone={(next) => {
-          setSession(next);
-          setEntered(true);
-        }} />
+        <EntryOverlay
+          session={session}
+          halls={halls}
+          onDone={(next) => {
+            setSession(next);
+            setEntered(true);
+          }}
+        />
       ) : null}
     </div>
   );

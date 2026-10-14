@@ -87,6 +87,7 @@ app.get('/api/halls', async (c) => {
       id: hall.id,
       name: hall.name,
       timezone: hall.timezone,
+      sceneGuid: hall.sceneGuid,
       capacity: hall.capacity,
       acceptedBeds: await c.env.HALL.getByName(hall.id).claimedBedCount(),
       current: hall.id === session.hallId,

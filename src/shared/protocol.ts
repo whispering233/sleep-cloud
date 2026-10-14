@@ -28,6 +28,14 @@ export type PersonPlacement =
 /** 厅内可见的人。三类占用者（走动的、床上在线的、睡痕）用同一结构表达。 */
 export type Person = { id: string; name: string; appearance: Appearance } & PersonPlacement;
 
+/**
+ * 自己的完整状态：比 `people` 条目多一个**归属位**。
+ *
+ * 归属与占用是两个正交维度：在床上时 `bedNo` 是「我占着哪张床」；
+ * 而在厅里走动时，客户端仍必须知道「哪张床是我的」才能画暖灯标记，所以归属单独给一个字段。
+ */
+export type SelfPerson = Person & { ownedBedNo?: number };
+
 // ————————————————————————— 下行（服务端 → 客户端） —————————————————————————
 
 export interface HallInfo {
@@ -43,7 +51,7 @@ export interface SnapshotMessage {
   sceneGuid: string;
   serverTs: number;
   hall: HallInfo;
-  me: Person;
+  me: SelfPerson;
   /** 归属表：所有有主的床的床号。**不带名字**（名字全部来自 `people`）。 */
   ownedBeds: number[];
   /** 可见的人，含睡痕条目（名字取自 `bed.owner_name` 快照）。 */

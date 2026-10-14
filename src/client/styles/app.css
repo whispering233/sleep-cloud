@@ -60,6 +60,12 @@
     letter-spacing: var(--tracking-caption);
   }
 
+  .world-canvas {
+    display: block;
+    /* 手势交给相机（拖拽平移 / 双指缩放），不让浏览器把页面抳走 */
+    touch-action: none;
+  }
+
   .chat-panel {
     position: absolute;
     inset-block-end: 0;

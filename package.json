@@ -5,7 +5,7 @@
   "type": "module",
   "description": "跑在 Cloudflare 上的线上睡眠大厅",
   "scripts": {
-    "tokens": "design.md export docs/ui/DESIGN.md --format css-tailwind > src/client/styles/tokens.css",
+    "tokens": "design.md export docs/ui/DESIGN.md --format css-tailwind > src/client/styles/tokens.css && design.md export docs/ui/DESIGN.md --format json-tailwind > src/client/styles/tokens.json",
     "lint:design": "design.md lint docs/ui/DESIGN.md",
     "build": "npm run tokens && vite build",
     "dev": "wrangler dev",
@@ -21,6 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "hono": "^4.13.13",
+    "pixi.js": "^8.22.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

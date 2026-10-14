@@ -17,6 +17,8 @@ export interface SnapshotInput {
   serverTs: number;
   online: number;
   me: ConnectionState;
+  /** 我拥有的那张床（归属）；还没有床时是 `null` */
+  myOwnedBedNo: number | null;
   /** 其它在线连接（**不含自己**） */
   others: ConnectionState[];
   /** 归属表：所有有主的床的床号 */
@@ -72,7 +74,10 @@ export function buildSnapshot(input: SnapshotInput): SnapshotMessage {
       capacity: input.hall.capacity,
       online: input.online,
     },
-    me: personFromConnection(input.me),
+    me: {
+      ...personFromConnection(input.me),
+      ...(input.myOwnedBedNo === null ? {} : { ownedBedNo: input.myOwnedBedNo }),
+    },
     ownedBeds: input.ownedBeds,
     people: [
       ...input.others.map(personFromConnection),
