@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 
+import { sendWalk } from '../ws';
 import type { WorldHandle } from '../world/world';
 
 /**
@@ -19,7 +20,7 @@ export function WorldCanvas() {
       try {
         // Pixi 单独成块：上场层不必等这几百 KB 下载完（手机是主场景）
         const { createWorld } = await import('../world/world');
-        const handle = await createWorld(host);
+        const handle = await createWorld(host, { onWalk: (tile) => sendWalk(tile.x, tile.y) });
         if (cancelled) handle.destroy();
         else world = handle;
       } catch {

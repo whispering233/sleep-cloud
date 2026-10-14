@@ -10,7 +10,9 @@
     "src/shared",
     "src/worker",
     "src/hall",
-    "src/**/*.test.ts"
+    "src/**/*.test.ts",
+    "src/client/motion.ts",
+    "src/client/store.ts"
   ],
   "exclude": []
 }

@@ -5,6 +5,7 @@ import {
   BED_OWNERSHIP_TTL_MS,
   CHAT_MAX_LEN,
   GRACE_MS,
+  MOVE_MS_PER_TILE,
   NICKNAME_MAX_LEN,
   SCENE_BED_COUNT,
   SLEEP_TRACE_CLEAR_HOUR,
@@ -17,6 +18,7 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(GRACE_MS).toBe(60_000);
     expect(AUTO_SLEEP_MS).toBe(300_000);
     expect(TICK_MS).toBe(100);
+    expect(MOVE_MS_PER_TILE).toBe(250);
     expect(SLEEP_TRACE_CLEAR_HOUR).toBe(8);
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
   });

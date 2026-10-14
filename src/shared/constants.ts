@@ -16,6 +16,9 @@ export const AUTO_SLEEP_MS = 300_000;
 /** 位置推进与广播合并的目标周期。只在有人走动时启用（内存循环，非持久唤醒）。 */
 export const TICK_MS = 100;
 
+/** 走完一格的目标耗时。推进量按**实际经过时间**算，所以节拍抖动不影响移动速度。 */
+export const MOVE_MS_PER_TILE = 250;
+
 /** 厅时区 08:00 清理睡痕。 */
 export const SLEEP_TRACE_CLEAR_HOUR = 8;
 

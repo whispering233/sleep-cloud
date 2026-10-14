@@ -17,6 +17,11 @@ export interface ConnectionState {
   /** 在床上时才有 */
   bedNo?: number;
   state: 'roaming' | 'lying' | 'asleep';
+  /**
+   * 正在走向的目标格（走完就清空）。
+   * 路径本身**不存这里**：附件体积要小，而且路径能由场景数据确定性重算（见 `movement.ts`）。
+   */
+  target?: { x: number; y: number };
   /** 完成 `hello` 握手之前，不向该连接转发任何房间消息 */
   ready: boolean;
 }

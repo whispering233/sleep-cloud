@@ -3,6 +3,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import type { Person, PersonState } from '../../shared/protocol';
 import { getState, subscribe } from '../store';
 import type { ClientState } from '../store';
+import { positionAt, INTERPOLATION_DELAY_MS } from '../motion';
 import { palette } from './palette';
 import type { WorldPalette } from './palette';
 import { bedOutline, isDaytime, markerRadius, personAlpha, shouldDrawName } from './rules';
@@ -51,7 +52,12 @@ function occupantsOf(state: ClientState): Map<number, PersonState> {
   return occupants;
 }
 
-export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
+export interface WorldHandlers {
+  /** 点地面 = 「我要去这一格」（客户端只发意图，怎么走由服务端定） */
+  onWalk(tile: { x: number; y: number }): void;
+}
+
+export async function createWorld(host: HTMLElement, handlers: WorldHandlers): Promise<WorldHandle> {
   const app = new Application();
   await app.init({
     resizeTo: host,
@@ -162,7 +168,7 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
     graphics.circle(x, y, markerRadius(camera.scale, TILE)).fill({ color: pal.marker });
   }
 
-  function drawPeople(state: ClientState, pal: WorldPalette): void {
+  function drawPeople(state: ClientState, pal: WorldPalette, serverNow: number): void {
     people.removeChildren().forEach((child) => child.destroy({ children: true }));
     if (!scene) return;
 
@@ -172,10 +178,7 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
     if (state.me) persons.push(state.me);
 
     for (const person of persons) {
-      const spot =
-        person.state === 'roaming'
-          ? { x: (person.x + 0.5) * TILE, y: (person.y + 0.5) * TILE }
-          : bedSpot(person.bedNo);
+      const spot = person.state === 'roaming' ? roamSpot(person, state, serverNow) : bedSpot(person.bedNo);
       if (!spot) continue;
 
       const node = new Container();
@@ -249,7 +252,24 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
     return tile ? { x: (tile.x + 0.5) * TILE, y: (tile.y + 0.5) * TILE } : undefined;
   }
 
+  /** 漫游者的画点：有插值窗口就按服务端时间插值，否则用权威坐标直画。 */
+  function roamSpot(person: Person, state: ClientState, serverNow: number): { x: number; y: number } | undefined {
+    if (person.state !== 'roaming') return undefined;
+    const motion = state.motion.get(person.id);
+    const tile = motion ? positionAt(motion, serverNow) : { x: person.x, y: person.y };
+    return { x: (tile.x + 0.5) * TILE, y: (tile.y + 0.5) * TILE };
+  }
+
+  /** 屏幕坐标 → 格坐标（点地面用）。 */
+  function tileAt(screenX: number, screenY: number): { x: number; y: number } {
+    return {
+      x: Math.floor((screenX - camera.x) / camera.scale / TILE),
+      y: Math.floor((screenY - camera.y) / camera.scale / TILE),
+    };
+  }
+
   function renderFrame(state: ClientState): void {
+    const serverNow = Date.now() + state.clockOffsetMs - INTERPOLATION_DELAY_MS;
     if (state.sceneGuid && state.sceneGuid !== loadedGuid) {
       loadedGuid = state.sceneGuid;
       void loadSceneIndex(state.sceneGuid)
@@ -274,13 +294,16 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
       drawSceneBody(pal);
     }
     drawBeds(state, pal);
-    drawPeople(state, pal);
+    drawPeople(state, pal, serverNow);
   }
 
   app.ticker.add(() => {
+    const current = getState();
+    // 有人在动就每帧重画（插值走 ticker，不进 React 的渲染循环）
+    if (current.motion.size > 0) dirty = true;
     if (!dirty) return;
     dirty = false;
-    renderFrame(getState());
+    renderFrame(current);
   });
 
   const unsubscribe = subscribe(markDirty);
@@ -288,6 +311,7 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
   // ——— 相机输入：滚轮缩放、双指捏合缩放、拖动平移（手机上点地面是走动意图，见后续卡片） ———
   const pointers = new Map<number, { x: number; y: number }>();
   let pinchDistance = 0;
+  let tapStart: { x: number; y: number; at: number } | null = null;
 
   const localPoint = (event: PointerEvent): { x: number; y: number } => {
     const rect = app.canvas.getBoundingClientRect();
@@ -301,7 +325,9 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    pointers.set(event.pointerId, localPoint(event));
+    const point = localPoint(event);
+    if (pointers.size === 0) tapStart = { x: point.x, y: point.y, at: Date.now() };
+    pointers.set(event.pointerId, point);
     app.canvas.setPointerCapture(event.pointerId);
   };
 
@@ -327,9 +353,17 @@ export async function createWorld(host: HTMLElement): Promise<WorldHandle> {
   };
 
   const onPointerUp = (event: PointerEvent): void => {
+    const point = localPoint(event);
     pointers.delete(event.pointerId);
     if (pointers.size < 2) pinchDistance = 0;
     if (app.canvas.hasPointerCapture(event.pointerId)) app.canvas.releasePointerCapture(event.pointerId);
+
+    // 轻点（未拖动、时间短）才是「我要去这一格」；拖拽是平移镜头
+    if (tapStart && pointers.size === 0) {
+      const moved = Math.hypot(point.x - tapStart.x, point.y - tapStart.y);
+      if (moved < 8 && Date.now() - tapStart.at < 350) handlers.onWalk(tileAt(point.x, point.y));
+    }
+    tapStart = null;
   };
 
   app.canvas.addEventListener('wheel', onWheel, { passive: false });
