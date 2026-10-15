@@ -19,7 +19,13 @@ import type { Point, WallRegion } from '../shared/layout';
  * 加上**边界那一条走道余量**（左 = 又一个块、上 = 又一条带），减去每张床的占用矩形；
  * 可走性一律由 `layout.isWalkable` 给出（没有场景文件、没有整片地板）。
  *
- * 图很小：节点 = 横走道 × 竖走道的交叉点，最高档约 56 × 45 ≈ 2500 个，BFS 是微秒级。
+ * 这张网是**完备均匀网格**：任意横走道带 × 任意竖走道块都是节点，每条横走道横贯整厅、每条
+ * 竖走道纵贯整厅，相邻节点间距恒为 `CORRIDOR_BLOCK` / `PITCH_Y`（贴墙那一圈也一样，
+ * `nodeX(-1)` 与 `nodeX(0)` 正好差一个 `CORRIDOR_BLOCK`）。于是**节点之间的最短路 = 坐标曼哈顿
+ * 距离**，全程无需搜索：总代价 = min over (源节点, 目标节点) 的「起点→源节点 + 曼哈顿(源, 目标)
+ * + 目标节点→终点」，源/目标集合各 ≤ 一行的节点数（最高档 ≈ 46），约两千次算术——纳秒级。
+ * 「完备且均匀」这条假设有 `src/hall/tests/pathfinding.test.ts` 的「护城河」测试兜底。
+ *
  * **目标点不在街网上 → 返回 `null`**（调用方回 `3006`），服务端不吸附——吸附会让「点床躺下」
  * 与「点地面走动」的判定出现意外。
  */
@@ -51,13 +57,17 @@ function blockOf(x: number): number | undefined {
   return Math.floor(x / CORRIDOR_BLOCK);
 }
 
+/** 街网上的一个节点：横走道带 × 竖走道块（两者都从 `-1` 起，`-1` = 贴墙那条余量）。 */
+interface StreetNode {
+  band: number;
+  block: number;
+}
+
 interface StreetGraph {
   /** 横走道带的条数（**不含**上侧那条余量：带号 `-1` 就是它；含右/下余量里那几条） */
   bands: number;
   /** 竖走道块的条数（**不含**左侧那条余量：块号 `-1` 就是它；含右/下余量里那几条） */
   blocks: number;
-  /** 节点数（`(bands + 1) × (blocks + 1)`，多出的是左右 / 上下那两条余量） */
-  size: number;
 }
 
 /** 地板矩形里有几条横走道带：带 `r` 的走道落在 `[r·156 + 100, r·156 + 156)`。 */
@@ -74,50 +84,31 @@ function blockCount(wall: WallRegion): number {
   return count;
 }
 
-/**
- * 走道图：节点 = 横走道带 × 竖走道块。带号与块号都从 `-1` 起（`-1` = 左/上那条余量），
- * 所以图下标 = `(带 + 1) × (blocks + 1) + (块 + 1)`；格线取到**地板矩形**里，
- * 于是右/下余量里那几条格线也是节点（否则点在余量里时找不到街网）。
- */
+/** 走道范围：带号与块号都从 `-1` 起（`-1` = 贴墙那条余量），格线取到**地板矩形**里。 */
 function graphFor(bedCount: number): StreetGraph {
   const wall = wallRegionOf(levelIndexOfBedCount(bedCount));
-  const bands = bandCount(wall);
-  const blocks = blockCount(wall);
-  return { bands, blocks, size: (bands + 1) * (blocks + 1) };
+  return { bands: bandCount(wall), blocks: blockCount(wall) };
 }
 
-/** 带号 / 块号 → 图下标（两者都从 `-1` 起，所以统一下标 +1）。 */
-const indexOf = (graph: StreetGraph, band: number, block: number): number =>
-  (band + 1) * (graph.blocks + 1) + (block + 1);
-
-/** 图下标 → 带号。 */
-const bandOfIndex = (graph: StreetGraph, index: number): number => Math.floor(index / (graph.blocks + 1)) - 1;
-
-/** 图下标 → 块号。 */
-const blockOfIndex = (graph: StreetGraph, index: number): number => (index % (graph.blocks + 1)) - 1;
-
-/** 离 `x` 最近的竖走道块（含左侧那条余量）。 */
-function nearestBlock(graph: StreetGraph, x: number): number {
-  const block = Math.round((x - nodeX(0)) / CORRIDOR_BLOCK);
-  return Math.min(Math.max(block, BELT), graph.blocks - 1);
+/** 节点 → 世界像素坐标。 */
+function pointOf(node: StreetNode): Point {
+  return { x: nodeX(node.block), y: nodeY(node.band) };
 }
 
 /**
- * 从某个点出发/结束能直接连上的节点：同一横走道带上可以横向走到任一节点，
- * 同一竖走道里可以纵向走到任一节点。西段与东段都是**轴对齐的一整段**，所以沿途必在街网上。
- *
- * 上侧那条余量横贯整个厅，只连**最近的那一个块**：连上整条带时路径会先绕到左上角再走回来。
+ * 从某个点出发/结束能**一条直线段**走到的节点：同一横走道带上可以横向走到任一节点，
+ * 同一竖走道里可以纵向走到任一节点（都是轴对齐的一整段，沿途必在街网上）。
+ * 贴墙那圈（带 / 块 `-1`）横贯 / 纵贯整厅，与其它走道一样是完备网格的一部分。
  */
-function nodesAround(graph: StreetGraph, point: Point): number[] {
-  const nodes: number[] = [];
+function nodesAround(graph: StreetGraph, point: Point): StreetNode[] {
+  const nodes: StreetNode[] = [];
   const band = rowBandOf(point.y);
   if (band !== undefined && band < graph.bands) {
-    if (band === BELT) nodes.push(indexOf(graph, BELT, nearestBlock(graph, point.x)));
-    else for (let block = BELT; block < graph.blocks; block += 1) nodes.push(indexOf(graph, band, block));
+    for (let block = BELT; block < graph.blocks; block += 1) nodes.push({ band, block });
   }
   const block = blockOf(point.x);
   if (block !== undefined && block < graph.blocks) {
-    for (let eachBand = BELT; eachBand < graph.bands; eachBand += 1) nodes.push(indexOf(graph, eachBand, block));
+    for (let eachBand = BELT; eachBand < graph.bands; eachBand += 1) nodes.push({ band: eachBand, block });
   }
   return nodes;
 }
@@ -142,50 +133,38 @@ export function findPath(from: Point, to: Point, bedCount: number): Point[] | nu
 
   const graph = graphFor(bedCount);
   const sources = nodesAround(graph, from);
-  const goals = new Set(nodesAround(graph, to));
+  const goals = nodesAround(graph, to);
 
-  const cameFrom = new Int32Array(graph.size).fill(-1);
-  const seen = new Uint8Array(graph.size);
-  const queue: number[] = [];
+  // 闭式最短路：节点间 = 曼哈顿距离（网格完备均匀），只枚举两条端点直线段的落点。
+  let bestSource: StreetNode | undefined;
+  let bestGoal: StreetNode | undefined;
+  let bestTotal = Infinity;
   for (const source of sources) {
-    if (seen[source] === 1) continue;
-    seen[source] = 1;
-    queue.push(source);
-  }
-
-  let found = -1;
-  for (let head = 0; head < queue.length && found === -1; head += 1) {
-    const current = queue[head] as number;
-    if (goals.has(current)) {
-      found = current;
-      break;
-    }
-    const band = bandOfIndex(graph, current);
-    const block = blockOfIndex(graph, current);
-    for (const [nextBand, nextBlock] of [
-      [band, block - 1],
-      [band, block + 1],
-      [band - 1, block],
-      [band + 1, block],
-    ] as Array<[number, number]>) {
-      if (nextBand < BELT || nextBlock < BELT || nextBand >= graph.bands || nextBlock >= graph.blocks) continue;
-      const index = indexOf(graph, nextBand, nextBlock);
-      if (seen[index] === 1) continue;
-      seen[index] = 1;
-      cameFrom[index] = current;
-      queue.push(index);
+    const intoSource = Math.hypot(nodeX(source.block) - from.x, nodeY(source.band) - from.y);
+    for (const goal of goals) {
+      const fromGoal = Math.hypot(nodeX(goal.block) - to.x, nodeY(goal.band) - to.y);
+      const total =
+        intoSource +
+        Math.abs(nodeX(goal.block) - nodeX(source.block)) +
+        Math.abs(nodeY(goal.band) - nodeY(source.band)) +
+        fromGoal;
+      if (total < bestTotal) {
+        bestTotal = total;
+        bestSource = source;
+        bestGoal = goal;
+      }
     }
   }
-  if (found === -1) return null;
+  if (bestSource === undefined || bestGoal === undefined) return null;
 
-  const nodes: number[] = [];
-  for (let index = found; index !== -1; index = cameFrom[index] as number) nodes.push(index);
-  nodes.reverse();
-
-  const path: Point[] = nodes.map((index) => ({
-    x: nodeX(blockOfIndex(graph, index)),
-    y: nodeY(bandOfIndex(graph, index)),
-  }));
-  path.push(to);
-  return path;
+  // 起点——源节点——拐点（目标块 × 源带）——目标节点——终点；相邻重复点（拐点可能重合）去掉。
+  const polyline = [
+    pointOf(bestSource),
+    { x: nodeX(bestGoal.block), y: nodeY(bestSource.band) },
+    pointOf(bestGoal),
+    to,
+  ];
+  return polyline.filter(
+    (point, index) => index === 0 || point.x !== polyline[index - 1]?.x || point.y !== polyline[index - 1]?.y,
+  );
 }
