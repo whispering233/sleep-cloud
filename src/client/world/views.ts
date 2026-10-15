@@ -70,6 +70,8 @@ export const SPRITES_KEY = 'sprites';
 
 export const COLORS = {
   floor: color('primary'),
+  /** 氛围最暗档（全厅都睡下时）：只用于地板底色，不参与任何语义（见 ui/DESIGN.md「明暗的边界」） */
+  floorDim: color('primary-dim'),
   line: color('line'),
   marker: color('tertiary'),
 } as const;

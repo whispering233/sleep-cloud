@@ -20,6 +20,7 @@ import { decodeOwnedBeds } from '../shared/protocol';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
+import { drowsinessOf } from './ambience';
 
 /** 一行消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
 export interface ChatLine {
@@ -57,6 +58,12 @@ export interface ClientState {
   motion: Map<string, Motion>;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
+  /**
+   * 全厅困倦度（0~1）：只由「人的显示态与在线人数」决定，驱动氛围明暗。
+   * **只在人的状态变化的消息里重算**（`setState` 按 patch 的字段判定），位置节拍不改变它。
+   * 空厅为 0（最亮档）。
+   */
+  drowsiness: number;
   /** 最近收到的消息（只用于显示；服务端不存历史） */
   messages: ChatLine[];
   /**
@@ -78,6 +85,7 @@ const emptyState = (): ClientState => ({
   clockOffsetMs: 0,
   messages: [],
   emotes: new Map(),
+  drowsiness: 0,
 });
 
 let state: ClientState = emptyState();
@@ -93,7 +101,10 @@ export function subscribe(listener: (state: ClientState) => void): () => void {
 }
 
 export function setState(patch: Partial<ClientState>): void {
-  state = { ...state, ...patch };
+  const next = { ...state, ...patch };
+  // 困倦度只在「人的显示态 / 在线人数」变化时重算：位置节拍（只改 `motion`）不改变它
+  if ('people' in patch || 'me' in patch || 'hall' in patch) next.drowsiness = drowsinessOf(next);
+  state = next;
   for (const listener of listeners) listener(state);
 }
 

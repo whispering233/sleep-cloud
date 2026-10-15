@@ -5,6 +5,7 @@ import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, regionOf
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
+import { ambienceColor, approachColor } from '../ambience';
 import { getState } from '../store';
 import type { ClientState } from '../store';
 import {
@@ -68,7 +69,7 @@ const CENTER_BAND = 0.4;
 /** 裁剪缓冲：可视窗口外各留一列/一行，拖拽到边界时边缘不闪。 */
 const CULL_MARGIN_PX = Math.max(PITCH_X, PITCH_Y);
 /** 绘制层次：地板 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
-const DEPTH = { floor: -10, bound: -5, bed: 0, person: 100 } as const;
+const DEPTH = { backdrop: -20, floor: -10, bound: -5, bed: 0, person: 100 } as const;
 
 /** 床号 → 占用者（人）。归属与占用是两个正交维度，这里只处理占用这一侧。 */
 function occupantsOf(state: ClientState): Map<number, Occupant> {
@@ -112,6 +113,14 @@ class WorldScene extends Phaser.Scene {
   private readonly scenery: Phaser.GameObjects.GameObject[] = [];
   /** 上一次看到的连接状态：断线后重连要重新对准我的床 */
   private wasConnected = false;
+  /** 地板图形（氛围明暗要重画它）与厅的区域尺寸（重画时的矩形） */
+  private floorGfx?: Phaser.GameObjects.Graphics;
+  private regionSize = { width: 0, height: 0 };
+  /** 屏幕空间背景（铺满视口，钉在相机上）：厅外那一圈的颜色也随氛围变 */
+  private backdrop?: Phaser.GameObjects.Graphics;
+  private backdropSize = { width: 0, height: 0 };
+  /** 当前地板底色（困倦度的缓动值）：与目标色一致时整段跳过重画 */
+  private ambience = COLORS.floor;
   private observer: ResizeObserver | null = null;
 
   constructor(host: HTMLElement, handlers: WorldHandlers) {
@@ -158,6 +167,31 @@ class WorldScene extends Phaser.Scene {
     const selfPoint = this.selfPoint(state, serverNow);
     this.syncPeople(state, serverNow, selfPoint);
     this.follow(state, serverNow, delta, selfPoint);
+    this.applyAmbience(state.drowsiness, delta);
+  }
+
+  /**
+   * 氛围明暗：全厅困倦度 → 地板底色（`primary` ⇄ `primary-dim`），按时间常数缓动。
+   * **只改地板与画布底色**，床与小人的墨色不动（线稿可读性恒定）；颜色没变就跳过重画。
+   */
+  private applyAmbience(drowsiness: number, dtMs: number): void {
+    const next = approachColor(this.ambience, ambienceColor(COLORS.floor, COLORS.floorDim, drowsiness), dtMs);
+    const view = this.viewRect();
+    const resized = this.backdropSize.width !== view.width || this.backdropSize.height !== view.height;
+    if (next === this.ambience && !resized) return;
+    this.ambience = next;
+    this.backdropSize = { width: view.width, height: view.height };
+    // 厅外那一圈（桌面宽屏才看得见）：屏幕空间背景铺满视口，不随相机滑动
+    if (this.backdrop) {
+      this.backdrop.clear();
+      this.backdrop.fillStyle(next, 1);
+      this.backdrop.fillRect(0, 0, view.width, view.height);
+    }
+    if (this.floorGfx) {
+      this.floorGfx.clear();
+      this.floorGfx.fillStyle(next, 1);
+      this.floorGfx.fillRect(0, 0, this.regionSize.width, this.regionSize.height);
+    }
   }
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
@@ -190,8 +224,11 @@ class WorldScene extends Phaser.Scene {
     if (this.loadedBedCount === undefined) return;
 
     const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
+    this.regionSize = { width: region.width, height: region.height };
+    this.backdrop = this.add.graphics().setScrollFactor(0).setDepth(DEPTH.backdrop);
     const floor = this.add.graphics().setDepth(DEPTH.floor);
-    floor.fillStyle(COLORS.floor, 1);
+    this.floorGfx = floor;
+    floor.fillStyle(this.ambience, 1);
     floor.fillRect(0, 0, region.width, region.height);
     const bound = this.add.graphics().setDepth(DEPTH.bound);
     bound.lineStyle(LINE_WIDTH, COLORS.line, 1);
