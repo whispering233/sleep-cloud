@@ -10,18 +10,6 @@
 
 ---
 
-## [ ] 卡 5：HUD 精简 + 入场层删大区
-
-**目标**：用户侧只剩「床号 + 在线人数」；入场只剩「昵称 + 18 岁自述」。
-
-**改动范围**：`src/client/components/{Hud,EntryOverlay}.tsx`、`src/client/hud-view.ts`（删昼夜与厅名）、`src/client/world/rules.ts`（删 `isDaytime`）、`docs` 与 `CHANGELOG` 相应条目
-
-**验收**：`ui-verifier` 手机视口（入场只剩两项、HUD 只有床号与在线、无昼夜文案）；`npm test` 全绿
-
-**依赖**：卡 3（协议字段）
-
----
-
 ## [ ] 卡 6：明暗氛围（困倦度 → 地板底色）
 
 **目标**：`困倦度 = (睡着 + 睡痕) / (在线 + 睡痕)` 驱动地板底色在 `primary` ⇄ `primary-dim` 之间缓动（约 1.5 秒），只在数值签名变化时重算，空厅兜底最亮档。

@@ -7,7 +7,6 @@ import type { ClientState } from './store';
  * （与 `ChatPanel` 的 `viewOf` / `sameView` 同一模式，见 `AGENTS.md` 硬纪律 14）。
  */
 export interface HudView {
-  nickname?: string;
   /** 我的床号（**归属**，不是占用）：还没有这张床时这一项不显示 */
   bedNo?: number;
   /** 服务端算的在线人数；快照还没到时不知道 */
@@ -16,7 +15,6 @@ export interface HudView {
 
 export function hudViewOf(state: ClientState): HudView {
   return {
-    nickname: state.me?.name,
     bedNo: state.me?.ownedBedNo,
     online: state.hall?.online,
   };
@@ -24,5 +22,5 @@ export function hudViewOf(state: ClientState): HudView {
 
 /** 字段逐个比较：只有它们真的变了才换掉视图对象（对象身份用于 React 的 `useState`）。 */
 export function sameHudView(a: HudView, b: HudView): boolean {
-  return a.nickname === b.nickname && a.bedNo === b.bedNo && a.online === b.online;
+  return a.bedNo === b.bedNo && a.online === b.online;
 }

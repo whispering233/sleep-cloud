@@ -30,8 +30,8 @@ const snapshotWith = (
 });
 
 describe('HUD 派生视图', () => {
-  it('三项都从状态里取：自己昵称、床号（归属）、在线人数', () => {
-    expect(hudViewOf(stateWith())).toEqual({ nickname: '我', bedNo: 42, online: 37 });
+  it('两项都从状态里取：床号（归属）、在线人数', () => {
+    expect(hudViewOf(stateWith())).toEqual({ bedNo: 42, online: 37 });
   });
 
   it('还没有床（没有 ownedBedNo）时床号是 undefined，这一项不显示', () => {
@@ -59,20 +59,25 @@ describe('HUD 派生视图', () => {
     const otherBed = hudViewOf(
       stateWith({ me: { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430, ownedBedNo: 43 } }),
     );
-    const otherName = hudViewOf(
-      stateWith({
-        me: { id: 'u_me', name: '我改名了', appearance: 'boy', state: 'roaming', x: 812.5, y: 430, ownedBedNo: 42 },
-      }),
-    );
     const noBed = hudViewOf(
       stateWith({ me: { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430 } }),
     );
     const noHall = hudViewOf(stateWith({ hall: undefined }));
 
     expect(sameHudView(base, base)).toBe(true);
-    for (const other of [otherOnline, otherBed, otherName, noBed, noHall]) {
+    for (const other of [otherOnline, otherBed, noBed, noHall]) {
       expect(sameHudView(base, other)).toBe(false);
     }
+  });
+
+  it('改名不换视图：HUD 不显示昵称，昵称变化不该触发重渲染', () => {
+    const base = hudViewOf(stateWith());
+    const renamed = hudViewOf(
+      stateWith({
+        me: { id: 'u_me', name: '我改名了', appearance: 'boy', state: 'roaming', x: 812.5, y: 430, ownedBedNo: 42 },
+      }),
+    );
+    expect(sameHudView(base, renamed)).toBe(true);
   });
 
   it('位置节拍不换视图：pos 只动 people / motion，HUD 读的字段一个都没变', () => {

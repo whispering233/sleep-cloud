@@ -5,8 +5,9 @@ import type { HudView } from '../hud-view';
 import { getState, subscribe } from '../store';
 
 /**
- * 顶部的极简信息条：自己昵称、床号、在线人数。
- * **只吃 `HudView` 的几个字段**：位置节拍每 100 ms 通知一次 store，用不上的变化不能变成重渲染。
+ * 顶部的极简信息条：**我的床号 + 在线人数**。
+ * **只吃 `HudView` 的两个字段**：位置节拍每 100 ms 通知一次 store，用不上的变化不能变成重渲染。
+ * 不显示昵称（我知道我是谁）、不显示厅名（只有一个厅）。
  */
 export function Hud() {
   const [view, setView] = useState<HudView>(() => hudViewOf(getState()));
@@ -19,7 +20,6 @@ export function Hud() {
 
   return (
     <header className="hud">
-      {view.nickname ? <span>{view.nickname}</span> : null}
       {/* 还没有床就不显示床号：没有内容的一项不占位 */}
       {view.bedNo !== undefined ? (
         <span>
