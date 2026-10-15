@@ -7,6 +7,7 @@
   "scripts": {
     "tokens": "design.md export docs/ui/DESIGN.md --format css-tailwind > src/client/styles/tokens.css && design.md export docs/ui/DESIGN.md --format json-tailwind > src/client/styles/tokens.json",
     "lint:design": "design.md lint docs/ui/DESIGN.md",
+    "art": "node tools/art/build-sprites.mjs",
     "build": "npm run tokens && vite build",
     "dev": "wrangler dev",
     "dev:web": "npm run tokens && vite",

@@ -103,8 +103,8 @@ npm run deploy
 npm run lint:design
 npm run tokens
 
-# 构建期素材管线（卡 5 落地后可用：重着色 / 裁边 / 图集）
-# 详见 docs/ui/DESIGN.md「构建期要产出的变体」
+# 构建期素材管线：母图 → 8 张贴图 → public/sprites/atlas.png + atlas.json（产物入库，不挂进 build）
+npm run art
 ```
 
 ## 版本与变更

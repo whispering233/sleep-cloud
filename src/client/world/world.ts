@@ -3,23 +3,24 @@ import * as Phaser from 'phaser';
 import { BED_H, BED_W, MAX_DPR, PITCH_X, PITCH_Y, POOL_SIZE } from '../../shared/constants';
 import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, regionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
-import type { Person, PersonState } from '../../shared/protocol';
+import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
-import { interpolationDelay, isInterpolating } from '../motion';
 import { getState } from '../store';
 import type { ClientState } from '../store';
 import {
-  bedOutline,
+  bedLook,
   followStep,
   isFaded,
+  isMoving,
   personPoint,
   shouldDrawName,
   tapTargetFor,
 } from './rules';
-import type { PersonSpot } from './rules';
+import type { Occupant, PersonSpot } from './rules';
 import {
   COLORS,
   LINE_WIDTH,
+  SPRITES_KEY,
   createBedView,
   createPersonView,
   hideBed,
@@ -69,13 +70,13 @@ const CULL_MARGIN_PX = Math.max(PITCH_X, PITCH_Y);
 /** 绘制层次：地板 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
 const DEPTH = { floor: -10, bound: -5, bed: 0, person: 100 } as const;
 
-/** 床号 → 占用态（人）。归属与占用是两个正交维度，这里只处理占用这一侧。 */
-function occupantsOf(state: ClientState): Map<number, PersonState> {
-  const occupants = new Map<number, PersonState>();
+/** 床号 → 占用者（人）。归属与占用是两个正交维度，这里只处理占用这一侧。 */
+function occupantsOf(state: ClientState): Map<number, Occupant> {
+  const occupants = new Map<number, Occupant>();
   for (const person of state.people.values()) {
-    if (person.state !== 'roaming') occupants.set(person.bedNo, person.state);
+    if (person.state !== 'roaming') occupants.set(person.bedNo, person);
   }
-  if (state.me && state.me.state !== 'roaming') occupants.set(state.me.bedNo, state.me.state);
+  if (state.me && state.me.state !== 'roaming') occupants.set(state.me.bedNo, state.me);
   return occupants;
 }
 
@@ -117,6 +118,11 @@ class WorldScene extends Phaser.Scene {
     super('world');
     this.host = host;
     this.handlers = handlers;
+  }
+
+  /** 图集是一个文件、一次载入：`preload` 之后 `create` 才被调用，池子建出来时帧一定在 */
+  preload(): void {
+    this.load.atlas(SPRITES_KEY, '/sprites/atlas.png', '/sprites/atlas.json');
   }
 
   create(): void {
@@ -224,7 +230,7 @@ class WorldScene extends Phaser.Scene {
         placeBed(
           bedView,
           bed,
-          bedOutline({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) }),
+          bedLook({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) }),
           bed.bedNo === mine,
         );
       }
@@ -276,7 +282,8 @@ class WorldScene extends Phaser.Scene {
       const mine = person.id === state.me?.id;
       // 按 y 排序解决遮挡：画面上更靠下 = 更靠前
       personView.container.setPosition(x, y).setDepth(DEPTH.person + y);
-      paintPerson(personView, person.state, mine);
+      const motion = state.motion.get(person.id);
+      paintPerson(personView, { person, mine, moving: isMoving(person, motion, serverNow), nowMs: now });
 
       const selected = person.id === state.selectedId;
       const named = shouldDrawName(person, state.me?.id) || selected;
@@ -307,12 +314,8 @@ class WorldScene extends Phaser.Scene {
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
-    // 「还在走」与取位必须用**同一个**滞后，否则跟随会在窗口的最后一帧上顿一下
-    const moving =
-      me?.state === 'roaming' &&
-      motion !== undefined &&
-      isInterpolating(motion, serverNow - interpolationDelay(motion)) &&
-      this.pointers.size === 0;
+    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下
+    const moving = me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0;
     if (!moving || !point) return;
 
     const view = this.viewRect();

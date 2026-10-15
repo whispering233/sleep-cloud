@@ -1,0 +1,262 @@
+{
+  "frames": {
+    "bed_empty_hollow": {
+      "frame": {
+        "x": 1,
+        "y": 1,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "bed_empty_owned": {
+      "frame": {
+        "x": 124,
+        "y": 1,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "bed_boy": {
+      "frame": {
+        "x": 1,
+        "y": 203,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "face": {
+        "x": 61.5,
+        "y": 31
+      }
+    },
+    "bed_girl": {
+      "frame": {
+        "x": 124,
+        "y": 203,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "face": {
+        "x": 61.5,
+        "y": 33.4
+      }
+    },
+    "bed_boy_trace": {
+      "frame": {
+        "x": 1,
+        "y": 405,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "bed_girl_trace": {
+      "frame": {
+        "x": 124,
+        "y": 405,
+        "w": 122,
+        "h": 201
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 122,
+        "h": 201
+      },
+      "sourceSize": {
+        "w": 122,
+        "h": 201
+      },
+      "anchor": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "boy_stand": {
+      "frame": {
+        "x": 1,
+        "y": 607,
+        "w": 67,
+        "h": 113
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 67,
+        "h": 113
+      },
+      "sourceSize": {
+        "w": 67,
+        "h": 113
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 1
+      }
+    },
+    "girl_stand": {
+      "frame": {
+        "x": 69,
+        "y": 607,
+        "w": 97,
+        "h": 113
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 97,
+        "h": 113
+      },
+      "sourceSize": {
+        "w": 97,
+        "h": 113
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 1
+      }
+    }
+  },
+  "meta": {
+    "app": "tools/art/build-sprites.mjs",
+    "version": "1.0",
+    "image": "atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 256,
+      "h": 1024
+    },
+    "scale": "1"
+  },
+  "masters": {
+    "bedEmpty": {
+      "file": "masters/bedEmpty.png",
+      "ink": {
+        "x": 67,
+        "y": 22,
+        "w": 122,
+        "h": 201
+      }
+    },
+    "bedBoy": {
+      "file": "masters/bedBoy.png",
+      "ink": {
+        "x": 67,
+        "y": 22,
+        "w": 122,
+        "h": 201
+      }
+    },
+    "bedGirl": {
+      "file": "masters/bedGirl.png",
+      "ink": {
+        "x": 67,
+        "y": 22,
+        "w": 122,
+        "h": 201
+      }
+    },
+    "Boy": {
+      "file": "masters/Boy.png",
+      "ink": {
+        "x": 100,
+        "y": 68,
+        "w": 67,
+        "h": 113
+      }
+    },
+    "Girl": {
+      "file": "masters/Girl.png",
+      "ink": {
+        "x": 87,
+        "y": 68,
+        "w": 97,
+        "h": 113
+      }
+    }
+  }
+}

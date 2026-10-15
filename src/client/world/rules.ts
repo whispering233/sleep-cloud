@@ -1,7 +1,5 @@
-import { BED_H, BED_W } from '../../shared/constants';
-import type { Person, PersonState } from '../../shared/protocol';
-import type { Point } from '../../shared/layout';
-import { interpolationDelay, positionAt } from '../motion';
+import type { Appearance, Person, PersonState } from '../../shared/protocol';
+import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
 
 /**
@@ -9,92 +7,71 @@ import type { Motion } from '../motion';
  * 这些判断是「床位真值表」的直接翻译（见 `docs/ui/DESIGN.md` Components 节）。
  */
 
-/**
- * 轮廓梯次：床上有人 → `line`；睡痕 → `trace`；空床 → `claimed`。
- * 梯次只有三档颜色，**归属走线型**这条正交通道：无主空床虚线、有主实线。
- */
-export interface BedOutline {
-  tier: 'line' | 'trace' | 'claimed';
-  dashed: boolean;
+/** 单张贴图的名字（图集帧名，见 `docs/ui/DESIGN.md`「构建期要产出的变体」）。 */
+export type BedFrame =
+  | 'bed_empty_hollow'
+  | 'bed_empty_owned'
+  | 'bed_boy'
+  | 'bed_girl'
+  | 'bed_boy_trace'
+  | 'bed_girl_trace';
+
+export type PersonFrame = 'boy_stand' | 'girl_stand';
+
+/** 占用一张床的人：画这张床要在图上铺谁，需要显示态与外观两项。 */
+export interface Occupant {
+  state: Exclude<PersonState, 'roaming'>;
+  appearance: Appearance;
 }
+
+/**
+ * 一张床此刻该用哪张贴图（`docs/ui/DESIGN.md` 的床位真值表）：
+ * **占用**走墨色三档（`line` / `trace` / `claimed`）、**归属**走填充（空芯 / `paper`）。
+ */
+export interface BedLook {
+  frame: BedFrame;
+  /** 睡痕整张图降不透明度（不能只改轮廓与名字，否则「睡痕」与「睡着」只差颜色） */
+  alpha: number;
+  /** 清醒躺着：床图上只有闭眼的那一张，靠脸上叠两个点表达「睁着眼」（补画见 backlog） */
+  eyes: boolean;
+}
+
+/** 睡痕的不透明度：床与小人共用同一个值（`personAlpha`）。 */
+export const TRACE_ALPHA = 0.45;
+
+/** 铺着人的两张床图：睡痕是同一张图换墨色档，清醒躺姿与睡着共用闭眼的那张。 */
+const BED_FRAMES: Record<Appearance, { resting: BedFrame; trace: BedFrame }> = {
+  boy: { resting: 'bed_boy', trace: 'bed_boy_trace' },
+  girl: { resting: 'bed_girl', trace: 'bed_girl_trace' },
+};
 
 /** 占用优先于归属；无主空床**不返回空值**——它是「这里可以躺」的唯一提示。 */
-export function bedOutline(input: { owned: boolean; occupant?: PersonState }): BedOutline {
-  if (input.occupant === 'lying' || input.occupant === 'asleep') return { tier: 'line', dashed: false };
-  if (input.occupant === 'trace') return { tier: 'trace', dashed: false };
-  return { tier: 'claimed', dashed: !input.owned };
+export function bedLook(input: { owned: boolean; occupant?: Occupant }): BedLook {
+  const occupant = input.occupant;
+  if (!occupant) {
+    return { frame: input.owned ? 'bed_empty_owned' : 'bed_empty_hollow', alpha: 1, eyes: false };
+  }
+  const trace = occupant.state === 'trace';
+  const pair = BED_FRAMES[occupant.appearance];
+  return {
+    frame: trace ? pair.trace : pair.resting,
+    alpha: trace ? TRACE_ALPHA : 1,
+    eyes: occupant.state === 'lying',
+  };
+}
+
+/** 站着的小人：外观（`boy` / `girl`）→ 贴图。**不做逐帧行走动画**，走动靠极轻微的缩放摆动。 */
+export function personFrame(appearance: Appearance): PersonFrame {
+  return appearance === 'girl' ? 'girl_stand' : 'boy_stand';
 }
 
 /**
- * 单张床的画法签名：占用走梯次首字母（l/t/c）、归属走线型（d/s）、我的床标记走 m。
- * 任何一项变了画法就变；签名不变才能跳过重建（床在视野里常驻，重建图形是每帧最贵的部分）。
+ * 「这个人此刻还在走」：漫游中且插值窗口还没走完。渲染的摆动与相机跟随共用这一条判据
+ * （两处各写一遍时，只要有处换了滞后口径，镜头与小人就会不同步）。
  */
-export function bedPaintSignature(input: { outline: BedOutline; mine: boolean }): string {
-  const { outline, mine } = input;
-  return `${outline.tier.charAt(0)}|${outline.dashed ? 'd' : 's'}|${mine ? 'm' : '-'}`;
-}
-
-/** 一条虚线段（世界坐标）。 */
-export interface DashSegment {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-/**
- * 把一条边切成虚线：首段从起点开始、末段正好落在终点（不悬挂半段），覆盖长度等于这条边。
- * 段数由「实线段 + 间隔」的周期推出，再把间隔均摊到两端对齐——虚线的可辨性靠对齐，不靠凑节拍。
- */
-export function dashSegments(input: {
-  from: { x: number; y: number };
-  to: { x: number; y: number };
-  dash: number;
-  gap: number;
-}): DashSegment[] {
-  const { from, to, dash, gap } = input;
-  const length = Math.hypot(to.x - from.x, to.y - from.y);
-  if (length === 0 || dash <= 0) return [];
-
-  // n 段实线 + (n-1) 个间隔 = 边长，两个端点因此必然贴边
-  const count = Math.min(Math.max(Math.round((length + gap) / (dash + gap)), 1), Math.max(1, Math.floor(length / dash)));
-  const dashLength = count === 1 ? length : Math.min(dash, length / count);
-  const gapLength = count === 1 ? 0 : (length - count * dashLength) / (count - 1);
-
-  const ux = (to.x - from.x) / length;
-  const uy = (to.y - from.y) / length;
-  return Array.from({ length: count }, (_, index) => {
-    const start = index * (dashLength + gapLength);
-    return {
-      x1: from.x + ux * start,
-      y1: from.y + uy * start,
-      x2: from.x + ux * (start + dashLength),
-      y2: from.y + uy * (start + dashLength),
-    };
-  });
-}
-
-/**
- * 一张床的四条边各切成虚线：矩形由四条边首尾相接围成，每条边独立分段（虚线节奏不跨角延续）。
- * 圆角矩形不做（虚线画圆角成本高）；圆角只出现在界面控件上。
- */
-export function bedDashSegments(input: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  dash: number;
-  gap: number;
-}): DashSegment[] {
-  const { x, y, width, height, dash, gap } = input;
-  const corners = [
-    { x, y },
-    { x: x + width, y },
-    { x: x + width, y: y + height },
-    { x, y: y + height },
-  ];
-  return corners.flatMap((corner, index) =>
-    dashSegments({ from: corner, to: corners[(index + 1) % corners.length] as Point, dash, gap }),
+export function isMoving(person: Person, motion: Motion | undefined, serverNow: number): boolean {
+  return (
+    person.state === 'roaming' && motion !== undefined && isInterpolating(motion, serverNow - interpolationDelay(motion))
   );
 }
 
@@ -176,7 +153,7 @@ export function shouldDrawName(person: Person, meId: string | undefined): boolea
 
 /** 睡痕的小人整体降不透明度：不能只改轮廓与名字，否则「睡痕」与「睡着」只差颜色。 */
 export function personAlpha(state: PersonState): number {
-  return state === 'trace' ? 0.45 : 1;
+  return state === 'trace' ? TRACE_ALPHA : 1;
 }
 
 /**
@@ -267,8 +244,3 @@ export function tapTargetFor(input: TapInput): TapTarget {
   if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };
   return walkTarget ? { kind: 'walk', x: walkTarget.x, y: walkTarget.y } : { kind: 'none' };
 }
-
-/**
- * 床位轮廓的内缩与命中判定无关，但渲染与命中必须用同一套床尺寸：`BED_W × BED_H`（素材墨迹 × 0.5）。
- */
-export const BED_SIZE = { width: BED_W, height: BED_H } as const;

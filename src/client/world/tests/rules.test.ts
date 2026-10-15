@@ -7,118 +7,81 @@ import { interpolationDelay, nextMotion, positionAt } from '../../motion';
 import type { Motion } from '../../motion';
 import {
   PERSON_HIT_PX,
-  bedDashSegments,
-  bedOutline,
-  bedPaintSignature,
+  TRACE_ALPHA,
+  bedLook,
   cameraStep,
-  dashSegments,
   followStep,
   isFaded,
+  isMoving,
   personAlpha,
+  personFrame,
   personHit,
   personPoint,
   shouldDrawName,
   tapTargetFor,
 } from '../rules';
-import type { PersonSpot } from '../rules';
+import type { Occupant, PersonSpot } from '../rules';
 import { MARKER_RADIUS } from '../views';
 
 const sleeper: Person = { id: 'u_1', name: '小明', appearance: 'boy', state: 'asleep', bedNo: 7 };
 const walker: Person = { id: 'u_2', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 };
 const trace: Person = { id: 'u_3', name: '夜猫', appearance: 'boy', state: 'trace', bedNo: 5 };
 
-describe('床位轮廓：占用走颜色、归属走线型', () => {
-  it('无主空床画出来，用虚线（它是「这里可以躺」的唯一提示）', () => {
-    expect(bedOutline({ owned: false })).toEqual({ tier: 'claimed', dashed: true });
+describe('床位贴图：占用走墨色三档、归属走填充（空芯 / 纸）', () => {
+  const lyingBoy: Occupant = { state: 'lying', appearance: 'boy' };
+  const asleepGirl: Occupant = { state: 'asleep', appearance: 'girl' };
+  const traceBoy: Occupant = { state: 'trace', appearance: 'boy' };
+
+  it('无主空床是空芯：白填充映射成透明，地板直接透出来', () => {
+    expect(bedLook({ owned: false })).toEqual({ frame: 'bed_empty_hollow', alpha: 1, eyes: false });
   });
 
-  it('有主空床是 claimed 实线', () => {
-    expect(bedOutline({ owned: true })).toEqual({ tier: 'claimed', dashed: false });
+  it('有主空床是 claimed 轮廓 + paper 填充', () => {
+    expect(bedLook({ owned: true })).toEqual({ frame: 'bed_empty_owned', alpha: 1, eyes: false });
   });
 
-  it('睡痕是 trace 实线', () => {
-    expect(bedOutline({ owned: true, occupant: 'trace' })).toEqual({ tier: 'trace', dashed: false });
+  it('床上有人换成 line 档的整图：男/女各一张，清醒与睡着共用那张闭眼的', () => {
+    expect(bedLook({ owned: true, occupant: lyingBoy }).frame).toBe('bed_boy');
+    expect(bedLook({ owned: false, occupant: { state: 'asleep', appearance: 'boy' } }).frame).toBe('bed_boy');
+    expect(bedLook({ owned: true, occupant: asleepGirl }).frame).toBe('bed_girl');
   });
 
-  it('床上有人是 line 实线（lying 与 asleep 同梯次）', () => {
-    expect(bedOutline({ owned: true, occupant: 'lying' })).toEqual({ tier: 'line', dashed: false });
-    expect(bedOutline({ owned: false, occupant: 'asleep' })).toEqual({ tier: 'line', dashed: false });
+  it('睡痕是 trace 档整图，且整张降低不透明度（不能只改轮廓与名字）', () => {
+    expect(bedLook({ owned: true, occupant: traceBoy })).toEqual({
+      frame: 'bed_boy_trace',
+      alpha: TRACE_ALPHA,
+      eyes: false,
+    });
+    expect(TRACE_ALPHA).toBeLessThan(1);
   });
 
-  it('占用优先于归属：别人的床有人睡也是 line 实线', () => {
-    expect(bedOutline({ owned: true, occupant: 'asleep' })).toEqual({ tier: 'line', dashed: false });
-  });
-});
-
-describe('虚线分段', () => {
-  it('按「实线段 + 间隔」的周期定段数', () => {
-    expect(dashSegments({ from: { x: 0, y: 0 }, to: { x: 100, y: 0 }, dash: 6, gap: 4 })).toHaveLength(10);
+  it('只有清醒躺姿在脸上叠两个点（睡着的眼睛本来就是闭着的）', () => {
+    expect(bedLook({ owned: true, occupant: lyingBoy }).eyes).toBe(true);
+    expect(bedLook({ owned: true, occupant: asleepGirl }).eyes).toBe(false);
+    expect(bedLook({ owned: true, occupant: traceBoy }).eyes).toBe(false);
   });
 
-  it('首段从起点开始、末段正好落在终点（不悬挂半段），覆盖长度等于边长', () => {
-    const segments = dashSegments({ from: { x: 0, y: 0 }, to: { x: 57, y: 0 }, dash: 6, gap: 4 });
-    expect(segments[0]?.x1).toBe(0);
-    expect(segments[segments.length - 1]?.x2).toBeCloseTo(57, 6);
-  });
-
-  it('边比一段还短时只给一段：退化也不能跑到边外', () => {
-    const segments = dashSegments({ from: { x: 0, y: 0 }, to: { x: 3, y: 0 }, dash: 6, gap: 4 });
-    expect(segments).toEqual([{ x1: 0, y1: 0, x2: 3, y2: 0 }]);
-  });
-
-  it('零长度的边不产生段（不画零长线段）', () => {
-    expect(dashSegments({ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, dash: 6, gap: 4 })).toEqual([]);
+  it('占用优先于归属：有人的床不因「有没有主」换贴图', () => {
+    expect(bedLook({ owned: true, occupant: asleepGirl }).frame).toBe(
+      bedLook({ owned: false, occupant: asleepGirl }).frame,
+    );
   });
 });
 
-describe('一张床的四条边各切成虚线', () => {
-  const width = 57;
-  const height = 96;
-  const segments = bedDashSegments({ x: 2, y: 2, width, height, dash: 6, gap: 4 });
-
-  it('每段都贴在这张床的矩形边界上（不越界）', () => {
-    for (const segment of segments) {
-      for (const [x, y] of [
-        [segment.x1, segment.y1],
-        [segment.x2, segment.y2],
-      ] as Array<[number, number]>) {
-        const onEdge =
-          (x === 2 || x === 2 + width || y === 2 || y === 2 + height) &&
-          x >= 2 &&
-          x <= 2 + width &&
-          y >= 2 &&
-          y <= 2 + height;
-        expect(onEdge).toBe(true);
-      }
-    }
-  });
-
-  it('四个角各出现一次：边与边首尾相接，不漏角也不重复画边', () => {
-    const corners = [
-      { x: 2, y: 2 },
-      { x: 2 + width, y: 2 },
-      { x: 2 + width, y: 2 + height },
-      { x: 2, y: 2 + height },
-    ];
-    for (const corner of corners) {
-      const hits = segments.filter((segment) => segment.x1 === corner.x && segment.y1 === corner.y);
-      expect(hits, `角 (${corner.x}, ${corner.y})`).toHaveLength(1);
-    }
+describe('小人贴图', () => {
+  it('外观决定站姿贴图（第一版两种）', () => {
+    expect(personFrame('boy')).toBe('boy_stand');
+    expect(personFrame('girl')).toBe('girl_stand');
   });
 });
 
-describe('床位画法签名', () => {
-  const paint = (outline: ReturnType<typeof bedOutline>, mine: boolean) => bedPaintSignature({ outline, mine });
-
-  it('无变化时签名稳定（否则每一帧都会重建视野里那几十张床的图形）', () => {
-    expect(paint(bedOutline({ owned: false }), false)).toBe(paint(bedOutline({ owned: false }), false));
-  });
-
-  it('占用梯次 / 归属线型 / 我的床标记 任一变化 → 签名变化', () => {
-    const base = paint(bedOutline({ owned: true }), false);
-    expect(paint(bedOutline({ owned: true, occupant: 'asleep' }), false)).not.toBe(base);
-    expect(paint(bedOutline({ owned: false }), false)).not.toBe(base);
-    expect(paint(bedOutline({ owned: true }), true)).not.toBe(base);
+describe('「还在走」的判据（渲染的摆动与相机跟随共用）', () => {
+  it('漫游中且插值窗口还开着才算走', () => {
+    const motion = nextMotion(undefined, 100, 0, 1000);
+    expect(isMoving(walker, motion, 1000)).toBe(true);
+    expect(isMoving(sleeper, motion, 1000)).toBe(false); // 在床上的人不走
+    expect(isMoving(walker, undefined, 1000)).toBe(false); // 没有插值窗口 = 停下即停
+    expect(isMoving(walker, motion, 1300)).toBe(false); // 窗口走完（+宽限）就不是「还在走」
   });
 });
 
