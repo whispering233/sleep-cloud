@@ -7,8 +7,18 @@ import type { ClientState } from '../store';
 import { positionAt, INTERPOLATION_DELAY_MS } from '../motion';
 import { palette } from './palette';
 import type { WorldPalette } from './palette';
-import { bedOutline, isDaytime, markerRadius, personAlpha, shouldDrawName, tapTargetFor } from './rules';
-import type { PersonSpot } from './rules';
+import {
+  bedDashSegments,
+  bedOutline,
+  bedPaintSignature,
+  isDaytime,
+  markerRadius,
+  personAlpha,
+  shouldDrawName,
+  tapTargetFor,
+  wallGeometry,
+} from './rules';
+import type { BedOutline, PersonSpot } from './rules';
 import { loadSceneIndex, TILE } from './scene';
 import type { SceneIndex } from './scene';
 
@@ -27,6 +37,11 @@ const MAX_SCALE = 2.5;
 const LINE_PX = 1.5;
 /** 名字按屏幕像素给：不随缩放变大变小。 */
 const NAME_PX = 12;
+/** 虚线按屏幕像素给：与线宽同理，缩放时虚线节奏不变。 */
+const DASH_PX = 6;
+const DASH_GAP_PX = 4;
+/** 床位轮廓相对格子的内缩（世界像素）：留出格线，同时让相邻床不贴在一起。 */
+const BED_INSET = 3;
 /** 气泡内边距与圆角（屏幕像素；气泡整体按 1/scale 缩放，所以它就是屏幕上看到的尺寸）。 */
 const BUBBLE_PAD_X = NAME_PX * 0.6;
 const BUBBLE_PAD_Y = NAME_PX * 0.35;
@@ -100,14 +115,16 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   const world = new Container();
   const floor = new Graphics();
   const props = new Graphics();
-  const bedTiers: Record<'claimed' | 'trace' | 'line', Graphics> = {
+  const bedTiers: Record<BedOutline['tier'], Graphics> = {
     claimed: new Graphics(),
     trace: new Graphics(),
     line: new Graphics(),
   };
+  /** 无主空床单独一层：要画淡填充 + 虚线，画法与实线床位不同 */
+  const unownedBeds = new Graphics();
   const people = new Container();
   people.sortableChildren = true;
-  world.addChild(floor, props, bedTiers.claimed, bedTiers.trace, bedTiers.line, people);
+  world.addChild(floor, props, unownedBeds, bedTiers.claimed, bedTiers.trace, bedTiers.line, people);
   app.stage.addChild(world);
 
   const fontFamily = cssVar('--font-body', 'ui-sans-serif, system-ui, sans-serif');
@@ -118,6 +135,10 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   /** 上一帧人物的格坐标（命中判定用；1 帧延迟可接受） */
   let spots: PersonSpot[] = [];
   let background = palette(modeOf(getState())).background;
+  /** 上一帧的床位画法签名（见 `drawBeds` 的为什么跳过重建） */
+  let bedSignature = '';
+  /** 上一帧的场景本体画法签名（见 `drawSceneBody` 的为什么跳过重建） */
+  let sceneBodySignature = '';
 
   const markDirty = (): void => {
     dirty = true;
@@ -150,14 +171,30 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   }
 
   /** 场景本体：地板 + 墙 + 零星道具。床的轮廓不走这里（它由归属与占用派生）。 */
-  function drawSceneBody(pal: WorldPalette): void {
+  function drawSceneBody(pal: WorldPalette, mode: 'day' | 'night'): void {
     if (!scene) return;
+    // 墙内沿的线宽与灯的光晕半径都按 `camera.scale` 给，所以缩放也必须进重建条件：
+    // 否则捏合之后线宽一直沿用旧缩放，看起来偏粗（昼夜同理，它决定取哪套色）。
+    const signature = `${mode}|${camera.scale}`;
+    if (signature === sceneBodySignature) return;
+    sceneBodySignature = signature;
+
     floor.clear();
-    floor
-      .rect(0, 0, scene.widthPx, scene.heightPx)
-      .fill(pal.background)
-      .rect(0, 0, scene.widthPx, scene.heightPx)
-      .stroke({ width: 3, color: pal.structure });
+    // 地板铺满整个场景作底；墙环带 = 整块铺 `band` 再把 `inner` 盖回地板色（两次矩形填充，不用孔洞 API）。
+    floor.rect(0, 0, scene.widthPx, scene.heightPx).fill(pal.background);
+
+    const wall = wallGeometry({
+      width: scene.scene.width,
+      height: scene.scene.height,
+      blocked: scene.scene.blocked,
+    });
+    if (wall.band.width > 0 && wall.band.height > 0) {
+      floor.rect(wall.band.x, wall.band.y, wall.band.width, wall.band.height).fill(pal.surface);
+      floor.rect(wall.inner.x, wall.inner.y, wall.inner.width, wall.inner.height).fill(pal.background);
+      floor
+        .rect(wall.inner.x, wall.inner.y, wall.inner.width, wall.inner.height)
+        .stroke({ width: LINE_PX / camera.scale, color: pal.structure });
+    }
 
     props.clear();
     const dot = markerRadius(camera.scale, TILE);
@@ -177,19 +214,41 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     }
   }
 
-  /** 轮廓梯次：床上有人 > 睡痕 > 有主空床 > 不画。无主的床**不画**，但照样可点（命中区域与轮廓无关）。 */
-  function drawBeds(state: ClientState, pal: WorldPalette): void {
-    for (const graphics of Object.values(bedTiers)) graphics.clear();
+  /**
+   * 床位轮廓：占用走颜色、归属走线型（真值表见 `docs/ui/DESIGN.md`）。
+   * 无主空床画 `claimed` 虚线 + 淡填充；**命中与画法无关**——无主床照样可点、可躺。
+   */
+  function drawBeds(state: ClientState, pal: WorldPalette, mode: 'day' | 'night'): void {
     if (!scene) return;
 
-    const width = LINE_PX / camera.scale;
     const occupants = occupantsOf(state);
-    for (const bed of scene.scene.beds) {
-      const tier = bedOutline({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) });
-      if (!tier) continue;
-      bedTiers[tier]
-        .roundRect(bed.x * TILE + 3, bed.y * TILE + 3, TILE - 6, TILE - 6, TILE * 0.15)
-        .stroke({ width, color: pal.bed[tier] });
+    const beds = scene.scene.beds.map((bed) => ({
+      bed,
+      outline: bedOutline({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) }),
+    }));
+    const signature = bedPaintSignature({ mode, scale: camera.scale, outlines: beds.map(({ outline }) => outline) });
+    // 「有人在走动」时每帧都会重画，而一帧要重建 256 个床位图形（含虚线分段到边）；签名不变就整段跳过。
+    // 线宽与虚线长度按屏幕像素给，所以缩放与昼夜（描边色）都必须进签名。
+    if (signature === bedSignature) return;
+    bedSignature = signature;
+
+    unownedBeds.clear();
+    for (const graphics of Object.values(bedTiers)) graphics.clear();
+
+    const width = LINE_PX / camera.scale;
+    const size = TILE - BED_INSET * 2;
+    for (const { bed, outline } of beds) {
+      const x = bed.x * TILE + BED_INSET;
+      const y = bed.y * TILE + BED_INSET;
+      if (!outline.dashed) {
+        bedTiers[outline.tier].rect(x, y, size, size).stroke({ width, color: pal.bed[outline.tier] });
+        continue;
+      }
+      unownedBeds.rect(x, y, size, size).fill({ color: pal.surface });
+      for (const segment of bedDashSegments({ x, y, size, dash: DASH_PX / camera.scale, gap: DASH_GAP_PX / camera.scale })) {
+        unownedBeds.moveTo(segment.x1, segment.y1).lineTo(segment.x2, segment.y2);
+      }
+      unownedBeds.stroke({ width, color: pal.bed.claimed });
     }
   }
 
@@ -297,8 +356,7 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     }
   }
 
-  /**
-   * 名字 / 表情气泡：`secondary` 底 + `neutral` 字（令牌语义见 DESIGN 的 `name-bubble`），
+  /** 名字 / 表情气泡底和无主床淡填充是同一个浮出色（令牌 `secondary` / `day-surface`）。
    * 压在同款文字下面；**整体按 1/scale 缩放**，所以不随镜头缩放变大变小。
    */
   function drawBubble(node: Container, text: string, y: number, pal: WorldPalette): void {
@@ -317,7 +375,7 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
         label.height + BUBBLE_PAD_Y * 2,
         BUBBLE_RADIUS,
       )
-      .fill({ color: pal.bubble });
+      .fill({ color: pal.surface });
 
     const group = new Container();
     group.position.set(0, y);
@@ -389,10 +447,13 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
       void loadSceneIndex(state.sceneGuid)
         .then((index) => {
           scene = index;
-          const pal = palette(modeOf(getState()));
+          bedSignature = ''; // 换了场景，上一帧的签名不再可比
+          sceneBodySignature = '';
+          const mode = modeOf(getState());
+          const pal = palette(mode);
           background = pal.background;
           app.renderer.background.color = background;
-          drawSceneBody(pal);
+          drawSceneBody(pal, mode);
           fitCamera();
           markDirty();
         })
@@ -401,13 +462,15 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
         });
     }
 
-    const pal = palette(modeOf(state));
+    const mode = modeOf(state);
+    const pal = palette(mode);
     if (pal.background !== background) {
       background = pal.background;
       app.renderer.background.color = background;
-      drawSceneBody(pal);
     }
-    drawBeds(state, pal);
+    // 每帧都调（内部按签名守卫跳过）：缩放变了而底色没变时，墙内沿线宽与灯的光晕也要跟着重画
+    drawSceneBody(pal, mode);
+    drawBeds(state, pal, mode);
     drawPeople(state, pal, serverNow);
   }
 
@@ -430,6 +493,7 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   const unsubscribe = subscribe(markDirty);
 
   // ——— 相机输入：滚轮缩放、双指捏合缩放、拖动平移（手机上点地面是走动意图，见后续卡片） ———
+  // 指针状态放在 ticker 之前：跟随要据此判断「用户正在操作相机」，此时相机必须完全不动
   const pointers = new Map<number, { x: number; y: number }>();
   let pinchDistance = 0;
   let tapStart: { x: number; y: number; at: number } | null = null;

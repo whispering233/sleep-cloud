@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { Scene } from '../../../shared/scene';
+import { HALLS } from '../../../shared/hall-registry';
 import { buildSceneIndex } from '../scene';
 
 /** 三个厅的场景数据就在仓库里：`一份数据，两个读者`，客户端索引必须与服务端网格同语义。 */
-const SCENE_GUIDS = ['dorm-asia-01', 'dorm-europe-01', 'dorm-america-01'];
+/** 清单**从厅注册表推导**：新增厅时这些测试自动覆盖它的场景，不需第二处人工维护。 */
+const SCENE_GUIDS = HALLS.map((hall) => hall.sceneGuid);
 
 function readScene(guid: string): Scene {
   const file = join(process.cwd(), 'public', 'scenes', `${guid}.json`);
