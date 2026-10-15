@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import type { HallSummary, SessionView } from '../shared/http-api';
-import { loadHalls, loadSession } from './api';
+import type { SessionView } from '../shared/http-api';
+import { loadSession } from './api';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
@@ -15,30 +15,29 @@ import { connectHall } from './ws';
  */
 export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
-  const [halls, setHalls] = useState<HallSummary[]>([]);
+  /** 入场前的厅满判定（`/api/me` 的 `2002`）：厅满了就不让人建连再被踢 */
+  const [full, setFull] = useState(false);
   const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [sessionRes, hallsRes] = await Promise.all([loadSession(), loadHalls()]);
+      const sessionRes = await loadSession();
       if (cancelled) return;
       if (sessionRes.data) setSession(sessionRes.data);
-      if (hallsRes.data) setHalls(hallsRes.data.halls);
+      setFull(sessionRes.code === '2002');
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const hall = halls.find((item) => item.id === session?.hallId);
-  const hallId = session?.hallId;
-  const sceneGuid = hall?.sceneGuid;
+  const layoutVersion = session?.layoutVersion;
 
   useEffect(() => {
-    if (!entered || !hallId || !sceneGuid) return;
-    return connectHall({ hallId, sceneGuid });
-  }, [entered, hallId, sceneGuid]);
+    if (!entered || !layoutVersion) return;
+    return connectHall({ layoutVersion });
+  }, [entered, layoutVersion]);
 
   return (
     <div className="app-shell">
@@ -59,7 +58,7 @@ export function App() {
       {session && !entered ? (
         <EntryOverlay
           session={session}
-          halls={halls}
+          blocked={full}
           onDone={(next) => {
             setSession(next);
             setEntered(true);

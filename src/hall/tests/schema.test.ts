@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
-import { BED_INDEX_SQL, BED_SEED_SQL, BED_TABLE_SQL } from '../schema';
+import * as schema from '../schema';
+import { BED_INDEX_SQL, BED_TABLE_SQL, META_KEYS, META_TABLE_SQL } from '../schema';
 
 /** 文档里的 `bed` 表字段（`docs/db/schema.md` §2） */
 const docFields = tableRows(readDoc('db/schema.md'), '## 2. 表：`bed`', '### 状态取值语义').map(
@@ -23,6 +24,11 @@ describe('床位表 DDL 与 docs/db/schema.md 一致', () => {
     expect(ddlFields).toEqual(docFields.map(({ name, type }) => ({ name, type })));
   });
 
+  it('已删 `owner_tz`（时区概念整体删除）', () => {
+    expect(BED_TABLE_SQL).not.toContain('owner_tz');
+    expect(docFields.map(({ name }) => name)).not.toContain('owner_tz');
+  });
+
   it('必选字段都是 NOT NULL，可选字段都可为空', () => {
     for (const field of docFields) {
       const nullable = new RegExp(`${field.name}\\s+(INTEGER|TEXT)\\s*(,|\\n)`).test(BED_TABLE_SQL);
@@ -39,8 +45,29 @@ describe('床位表 DDL 与 docs/db/schema.md 一致', () => {
     expect(sql).toContain('bed_state');
   });
 
-  it('补行语句是幂等写法（OR IGNORE + 主键）', () => {
-    expect(BED_SEED_SQL).toContain('INSERT OR IGNORE INTO bed');
-    expect(BED_SEED_SQL).toContain('RECURSIVE');
+  it('惰性行：没有「预建级别容量那么多行」的补种语句', () => {
+    expect(Object.keys(schema)).not.toContain('BED_SEED_SQL');
+    expect(readDoc('db/schema.md')).toContain('惰性行');
+  });
+});
+
+describe('meta 表与 docs/db/schema.md §3 一致', () => {
+  const docKeys = tableRows(readDoc('db/schema.md'), '## 3. 表：`meta`', '## 4. 为什么不建用户表').map(
+    ([key]) => (key ?? '').replaceAll('`', ''),
+  );
+
+  it('键名逐字来自文档（床位数 + 每日唤醒边界）', () => {
+    expect(docKeys).toEqual(['bed_count', 'daily_wake_at']);
+    expect(Object.values(META_KEYS).sort()).toEqual(['bed_count', 'daily_wake_at']);
+  });
+
+  it('没有「有主床数」这个计数（升级判据是与出生点同一个查询）', () => {
+    expect(readDoc('db/schema.md')).not.toContain('owned_count');
+    expect(Object.values(META_KEYS)).not.toContain('owned_count');
+  });
+
+  it('DDL 是每个 key 一行的键值表', () => {
+    expect(META_TABLE_SQL).toMatch(/key TEXT PRIMARY KEY/);
+    expect(META_TABLE_SQL).toMatch(/value INTEGER NOT NULL/);
   });
 });

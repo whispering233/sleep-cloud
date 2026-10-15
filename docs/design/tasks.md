@@ -10,30 +10,6 @@
 
 ---
 
-## [ ] 卡 3：厅服务切布局 + 床位模型
-
-**目标**：房间服务改用布局函数，床位改为「惰性行 + 级表伸缩」，并把睡痕/归属的过期改成读取时推导。
-
-**改动范围**
-
-- **`pos` 广播改成每拍都发**（不再只在格号变化时发），坐标改**世界像素**；客户端的插值滞后去掉「固定 100ms」的隐含假设（`motion.ts` 的自适应滞后在窄间隔下自然退化成稳定的 ~100ms）
-- `src/hall/`：`scene.ts` 删除（可行走性来自 `layout.ts`）；`bed-store.ts` 改惰性行（**只有有主或有占用才有一行**）+ `meta` 表（`bed_count` / `owned_count`）+ 删 `owner_tz`；`schema.ts` 删「预建 256 行」的补种 SQL；`bed-rules.ts` 的 `capacity` → `bedCount`，判据加「过期睡痕视为无占用、过期归属视为无主」；`pathfinding.ts` 改为**街网寻路**（目标点不在街网上 → `3006`，不吸附）
-- `src/hall/hall.ts`：出生点（编号最小的无主空床前方走道）、升级（入场前判定 `owned_count >= bed_count` 且未触顶 → 写 `meta` + 广播 `resize`）、降级（每日唤醒评估：最外圈全无主无占用）、每日唤醒只做「归属释放 + 缩级评估」（**删掉睡痕清理任务与厅时区换算**）
-- `src/worker/`：删 `/api/halls` 与 `/api/hall`（单厅）；会话删 `hallId` / `timezone`；`/api/me` 加布局版本
-- `src/shared/`：`protocol.ts` 的 `capacity → bedCount`、`ownedBeds` 改**位图**编码、加 `resize` 消息与 `traceUntil` 字段、删 `Facing`；`hall-registry.ts` 收敛为单厅常量；`http-api.ts` 删厅列表与 `HallsView`；`constants.ts` 按 `config.md` §3/§4/§5 更新（`TRACE_TTL_MS`、`DAILY_WAKE_UTC_HOUR`、`WALK_SPEED_PX_PER_S`、几何常量、`POOL_SIZE`；删 `SLEEP_TRACE_CLEAR_HOUR`、`SCENE_BED_COUNT`）
-- **`bedNoAt` / `isWalkable` 的每个调用点都要显式传 `bedCount`**：不传 = 按最高档判定（fail-open，墙会静默消失），只给校验用
-- **删除旧场景数据**：`public/scenes/*.json`、`src/shared/scene.ts`、`src/hall/scene.ts`、`src/client/world/scene-index.ts` 及其测试（两端已切到 `layout.ts`；卡 2 只新增了 `layout.ts`，没删任何东西），同时把客户端世界层的格/像素换算改成直接吃 `layout.ts`
-
-**验收**
-
-- 单测：惰性行（新厅 0 行）、`meta` 计数与重算、升级/降级判据（含「外圈有人 → 不降级」）、过期睡痕可认领、过期归属可认领、位图编解码、街网寻路（含 `3006`）
-- 镜像测试收口：`error-code.test.ts`（删 `1006`、`2003` 改文案、`2002` 改语义）、`protocol.test.ts`（`resize` + 删 `Facing`）、`schema.test.ts`、`hall-registry.test.ts`、`error-text.test.ts`
-- 手工 ws 冒烟：入场 → 看到 114 张无主空床 → 躺下 → 造满 → 升级 → `resize`
-
-**依赖**：卡 2
-
----
-
 ## [ ] 卡 4：美术管线 + 贴真图
 
 **目标**：5 张母图 → 8 张贴图（`DESIGN.md`「构建期要产出的变体」），世界层换掉占位图形。

@@ -22,7 +22,7 @@ export function WorldCanvas() {
         // 世界层单独成块：入场层不必等这几百 KB 下载完（手机是主场景）
         const { createWorld } = await import('../world/world');
         const handle = createWorld(host, {
-          onWalk: (tile) => sendWalk(tile.x, tile.y),
+          onWalk: (point) => sendWalk(point.x, point.y),
           onLie: (bedNo) => sendLie(bedNo),
           onSelect: (id) => selectPerson(id),
           onClearSelection: () => clearSelection(),

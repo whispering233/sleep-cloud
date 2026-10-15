@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { LAYOUT_VERSION } from '../../shared/layout';
+import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
 import { CHAT_LOG_MAX, EMOTE_MS } from '../../shared/constants';
 import {
@@ -10,6 +12,7 @@ import {
   applyJoin,
   applyLeave,
   applyPos,
+  applyResize,
   applySnapshot,
   applyState,
   applyWhisper,
@@ -19,19 +22,32 @@ import {
   setState,
 } from '../store';
 
+const BED_COUNT = 114;
+
 const snapshot = (overrides: Partial<SnapshotMessage> = {}): SnapshotMessage => ({
   t: 'snapshot',
-  sceneGuid: 'dorm-asia-01',
+  layoutVersion: LAYOUT_VERSION,
   serverTs: 1_000_000,
-  hall: { id: 'asia-1', name: '亚洲厅', timezone: 'Asia/Shanghai', capacity: 256, online: 2 },
-  me: { id: 'u_me', name: '我', appearance: 'a1', state: 'roaming', x: 1, y: 1 },
-  ownedBeds: [42],
-  people: [{ id: 'u_other', name: '阿夜', appearance: 'a2', state: 'roaming', x: 5, y: 6 }],
+  hall: { bedCount: BED_COUNT, online: 2 },
+  me: { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430 },
+  ownedBeds: encodeOwnedBeds([42], BED_COUNT),
+  people: [{ id: 'u_other', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 }],
+  ...overrides,
+});
+
+/** 我自己的条目（默认在厅里走动）；用途只有一个：带上 `ownedBedNo` 试归属位清理。 */
+const meWith = (overrides: { ownedBedNo?: number } = {}): SnapshotMessage['me'] => ({
+  id: 'u_me',
+  name: '我',
+  appearance: 'boy',
+  state: 'roaming',
+  x: 812.5,
+  y: 430,
   ...overrides,
 });
 
 beforeEach(() => {
-  applySnapshot(snapshot({ ownedBeds: [], people: [] }));
+  applySnapshot(snapshot({ ownedBeds: encodeOwnedBeds([], BED_COUNT), people: [] }));
 });
 
 describe('客户端状态归约', () => {
@@ -40,31 +56,31 @@ describe('客户端状态归约', () => {
     const state = getState();
 
     expect(state.connected).toBe(true);
-    expect(state.sceneGuid).toBe('dorm-asia-01');
-    expect(state.people.get('u_other')).toMatchObject({ name: '阿夜', x: 5, y: 6 });
+    expect(state.layoutVersion).toBe(LAYOUT_VERSION);
+    expect(state.people.get('u_other')).toMatchObject({ name: '阿夜', x: 300, y: 280 });
     expect([...state.ownedBeds]).toEqual([42]);
     expect(state.motion.size).toBe(0);
     expect(Math.abs(state.clockOffsetMs - (1_000_000 - Date.now()))).toBeLessThan(1000);
   });
 
   it('join：插入条目，重复到达就覆盖（幂等），并清掉旧的插值窗口', () => {
-    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_new', 3, 3, 3]] });
-    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'a3', state: 'roaming', x: 7, y: 8, online: 3 });
-    expect(getState().people.get('u_new')).toMatchObject({ name: '新来的', x: 7, y: 8 });
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_new', 260, 300]] });
+    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'boy', state: 'roaming', x: 460, y: 430, online: 3 });
+    expect(getState().people.get('u_new')).toMatchObject({ name: '新来的', x: 460, y: 430 });
     expect(getState().motion.has('u_new')).toBe(false);
 
-    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'a3', state: 'roaming', x: 9, y: 9, online: 3 });
+    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'boy', state: 'roaming', x: 520, y: 560, online: 3 });
     expect(getState().people.size).toBe(1);
-    expect(getState().people.get('u_new')).toMatchObject({ x: 9, y: 9 });
+    expect(getState().people.get('u_new')).toMatchObject({ x: 520, y: 560 });
   });
 
   it('state：更新显示态、保留名字与外观，上床后不再插值', () => {
     applySnapshot(snapshot());
-    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 6, 6, 0]] });
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 380, 340]] });
     expect(getState().motion.has('u_other')).toBe(true);
 
     applyState({ t: 'state', id: 'u_other', state: 'asleep', bedNo: 7, online: 2 });
-    expect(getState().people.get('u_other')).toMatchObject({ name: '阿夜', appearance: 'a2', state: 'asleep', bedNo: 7 });
+    expect(getState().people.get('u_other')).toMatchObject({ name: '阿夜', appearance: 'girl', state: 'asleep', bedNo: 7 });
     expect(getState().motion.has('u_other')).toBe(false);
   });
 
@@ -86,7 +102,7 @@ describe('客户端状态归约', () => {
 
   it('leave：人与插值窗口一起移除', () => {
     applySnapshot(snapshot());
-    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 6, 6, 0]] });
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 380, 340]] });
     applyLeave({ t: 'leave', id: 'u_other', online: 2 });
     expect(getState().people.has('u_other')).toBe(false);
     expect(getState().motion.has('u_other')).toBe(false);
@@ -96,7 +112,7 @@ describe('客户端状态归约', () => {
     applySnapshot(snapshot()); // 快照里是 2
     expect(getState().hall?.online).toBe(2);
 
-    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'a3', state: 'roaming', x: 7, y: 8, online: 3 });
+    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'boy', state: 'roaming', x: 7, y: 8, online: 3 });
     expect(getState().hall?.online).toBe(3);
 
     applyState({ t: 'state', id: 'u_other', state: 'asleep', bedNo: 7, online: 2 });
@@ -108,7 +124,7 @@ describe('客户端状态归约', () => {
 
   it('online：快照还没到（没有 hall）时什么都不动，不凭空造一个厅', () => {
     setState({ hall: undefined });
-    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'a3', state: 'roaming', x: 7, y: 8, online: 1 });
+    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'boy', state: 'roaming', x: 7, y: 8, online: 1 });
     applyState({ t: 'state', id: 'u_new', state: 'roaming', x: 8, y: 8, online: 1 });
     applyLeave({ t: 'leave', id: 'u_new', online: 0 });
     expect(getState().hall).toBeUndefined();
@@ -116,8 +132,8 @@ describe('客户端状态归约', () => {
 
   it('online：刷新人数不动我已存的厅信息（只换 online 一个字段）', () => {
     applySnapshot(snapshot());
-    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'a3', state: 'roaming', x: 7, y: 8, online: 3 });
-    expect(getState().hall).toMatchObject({ id: 'asia-1', name: '亚洲厅', timezone: 'Asia/Shanghai', capacity: 256, online: 3 });
+    applyJoin({ t: 'join', id: 'u_new', name: '新来的', appearance: 'boy', state: 'roaming', x: 7, y: 8, online: 3 });
+    expect(getState().hall).toEqual({ bedCount: BED_COUNT, online: 3 });
   });
 
   it('bed：归属集合增删（占用不走这条消息）', () => {
@@ -129,12 +145,71 @@ describe('客户端状态归约', () => {
     expect([...getState().ownedBeds]).toEqual([]);
   });
 
+  it('resize：床位数变化只更这一个数字，越界的条目顺手丢掉', () => {
+    applySnapshot(snapshot({ hall: { bedCount: 161, online: 2 } }));
+    applyBed({ t: 'bed', bedNo: 120, owned: true });
+    applyResize({ t: 'resize', bedCount: 114 });
+
+    expect(getState().hall?.bedCount).toBe(114);
+    expect(getState().ownedBeds.has(120)).toBe(false); // 降级砍掉的正是最大那些编号
+    expect(getState().ownedBeds.has(42)).toBe(true);
+  });
+
+  it('resize：升级（新增外圈）不动归属与占用，只是多了床位', () => {
+    applySnapshot(snapshot());
+    applyResize({ t: 'resize', bedCount: 161 });
+
+    expect(getState().hall?.bedCount).toBe(161);
+    expect([...getState().ownedBeds]).toEqual([42]);
+    expect(getState().people.size).toBe(1);
+  });
+
+  it('resize：降级砍掉的正好是我的床 → me.ownedBedNo 一并清掉（暖灯不能指着不存在的床）', () => {
+    applySnapshot(snapshot({ hall: { bedCount: 161, online: 2 }, me: meWith({ ownedBedNo: 120 }) }));
+    expect(getState().me?.ownedBedNo).toBe(120);
+
+    applyResize({ t: 'resize', bedCount: 114 });
+    expect(getState().me?.ownedBedNo).toBeUndefined();
+  });
+
+  it('resize：我的床还在 → 归属位不动', () => {
+    applySnapshot(snapshot({ me: meWith({ ownedBedNo: 42 }) }));
+    applyResize({ t: 'resize', bedCount: 161 });
+    expect(getState().me?.ownedBedNo).toBe(42);
+  });
+
+  it('bed{owned:false}：被释放的正好是我的床（30 天没回来）→ me.ownedBedNo 一并清掉', () => {
+    applySnapshot(snapshot({ me: meWith({ ownedBedNo: 42 }) }));
+
+    applyBed({ t: 'bed', bedNo: 42, owned: false });
+    expect(getState().me?.ownedBedNo).toBeUndefined();
+  });
+
+  it('bed{owned:false}：释放的是别人的床 → 我的归属位不动', () => {
+    applySnapshot(snapshot({ me: meWith({ ownedBedNo: 42 }) }));
+
+    applyBed({ t: 'bed', bedNo: 7, owned: false });
+    expect(getState().me?.ownedBedNo).toBe(42);
+  });
+
+  it('睡痕条目带着 traceUntil 落进 people（到期由客户端自行淡出）', () => {
+    applySnapshot(
+      snapshot({
+        people: [
+          { id: 'u_trace', name: '夜猫', appearance: 'boy', state: 'trace', bedNo: 8, traceUntil: 1_735_728_000_000 },
+        ],
+      }),
+    );
+
+    expect(getState().people.get('u_trace')).toMatchObject({ state: 'trace', bedNo: 8, traceUntil: 1_735_728_000_000 });
+  });
+
   it('pos：没有上一个窗口时直接落位，并把权威坐标记进 people', () => {
     applySnapshot(snapshot());
-    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 5, 7, 0]] });
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 420.5, 342.25]] });
     const state = getState();
-    expect(state.motion.get('u_other')).toMatchObject({ fromX: 5, fromY: 7, toX: 5, toY: 7 });
-    expect(state.people.get('u_other')).toMatchObject({ x: 5, y: 7 });
+    expect(state.motion.get('u_other')).toMatchObject({ fromX: 420.5, fromY: 342.25, toX: 420.5, toY: 342.25 });
+    expect(state.people.get('u_other')).toMatchObject({ x: 420.5, y: 342.25 });
   });
 });
 
@@ -194,7 +269,7 @@ describe('选中态', () => {
 
   it('别人离开不影响我的选中态', () => {
     applySnapshot(snapshot());
-    applyJoin({ t: 'join', id: 'u_third', name: '第三人', appearance: 'a3', state: 'roaming', x: 2, y: 2, online: 2 });
+    applyJoin({ t: 'join', id: 'u_third', name: '第三人', appearance: 'boy', state: 'roaming', x: 2, y: 2, online: 2 });
     selectPerson('u_other');
     applyLeave({ t: 'leave', id: 'u_third', online: 2 });
     expect(getState().selectedId).toBe('u_other');

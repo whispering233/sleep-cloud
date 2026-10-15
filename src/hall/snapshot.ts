@@ -1,25 +1,23 @@
-import { APPEARANCES } from '../shared/protocol';
+import { APPEARANCES, encodeOwnedBeds } from '../shared/protocol';
 import type { Appearance, Person, SelfPerson, SnapshotMessage } from '../shared/protocol';
-import type { HallConfig } from '../shared/hall-registry';
+import type { TraceBedRow } from './bed-store';
 import { appearanceFor, personFromConnection } from './connection';
 import type { ConnectionState } from './connection';
 
-/** 睡痕行（`state = 'trace'` 的床位行）：人已经离线，名字只能来自数据库快照。 */
-export interface TracePersonRow {
+/** 床上但人已离线、**还在宽限期内**的一行：睡痕还没到，照样留在一个 `people` 条目里。 */
+export interface OfflineOccupantRow {
   bedNo: number;
+  state: 'lying' | 'asleep';
   userId: string;
   name: string | null;
   appearance: string | null;
 }
 
-/** 床上但人已离线、**还在宽限期内**的一行：睡痕还没到，照样留在一个 `people` 条目里。 */
-export interface OfflineOccupantRow extends TracePersonRow {
-  state: 'lying' | 'asleep';
-}
-
 export interface SnapshotInput {
-  hall: HallConfig;
+  layoutVersion: string;
   serverTs: number;
+  /** 当前床位数（运行时事实） */
+  bedCount: number;
   online: number;
   me: ConnectionState;
   /** 我拥有的那张床（归属）；还没有床时是 `null` */
@@ -28,9 +26,10 @@ export interface SnapshotInput {
   others: ConnectionState[];
   /** 床上、人已离线但还在宽限期内的占用者（没有连接 → 只能查库） */
   offlineOccupants: OfflineOccupantRow[];
-  /** 归属表：所有有主的床的床号 */
+  /** 有主的床号（**归属未过期**的那些） */
   ownedBeds: number[];
-  traceRows: TracePersonRow[];
+  /** 未过期的睡痕行（`bed-store.listTraceBeds` 在 SQL 里就滤掉了过期的那些） */
+  traceRows: TraceBedRow[];
 }
 
 /** 自己的条目：比 `people` 里多一个归属位（走路时也要知道哪张床是我的）。 */
@@ -40,15 +39,17 @@ function selfPerson(connection: ConnectionState, myOwnedBedNo: number | null): S
   return person;
 }
 
-function personFromRow(row: TracePersonRow, state: 'lying' | 'asleep' | 'trace'): Person {
+function personFromRow(row: TraceBedRow | OfflineOccupantRow, state: 'lying' | 'asleep' | 'trace'): Person {
   const stored = row.appearance as Appearance | null;
-  return {
+  const person: Person = {
     id: row.userId,
     name: row.name ?? '',
     appearance: stored && APPEARANCES.includes(stored) ? stored : appearanceFor(row.userId),
     state,
     bedNo: row.bedNo,
   };
+  if (state === 'trace') person.traceUntil = (row as TraceBedRow).traceUntil;
+  return person;
 }
 
 /**
@@ -94,8 +95,8 @@ export function splitLive(
 /**
  * 生成全量快照（见 `docs/api/20-api-ws.md` §4.1）。
  *
- * 两个正交维度在这里合流：归属走 `ownedBeds`（有主的床，不带名字），占用走 `people`（含睡痕条目）。
- * **已经在线的睡痕行不再重复出现在 `people` 里**——在线连接是更新的真相。
+ * 两个正交维度在这里合流：归属走 `ownedBeds` 位图（有主的床，不带名字），占用走 `people`
+ * （含睡痕条目，带 `traceUntil`）。**已经在线的睡痕行不再重复出现在 `people` 里**——在线连接是更新的真相。
  *
  * `people` 必须覆盖**每一个占用者**，睡痕与宽限中的床上离线者都没有连接，因此只能查库补录。
  */
@@ -104,17 +105,11 @@ export function buildSnapshot(input: SnapshotInput): SnapshotMessage {
 
   return {
     t: 'snapshot',
-    sceneGuid: input.hall.sceneGuid,
+    layoutVersion: input.layoutVersion,
     serverTs: input.serverTs,
-    hall: {
-      id: input.hall.id,
-      name: input.hall.name,
-      timezone: input.hall.timezone,
-      capacity: input.hall.capacity,
-      online: input.online,
-    },
+    hall: { bedCount: input.bedCount, online: input.online },
     me: selfPerson(input.me, input.myOwnedBedNo),
-    ownedBeds: input.ownedBeds,
+    ownedBeds: encodeOwnedBeds(input.ownedBeds, input.bedCount),
     people: [
       ...input.others.map(personFromConnection),
       ...input.offlineOccupants.map((row) => personFromRow(row, row.state)),

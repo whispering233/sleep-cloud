@@ -1,18 +1,25 @@
 import * as Phaser from 'phaser';
 
+import { BED_H, BED_W, MAX_DPR, PITCH_X, PITCH_Y, POOL_SIZE } from '../../shared/constants';
+import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, regionOf } from '../../shared/layout';
+import type { Point } from '../../shared/layout';
 import type { Person, PersonState } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { interpolationDelay, isInterpolating } from '../motion';
 import { getState } from '../store';
 import type { ClientState } from '../store';
-import { bedOutline, followStep, personPoint, shouldDrawName, tapTargetFor, wallGeometry } from './rules';
+import {
+  bedOutline,
+  followStep,
+  isFaded,
+  personPoint,
+  shouldDrawName,
+  tapTargetFor,
+} from './rules';
 import type { PersonSpot } from './rules';
-import { TILE, loadSceneIndex } from './scene-index';
-import type { SceneIndex } from './scene-index';
 import {
   COLORS,
   LINE_WIDTH,
-  MAX_DPR,
   createBedView,
   createPersonView,
   hideBed,
@@ -30,11 +37,14 @@ import type { BedView, PersonView } from './views';
  * 1. 世界走画布、界面走 DOM——这里不画任何文字界面，名字是贴在床上的小标签，不是 UI；
  * 2. 画布不参与 React 的渲染循环——状态直接读 store，重画由 Phaser 的 game loop 驱动；
  * 3. **没有缩放**——世界与屏幕是一个固定比例（1 世界像素 = 1 CSS 像素，画布按 DPR ≤2 放大）。
+ *
+ * 几何全部来自 `src/shared/layout.ts`（与厅服务同一份纯函数）：床位坐标、区域尺寸、命中判定。
+ * 床位数（`hall.bedCount`）是运行时事实，**每个 `bedNoAt` / `isWalkable` 调用点都显式带上它**。
  */
 
 export interface WorldHandlers {
-  /** 点地面 = 「我要去这一格」（客户端只发意图，怎么走由服务端定） */
-  onWalk(tile: { x: number; y: number }): void;
+  /** 点地面 = 「我要去这个世界像素点」（客户端已把目标吸附到街网；服务端只校验） */
+  onWalk(point: Point): void;
   /** 点小人 = 选中（唯一选中对象：名字气泡 + 私聊目标） */
   onSelect(id: string): void;
   /** 点地面 = 取消选中 */
@@ -54,11 +64,10 @@ const TAP_MS = 350;
 const CAMERA_FOLLOW_PX_PER_S = 500;
 /** 屏幕中央区（占屏幕的比例）：自己在这一块里走动不值得动镜头，正好是相机的死区。 */
 const CENTER_BAND = 0.4;
-/** 裁剪缓冲：可视窗口外各留一行/一列，拖拽到整数格边界时边缘不闪。 */
-const CULL_MARGIN_TILES = 1;
-/** 绘制层次：地板 < 场景本体 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
-const DEPTH = { floor: -10, scene: -5, bed: 0, person: 100 } as const;
-const FLOOR_TEXTURE = 'floor-tile';
+/** 裁剪缓冲：可视窗口外各留一列/一行，拖拽到边界时边缘不闪。 */
+const CULL_MARGIN_PX = Math.max(PITCH_X, PITCH_Y);
+/** 绘制层次：地板 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
+const DEPTH = { floor: -10, bound: -5, bed: 0, person: 100 } as const;
 
 /** 床号 → 占用态（人）。归属与占用是两个正交维度，这里只处理占用这一侧。 */
 function occupantsOf(state: ClientState): Map<number, PersonState> {
@@ -79,18 +88,6 @@ function residentOf(state: ClientState, bedNo: number): string | undefined {
   return undefined;
 }
 
-/** 一格地板贴图：底色 + 极弱格线（一格 = 旧几何里的一个格子，`TILE` 世界像素）。 */
-function ensureFloorTexture(scene: Phaser.Scene): void {
-  if (scene.textures.exists(FLOOR_TEXTURE)) return;
-  const tile = scene.add.graphics();
-  tile.fillStyle(COLORS.floor, 1);
-  tile.fillRect(0, 0, TILE, TILE);
-  tile.lineStyle(1, COLORS.line, 0.06);
-  tile.strokeRect(0.5, 0.5, TILE - 1, TILE - 1);
-  tile.generateTexture(FLOOR_TEXTURE, TILE, TILE);
-  tile.destroy();
-}
-
 /** 按行分桶的床位（行内按 x 升序）：每帧只走可视窗口里的那几行，同屏对象数与厅规模无关。 */
 interface BedRow {
   y: number;
@@ -100,9 +97,9 @@ interface BedRow {
 class WorldScene extends Phaser.Scene {
   private readonly host: HTMLElement;
   private readonly handlers: WorldHandlers;
-  private index: SceneIndex | null = null;
-  private loadedGuid: string | undefined;
-  /** 上一帧人物的格坐标（命中判定用；1 帧延迟可接受） */
+  /** 已建索引的床位数：`resize` 之后要重建（床号区间变了） */
+  private loadedBedCount: number | undefined;
+  /** 上一帧人物的世界坐标（命中判定用；1 帧延迟可接受） */
   private spots: PersonSpot[] = [];
   private readonly bedRows: BedRow[] = [];
   /** 对象池：只装得下同屏的那几十张床，与总床数无关 */
@@ -110,7 +107,7 @@ class WorldScene extends Phaser.Scene {
   private readonly people = new Map<string, PersonView>();
   /** 手指状态：单指拖拽平移；多指一律忽略（**没有缩放这条路**） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
-  /** 换场景时要换掉的那些对象（地板与场景本体）：床与小人的对象属于各自的池子，不在这里 */
+  /** 厅的区域（地板与夹取用）：随 `bedCount` 变化重建 */
   private readonly scenery: Phaser.GameObjects.GameObject[] = [];
   /** 上一次看到的连接状态：断线后重连要重新对准我的床 */
   private wasConnected = false;
@@ -124,6 +121,7 @@ class WorldScene extends Phaser.Scene {
 
   create(): void {
     this.resizeToHost();
+    this.ensurePool();
     this.observer = new ResizeObserver(() => this.resizeToHost());
     this.observer.observe(this.host);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -138,17 +136,11 @@ class WorldScene extends Phaser.Scene {
     // 滞后是**每个插值窗口各自的**（见 `interpolationDelay`），所以这里取的是未滞后的服务端现在
     const serverNow = Date.now() + state.clockOffsetMs;
 
-    if (state.sceneGuid && state.sceneGuid !== this.loadedGuid) {
-      this.loadedGuid = state.sceneGuid;
-      void loadSceneIndex(state.sceneGuid)
-        .then((index) => {
-          if (!this.scene.isActive()) return;
-          this.buildScene(index);
-          this.alignCamera(getState());
-        })
-        .catch(() => {
-          this.loadedGuid = undefined; // 下次状态变化再试
-        });
+    const bedCount = state.hall?.bedCount;
+    if (bedCount !== undefined && bedCount !== this.loadedBedCount) {
+      this.loadedBedCount = bedCount;
+      this.buildBedIndex(bedCount);
+      this.rebuildRegion();
     }
 
     // 断线后重连：与进厅同一套规则，重新对准我的床（`wasConnected` 只在真实翻转时才为真）
@@ -162,91 +154,67 @@ class WorldScene extends Phaser.Scene {
     this.follow(state, serverNow, delta, selfPoint);
   }
 
-  // ——— 场景本体：地板、墙、家具、床位索引 ———
+  // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
 
-  private buildScene(index: SceneIndex): void {
-    this.index = index;
-    const { scene } = index;
-
-    for (const object of this.scenery) object.destroy();
-    this.scenery.length = 0;
-    for (let i = 0; i < this.beds.length; i += 1) hideBed(this.beds[i]);
-
-    ensureFloorTexture(this);
-    const floor = this.add
-      .tileSprite(0, 0, index.widthPx, index.heightPx, FLOOR_TEXTURE)
-      .setOrigin(0, 0)
-      .setDepth(DEPTH.floor);
-
-    const body = this.add.graphics().setDepth(DEPTH.scene);
-    const wall = wallGeometry({ width: scene.width, height: scene.height, blocked: scene.blocked });
-    if (wall.band.width > 0 && wall.band.height > 0) {
-      // 环带画成四条边：地板是贴图，「整块铺 + 用地面盖回」会把格线抹掉
-      const band = wall.band;
-      const inner = wall.inner;
-      body.fillStyle(COLORS.surface, 1);
-      body.fillRect(band.x, band.y, band.width, inner.y - band.y);
-      body.fillRect(band.x, inner.y + inner.height, band.width, band.y + band.height - (inner.y + inner.height));
-      body.fillRect(band.x, inner.y, inner.x - band.x, inner.height);
-      body.fillRect(inner.x + inner.width, inner.y, band.x + band.width - (inner.x + inner.width), inner.height);
-      body.lineStyle(LINE_WIDTH, COLORS.line, 1);
-      body.strokeRect(inner.x, inner.y, inner.width, inner.height);
-    }
-
-    for (const sprite of scene.decorates) {
-      const x = sprite.x * TILE + TILE / 2;
-      const y = sprite.y * TILE + TILE / 2;
-      if (sprite.sprite === 'lamp') {
-        // 床头灯的暖黄光晕：全系统唯一允许出现的暖色
-        body.fillStyle(COLORS.marker, 0.5);
-        body.fillCircle(x, y, TILE * 0.18);
-        body.lineStyle(LINE_WIDTH, COLORS.marker, 0.6);
-        body.strokeCircle(x, y, TILE * 0.3);
-      } else {
-        body.lineStyle(LINE_WIDTH, COLORS.line, 1);
-        body.strokeRect(x - TILE * 0.3, y - TILE * 0.3, TILE * 0.6, TILE * 0.6);
-      }
-    }
-
-    // 按行分桶：可视窗口只要行号，行内按 x 升序就能提前收工
-    this.bedRows.length = 0;
+  /** 床号 → 位置只在床位数变化时重算一次（最高档 9790 张，一次几毫秒；不逐帧算）。 */
+  private buildBedIndex(bedCount: number): void {
     const rows = new Map<number, BedRow>();
-    for (const bed of scene.beds) {
-      let row = rows.get(bed.y);
+    for (let bedNo = 0; bedNo < bedCount; bedNo += 1) {
+      const position = positionOf(bedNo);
+      if (!position) continue;
+      let row = rows.get(position.y);
       if (!row) {
-        row = { y: bed.y, beds: [] };
-        rows.set(bed.y, row);
+        row = { y: position.y, beds: [] };
+        rows.set(position.y, row);
       }
-      row.beds.push(bed);
+      row.beds.push({ bedNo, x: position.x, y: position.y });
     }
+
+    this.bedRows.length = 0;
     for (const row of [...rows.values()].sort((a, b) => a.y - b.y)) {
       row.beds.sort((a, b) => a.x - b.x);
       this.bedRows.push(row);
     }
-    this.scenery.push(floor, body);
+  }
 
-    // 夹取要等厅的尺寸知道了才能算，而场景是异步加载的（`create` 时还没有）
+  /** 厅的区域（地板 + 外沿）：升级/降级之后尺寸变了，这里跟着重建。 */
+  private rebuildRegion(): void {
+    for (const object of this.scenery) object.destroy();
+    this.scenery.length = 0;
+    if (this.loadedBedCount === undefined) return;
+
+    const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
+    const floor = this.add.graphics().setDepth(DEPTH.floor);
+    floor.fillStyle(COLORS.floor, 1);
+    floor.fillRect(0, 0, region.width, region.height);
+    const bound = this.add.graphics().setDepth(DEPTH.bound);
+    bound.lineStyle(LINE_WIDTH, COLORS.line, 1);
+    bound.strokeRect(0.5, 0.5, region.width - 1, region.height - 1);
+    this.scenery.push(floor, bound);
+
     this.applyCameraBounds();
   }
 
   // ——— 床位与小人：可视窗口 + 对象池 ———
 
+  /** 池子先按 `POOL_SIZE` 备好；视野比它还大时（桌面宽屏看得到整级）按需增长。 */
+  private ensurePool(): void {
+    while (this.beds.length < POOL_SIZE) this.beds.push(createBedView(this));
+  }
+
   private syncBeds(state: ClientState): void {
-    if (!this.index) return;
+    if (this.loadedBedCount === undefined) return;
     const view = this.viewRect();
-    const rowFrom = Math.floor(view.y / TILE) - CULL_MARGIN_TILES;
-    const rowTo = Math.floor((view.y + view.height) / TILE) + CULL_MARGIN_TILES;
-    const colFrom = Math.floor(view.x / TILE) - CULL_MARGIN_TILES;
-    const colTo = Math.floor((view.x + view.width) / TILE) + CULL_MARGIN_TILES;
 
     const occupants = occupantsOf(state);
     const mine = state.me?.ownedBedNo;
     let used = 0;
     for (const row of this.bedRows) {
-      if (row.y < rowFrom || row.y > rowTo) continue;
+      if (row.y + BED_H < view.y - CULL_MARGIN_PX) continue;
+      if (row.y > view.y + view.height + CULL_MARGIN_PX) break;
       for (const bed of row.beds) {
-        if (bed.x < colFrom) continue;
-        if (bed.x > colTo) break;
+        if (bed.x + BED_W < view.x - CULL_MARGIN_PX) continue;
+        if (bed.x > view.x + view.width + CULL_MARGIN_PX) break;
         let bedView = this.beds[used];
         if (!bedView) {
           bedView = createBedView(this);
@@ -261,16 +229,15 @@ class WorldScene extends Phaser.Scene {
         );
       }
     }
-    for (let i = used; i < this.beds.length; i += 1) hideBed(this.beds[i]);
+    for (let i = used; i < this.beds.length; i += 1) hideBed(this.beds[i] as BedView);
   }
 
-  private syncPeople(state: ClientState, serverNow: number, selfPoint: { x: number; y: number } | undefined): void {
+  private syncPeople(state: ClientState, serverNow: number, selfPoint: Point | undefined): void {
     const view = this.viewRect();
-    const margin = CULL_MARGIN_TILES * TILE;
-    const x0 = view.x - margin;
-    const x1 = view.x + view.width + margin;
-    const y0 = view.y - margin;
-    const y1 = view.y + view.height + margin;
+    const x0 = view.x - CULL_MARGIN_PX;
+    const x1 = view.x + view.width + CULL_MARGIN_PX;
+    const y0 = view.y - CULL_MARGIN_PX;
+    const y1 = view.y + view.height + CULL_MARGIN_PX;
     const now = Date.now();
     const spots: PersonSpot[] = [];
     const onScreen = new Set<string>();
@@ -279,6 +246,9 @@ class WorldScene extends Phaser.Scene {
     if (state.me) persons.push(state.me);
 
     for (const person of persons) {
+      // 睡痕到期由本地推导（不挂定时器、服务端也不广播）：到点就不再画
+      if (isFaded(person, serverNow)) continue;
+
       // 自己那一份由 `update` 取一次后传进来：跟随追的就是这个点
       const point =
         person.id === state.me?.id
@@ -294,8 +264,8 @@ class WorldScene extends Phaser.Scene {
       const y = point.y;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
 
-      // 命中判定用的格坐标（**含自己**：点自己 = 相机回中，服务端不参与）
-      spots.push({ id: person.id, x: point.x / TILE, y: point.y / TILE });
+      // 命中判定用的世界坐标（**含自己**：点自己 = 相机回中，服务端不参与）
+      spots.push({ id: person.id, x, y });
       onScreen.add(person.id);
 
       let personView = this.people.get(person.id);
@@ -334,7 +304,7 @@ class WorldScene extends Phaser.Scene {
    *
    * 取位点由 `update` 取一次后传进来（与那一帧渲染用的小人位置是同一个点）。
    */
-  private follow(state: ClientState, serverNow: number, dtMs: number, point: { x: number; y: number } | undefined): void {
+  private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
     // 「还在走」与取位必须用**同一个**滞后，否则跟随会在窗口的最后一帧上顿一下
@@ -381,7 +351,10 @@ class WorldScene extends Phaser.Scene {
   private alignCamera(state: ClientState): void {
     const focus = this.focusPoint(state);
     if (focus) this.cameras.main.centerOn(focus.x, focus.y);
-    else if (this.index) this.cameras.main.centerOn(this.index.widthPx / 2, this.index.heightPx / 2);
+    else if (this.loadedBedCount !== undefined) {
+      const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
+      this.cameras.main.centerOn(region.width / 2, region.height / 2);
+    }
   }
 
   /** 点自己 = 相机对准自己（`docs/ui/DESIGN.md`「世界相机」）。 */
@@ -393,16 +366,12 @@ class WorldScene extends Phaser.Scene {
 
   /** 夹取：不越出厅的矩形；可见区比厅大时（宽档 / 横屏）把边界扩成视野大小，让厅居中。 */
   private applyCameraBounds(): void {
-    if (!this.index) return;
+    if (this.loadedBedCount === undefined) return;
+    const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
     const camera = this.cameras.main;
-    const width = Math.max(this.index.widthPx, camera.width / camera.zoomX);
-    const height = Math.max(this.index.heightPx, camera.height / camera.zoomY);
-    camera.setBounds(
-      -(width - this.index.widthPx) / 2,
-      -(height - this.index.heightPx) / 2,
-      width,
-      height,
-    );
+    const width = Math.max(region.width, camera.width / camera.zoomX);
+    const height = Math.max(region.height, camera.height / camera.zoomY);
+    camera.setBounds(-(width - region.width) / 2, -(height - region.height) / 2, width, height);
   }
 
   /**
@@ -468,13 +437,18 @@ class WorldScene extends Phaser.Scene {
     if (tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS) this.dispatchTap(pointer);
   }
 
-  /** 轻点：命中优先级是纯函数给的（人 > 空床 > 地面），这里只负责查表和分派。 */
+  /**
+   * 轻点：命中优先级是纯函数给的（人 > 空床 > 地面），这里只负责查表和分派。
+   *
+   * 点地面时由**客户端**把目标吸附到最近的街网点（服务端只校验、不吸附，见 `docs/api/20-api-ws.md` §7）：
+   * 用户点的是画布上的一个像素，而服务端只接受街网上的点。
+   */
   private dispatchTap(pointer: Phaser.Input.Pointer): void {
-    if (!this.index) return;
+    if (this.loadedBedCount === undefined) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const point = { x: world.x / TILE, y: world.y / TILE };
-    const tile = { x: Math.floor(point.x), y: Math.floor(point.y) };
-    const bedNo = this.index.bedNoAt(tile.x, tile.y);
+    const point = { x: world.x, y: world.y };
+    const bedCount = this.loadedBedCount;
+    const bedNo = bedNoAt(point.x, point.y, bedCount);
     const state = getState();
 
     const target = tapTargetFor({
@@ -483,7 +457,7 @@ class WorldScene extends Phaser.Scene {
       selfId: state.me?.id,
       residentId: bedNo !== undefined ? residentOf(state, bedNo) : undefined,
       bedNo,
-      walkable: this.index.isWalkable(tile.x, tile.y),
+      walkTarget: nearestStreetPoint(point, bedCount),
     });
 
     switch (target.kind) {
@@ -508,14 +482,14 @@ class WorldScene extends Phaser.Scene {
 
   // ——— 坐标换算 ———
 
-  /** 床号的世界像素位置（取格心：+半格）。 */
-  private bedPoint(bedNo: number): { x: number; y: number } | undefined {
-    const tile = this.index?.bedAt(bedNo);
-    return tile ? { x: (tile.x + 0.5) * TILE, y: (tile.y + 0.5) * TILE } : undefined;
+  /** 床号的世界像素位置（取床心：左上角 + 半张床）。 */
+  private bedPoint(bedNo: number): Point | undefined {
+    const position = positionOf(bedNo);
+    return position ? { x: position.x + BED_W / 2, y: position.y + BED_H / 2 } : undefined;
   }
 
   /** 自己所在的世界像素位置（走动时按插值、躺着时就是那张床）。**调用方一帧只取一次**（见 `update`）。 */
-  private selfPoint(state: ClientState, serverNow: number): { x: number; y: number } | undefined {
+  private selfPoint(state: ClientState, serverNow: number): Point | undefined {
     const me = state.me;
     if (!me) return undefined;
     return personPoint({
@@ -527,7 +501,7 @@ class WorldScene extends Phaser.Scene {
   }
 
   /** 初始对准的目标：我的床优先（我知道我的床在哪），还没有床时才对准自己。 */
-  private focusPoint(state: ClientState): { x: number; y: number } | undefined {
+  private focusPoint(state: ClientState): Point | undefined {
     const bedNo = state.me?.ownedBedNo;
     if (bedNo !== undefined) {
       const point = this.bedPoint(bedNo);

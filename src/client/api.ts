@@ -1,4 +1,4 @@
-import type { ApiResponse, HallsView, SessionView } from '../shared/http-api';
+import type { ApiResponse, SessionView } from '../shared/http-api';
 
 /** HTTP 接口调用（同源，会话 cookie 自动携带）。 */
 
@@ -21,12 +21,7 @@ const postJson = <T>(path: string, payload: unknown) =>
 
 export const loadSession = () => request<SessionView>('/api/me');
 
-export const loadHalls = () => request<HallsView>('/api/halls');
-
 export const confirmAge = () => postJson<SessionView>('/api/age-confirm', { confirmed: true });
 
-/** `timezone` 取自浏览器（服务端无从得知）；非法时服务端返回 `1006` 但昵称仍然保存。 */
-export const setNickname = (nickname: string, timezone: string) =>
-  postJson<SessionView>('/api/nickname', { nickname, timezone });
-
-export const switchHall = (hallId: string) => postJson<SessionView>('/api/hall', { hallId });
+/** 昵称只在建连之前设置（协议里因此不需要「改名」消息）。 */
+export const setNickname = (nickname: string) => postJson<SessionView>('/api/nickname', { nickname });

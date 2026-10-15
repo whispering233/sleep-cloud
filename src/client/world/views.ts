@@ -1,17 +1,17 @@
 import * as Phaser from 'phaser';
 
+import { BED_H, BED_W } from '../../shared/constants';
 import type { PersonState } from '../../shared/protocol';
 import tokens from '../styles/tokens.json';
 import { bedDashSegments, bedPaintSignature, personAlpha } from './rules';
 import type { BedOutline } from './rules';
-import { TILE } from './scene-index';
 
 /**
  * 「一个东西长什么样」：色值、几何常量、床与小人的画法。
  * 「该画哪些、画在哪」在 `world.ts`（可视窗口 + 对象池），这样占位图形的细节不掺进相机与输入。
  *
  * 色值来自 `npm run tokens` 从 `docs/ui/DESIGN.md` 导出的 JSON：**JS 里不写死色值**。
- * 昼夜两套已废弃，这里只有夜晚档。
+ * 几何来自 `src/shared/constants.ts`（与厅服务同一份）：床是 61×100 世界像素。
  */
 const theme = tokens.theme.extend;
 const colors = theme.colors as Record<string, string>;
@@ -27,15 +27,13 @@ function color(name: string): number {
   return Number.parseInt(token(name).slice(1), 16);
 }
 
-/** 画布解析度上限：低端机不因 DPR 3 多画 2.25 倍的像素。 */
-export const MAX_DPR = 2;
 const FONT_FAMILY = (theme.fontFamily.body as string[])[0];
 /** 床号与名字都是 `caption` 档，且**不随镜头变化**（没有缩放，所以世界像素就是 CSS 像素）。 */
 const LABEL_PX = 12;
 /** 线稿等宽：小人、床、墙用同一线宽（见 `docs/ui/DESIGN.md` Shapes）。 */
 export const LINE_WIDTH = 1.5;
-/** 床位轮廓相对格子的内缩（世界像素）：留出格线，同时让相邻床不贴在一起。 */
-const BED_INSET = 3;
+/** 床位轮廓相对床的内缩（世界像素）：留出缝隙，同时让相邻床不贴在一起。 */
+const BED_INSET = 2;
 const DASH_PX = 6;
 const DASH_GAP_PX = 4;
 /**
@@ -43,11 +41,11 @@ const DASH_GAP_PX = 4;
  * （`marker-own` 有最小尺寸下限，不得消隐，否则找不到我的床）。
  */
 export const MARKER_RADIUS = 5;
-/** 气泡内边距与「自己的小人脚下」标记的位置（相对小人原点）。 */
+/** 气泡内边距与「自己的小人脚下」标记、名字与表情的位置（相对小人原点）。 */
 const BUBBLE_PAD = 4;
-const NAME_Y = -TILE * 0.62;
-const EMOTE_Y = -TILE * 0.98;
-const FOOT_MARKER_Y = TILE * 0.42;
+const NAME_Y = -BED_H * 0.34;
+const EMOTE_Y = -BED_H * 0.56;
+const FOOT_MARKER_Y = BED_H * 0.24;
 
 export const COLORS = {
   floor: color('primary'),
@@ -77,6 +75,13 @@ const BUBBLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   padding: { x: BUBBLE_PAD, y: BUBBLE_PAD },
 };
 
+/** 一张床在世界里的矩形（左上角锚点，与服务端 `layout.positionOf` 同一个坐标）。 */
+export interface BedPlacement {
+  bedNo: number;
+  x: number;
+  y: number;
+}
+
 export interface BedView {
   readonly container: Phaser.GameObjects.Container;
   readonly shape: Phaser.GameObjects.Graphics;
@@ -92,10 +97,10 @@ export function createBedView(scene: Phaser.Scene): BedView {
   const shape = scene.add.graphics();
   const marker = scene.add.graphics();
   marker.fillStyle(COLORS.marker, 1);
-  marker.fillCircle(TILE * 0.32, TILE * 0.32, MARKER_RADIUS);
+  marker.fillCircle(BED_W - MARKER_RADIUS - 2, MARKER_RADIUS + 2, MARKER_RADIUS);
   marker.setVisible(false);
   const number = scene.add
-    .text(BED_INSET + 1, TILE - BED_INSET - 1, '', {
+    .text(BED_INSET + 1, BED_H - BED_INSET - 1, '', {
       fontFamily: FONT_FAMILY,
       fontSize: LABEL_PX,
       color: MUTED_CSS,
@@ -106,13 +111,8 @@ export function createBedView(scene: Phaser.Scene): BedView {
 }
 
 /** 把池里的一个视图绑到某张床：位置、床号、画法（画法按签名守卫，逐帧调用不重建图形）。 */
-export function placeBed(
-  view: BedView,
-  bed: { bedNo: number; x: number; y: number },
-  outline: BedOutline,
-  mine: boolean,
-): void {
-  view.container.setVisible(true).setPosition(bed.x * TILE, bed.y * TILE);
+export function placeBed(view: BedView, bed: BedPlacement, outline: BedOutline, mine: boolean): void {
+  view.container.setVisible(true).setPosition(bed.x, bed.y);
   if (view.bedNo !== bed.bedNo) {
     view.bedNo = bed.bedNo;
     view.number.setText(String(bed.bedNo));
@@ -136,17 +136,25 @@ export function hideBed(view: BedView): void {
  */
 function paintBed(view: BedView, outline: BedOutline): void {
   const shape = view.shape;
-  const size = TILE - BED_INSET * 2;
+  const width = BED_W - BED_INSET * 2;
+  const height = BED_H - BED_INSET * 2;
   shape.clear();
   if (!outline.dashed) {
     shape.lineStyle(LINE_WIDTH, BED_PAINT[outline.tier], 1);
-    shape.strokeRect(BED_INSET, BED_INSET, size, size);
+    shape.strokeRect(BED_INSET, BED_INSET, width, height);
     return;
   }
   shape.fillStyle(COLORS.surface, 1);
-  shape.fillRect(BED_INSET, BED_INSET, size, size);
+  shape.fillRect(BED_INSET, BED_INSET, width, height);
   shape.lineStyle(LINE_WIDTH, BED_PAINT.claimed, 1);
-  for (const segment of bedDashSegments({ x: BED_INSET, y: BED_INSET, size, dash: DASH_PX, gap: DASH_GAP_PX })) {
+  for (const segment of bedDashSegments({
+    x: BED_INSET,
+    y: BED_INSET,
+    width,
+    height,
+    dash: DASH_PX,
+    gap: DASH_GAP_PX,
+  })) {
     shape.beginPath();
     shape.moveTo(segment.x1, segment.y1);
     shape.lineTo(segment.x2, segment.y2);
@@ -192,7 +200,7 @@ export function paintPerson(view: PersonView, state: PersonState, mine: boolean)
   view.footMarker.setVisible(mine && state === 'roaming');
 
   const body = view.body;
-  const head = TILE * 0.26;
+  const head = BED_W * 0.23;
   const dot = LINE_WIDTH / 2;
   body.clear();
   body.lineStyle(LINE_WIDTH, INK, 1);
@@ -207,19 +215,19 @@ export function paintPerson(view: PersonView, state: PersonState, mine: boolean)
   }
 
   // 躺下：被子盖住身体，只露脸（睡着时眼睛是两条线）
-  body.strokeRoundedRect(-TILE * 0.34, -TILE * 0.3, TILE * 0.68, TILE * 0.62, TILE * 0.12);
-  body.strokeCircle(0, -TILE * 0.3, head * 0.8);
+  body.strokeRoundedRect(-BED_W * 0.36, -BED_H * 0.2, BED_W * 0.72, BED_H * 0.42, BED_W * 0.12);
+  body.strokeCircle(0, -BED_H * 0.2, head * 0.8);
   if (state === 'asleep') {
     body.beginPath();
-    body.moveTo(-head * 0.5, -TILE * 0.3);
-    body.lineTo(-head * 0.15, -TILE * 0.3);
-    body.moveTo(head * 0.15, -TILE * 0.3);
-    body.lineTo(head * 0.5, -TILE * 0.3);
+    body.moveTo(-head * 0.5, -BED_H * 0.2);
+    body.lineTo(-head * 0.15, -BED_H * 0.2);
+    body.moveTo(head * 0.15, -BED_H * 0.2);
+    body.lineTo(head * 0.5, -BED_H * 0.2);
     body.strokePath();
     return;
   }
-  body.fillCircle(-head * 0.3, -TILE * 0.32, dot);
-  body.fillCircle(head * 0.3, -TILE * 0.32, dot);
+  body.fillCircle(-head * 0.3, -BED_H * 0.22, dot);
+  body.fillCircle(head * 0.3, -BED_H * 0.22, dot);
 }
 
 /** 名字：只在有人的床上、自己一律不画；选中时整条换成气泡样式（不叠第二个）。 */

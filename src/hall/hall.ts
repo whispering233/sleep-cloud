@@ -1,66 +1,72 @@
 import { DurableObject } from 'cloudflare:workers';
 
-import { findHall } from '../shared/hall-registry';
-import type { HallConfig } from '../shared/hall-registry';
+import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, HALL_ID, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
 import type { ErrorCode } from '../shared/error-code';
-import type { DownstreamMessage, EmoteMessage, ErrorMessage, Facing, SnapshotMessage, UpstreamMessage, WhisperMessage } from '../shared/protocol';
+import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount, nearestStreetPoint } from '../shared/layout';
+import type { Point } from '../shared/layout';
+import type {
+  DownstreamMessage,
+  EmoteMessage,
+  ErrorMessage,
+  SnapshotMessage,
+  UpstreamMessage,
+  WhisperMessage,
+} from '../shared/protocol';
 import type { Env } from '../worker/env';
-import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, MOVE_MS_PER_TILE, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
-import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection } from './connection';
-import type { ConnectionState } from './connection';
 import { lieVerdictFor } from './bed-rules';
-import { chatVerdictFor } from './chat';
-import { emoteVerdictFor } from './emote';
 import {
-  clearAllTraceBeds,
   clearBed,
   findOwnedBed,
   findTraceBed,
   listExpiredOwnerships,
   listOccupiedBeds,
+  listOwnedBeds,
   listTraceBeds,
+  outerRingBusy,
   putInBed,
   readBed,
+  readMeta,
   releaseExpiredOwnerships,
   restoreBedOccupancy,
   setBedOccupancy,
+  smallestClaimableBed,
+  writeBedCount,
+  writeDailyWakeAt,
 } from './bed-store';
-import { cleanupMessages, nextCleanupAt, previousCleanupAt } from './cleanup';
+import { chatVerdictFor } from './chat';
+import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection, retarget } from './connection';
+import type { ConnectionState } from './connection';
+import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from './daily';
+import { emoteVerdictFor } from './emote';
 import { graceVerdict } from './grace';
+import { isHallFull, nextLevelCapacity, previousLevelCapacity } from './level-rules';
 import type { GraceSession } from './grace';
-import { advanceMover, moverPosition, tileCenter } from './movement';
+import { advanceMover } from './movement';
 import type { MoverState } from './movement';
 import { findPath } from './pathfinding';
-import type { Tile } from './pathfinding';
-import { BED_INDEX_SQL, BED_SEED_SQL, BED_TABLE_SQL } from './schema';
-import { loadScene } from './scene';
-import type { SceneGrid } from './scene';
+import { consumeUpstream } from './rate-limit';
+import { BED_INDEX_SQL, BED_TABLE_SQL, META_TABLE_SQL } from './schema';
 import { createDueHeap } from './scheduler';
 import type { DueEvent } from './scheduler';
-import { consumeUpstream } from './rate-limit';
 import { buildSnapshot, onlineCountOf, splitLive } from './snapshot';
 import type { OfflineOccupantRow } from './snapshot';
 
-/** 一条位置条目（`pos.items` 的一个元素）：`[用户id, x, y, 朝向]`，坐标是世界像素。 */
-type PositionUpdate = [string, number, number, Facing];
+/** 一条位置条目（`pos.items` 的一个元素）：`[用户id, x, y]`，坐标是世界像素。 */
+type PositionUpdate = [string, number, number];
 
 /**
- * 大厅房间服务：一个厅一个实例（`idFromName(hallId)`），自带一份私有 SQLite。
+ * 大厅房间服务：**一个厅一个实例**（`idFromName(HALL_ID)`），自带一份私有 SQLite。
  * **厅的边界就是数据库的边界**，所有权威状态在同址，读写都是本地操作。
  *
+ * 布局（床位坐标、可行走性、区域尺寸）由共享的纯函数现算，**不存任何地方**（见 `docs/design/config.md` §7）。
  * 连接使用平台的 WebSocket 休眠机制：连接期间对象可以休眠，附加数据（位置、状态）随连接存活。
  */
 export class Hall extends DurableObject<Env> {
-  readonly hall: HallConfig;
-  readonly grid: SceneGrid;
-  /** 入口格：目前取第一个可行走格（场景里就是左上角走道） */
-  readonly entry: { x: number; y: number };
-
   /**
    * 移动者集合（内存工作集，不落库）：有未走完路径的人。
    * 它是内存循环的工作集，而「有移动者 ⇒ 有循环 ⇒ 对象无法休眠」保证它不会被驱逐（见 `10-hall-runtime.md` §5.3）。
    */
-  private readonly movers = new Map<string, { mover: MoverState; facing: Facing }>();
+  private readonly movers = new Map<string, MoverState>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private lastTickAt = 0;
 
@@ -80,40 +86,40 @@ export class Hall extends DurableObject<Env> {
   /** 唤醒后是否已经从当前连接集合与床位状态重建过事件堆（第一个事件里才做，见 `ensureSchedule`） */
   private scheduled = false;
 
+  /** 当前床位数（`meta.bed_count`）：升降级与命中判定每次都要用，缓存一份，写回时同步失效 */
+  private bedCountCache: number | null = null;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    const hall = findHall(ctx.id.name ?? '');
-    if (!hall) throw new Error(`厅不在注册表里：${ctx.id.name ?? '(无名)'}`);
-    this.hall = hall;
-    // 场景数据不一致属于配置错误，启动时就炸（见 docs/design/config.md §3）
-    this.grid = loadScene(hall);
-    this.entry = this.findEntry();
+    if (ctx.id.name !== HALL_ID) throw new Error(`不认识的厅标识：${ctx.id.name ?? '(无名)'}（只有一个厅）`);
     this.initializeStorage();
   }
 
-  /** 建表 + 补足床位行。首次冷启动写 256 行，之后每次启动都是空转（幂等）。 */
+  /** 建表（幂等）。**不预建任何床位行**：无行 = 无主空床，行只在认领/占用时诞生。 */
   private initializeStorage(): void {
     const sql = this.ctx.storage.sql;
     sql.exec(BED_TABLE_SQL);
     for (const statement of BED_INDEX_SQL) sql.exec(statement);
-    sql.exec(BED_SEED_SQL, this.hall.capacity - 1, Date.now());
+    sql.exec(META_TABLE_SQL);
   }
 
-  private findEntry(): { x: number; y: number } {
-    for (let y = 0; y < this.grid.height; y += 1) {
-      for (let x = 0; x < this.grid.width; x += 1) {
-        if (this.grid.isWalkable(x, y)) return { x, y };
-      }
-    }
-    throw new Error(`场景没有可行走格：${this.hall.sceneGuid}`);
+  /** 当前床位数（读 `meta` + 内存缓存）。 */
+  private bedCount(): number {
+    return (this.bedCountCache ??= readMeta(this.ctx.storage.sql).bedCount);
   }
 
-  /** 已被认领的床位数（**归属数**，不是在线人数）。 */
-  async claimedBedCount(): Promise<number> {
-    const row = this.ctx.storage.sql
-      .exec<{ n: number }>('SELECT COUNT(*) AS n FROM bed WHERE owner_user_id IS NOT NULL')
-      .one();
-    return row.n;
+  /** 与出生点**同一个查询**的二分：现在还有没有可认领的床（无主或归属已过期，无占用或只剩已过期睡痕）。 */
+  private hasClaimableBed(now: number): boolean {
+    return smallestClaimableBed(this.ctx.storage.sql, this.bedCount(), now) !== undefined;
+  }
+
+  /**
+   * 入场前的「厅满」判定（`docs/api/10-api-http.md`）：最后一档且**没有可认领的床**时返回 `full`
+   * （每次入场真正的判定在握手时再走一遍）。
+   */
+  async entryStatus(): Promise<{ bedCount: number; full: boolean }> {
+    const bedCount = this.bedCount();
+    return { bedCount, full: isHallFull(bedCount, this.hasClaimableBed(Date.now())) };
   }
 
   /** WebSocket 升级由 Worker 转发进来（前置校验已在 Worker 完成）。 */
@@ -133,9 +139,9 @@ export class Hall extends DurableObject<Env> {
       userId,
       name,
       appearance: appearanceFor(userId),
-      timezone: request.headers.get(IDENTITY_HEADERS.timezone) ?? '',
-      x: this.entry.x,
-      y: this.entry.y,
+      // 位置在握手时定（出生点 / 宽限恢复 / 从睡痕醒来都要查库），这里先给一个合法的占位点
+      x: frontPointOf(0)?.x ?? 0,
+      y: frontPointOf(0)?.y ?? 0,
       state: 'roaming',
       lastInputAt: Date.now(),
       ready: false,
@@ -149,7 +155,7 @@ export class Hall extends DurableObject<Env> {
     if (!connection || typeof raw !== 'string') return;
     this.ensureSchedule();
 
-    const verdict = guardIncoming(connection, raw, this.hall.sceneGuid);
+    const verdict = guardIncoming(connection, raw, LAYOUT_VERSION);
     switch (verdict.kind) {
       case 'ignore':
         return;
@@ -160,8 +166,15 @@ export class Hall extends DurableObject<Env> {
         this.reject(ws, verdict.code);
         return;
       case 'hello': {
-        const graced = this.takeGrace(connection.userId);
-        const ready: ConnectionState = { ...this.resumeSession(connection, graced), ready: true };
+        // 入场前判定升级：厅满了就让新来的人先有地方躺（见 `10-hall-runtime.md` §8）
+        this.growIfNeeded();
+        const resumed = this.resumeSession(connection);
+        if (!resumed) {
+          this.reject(ws, '2002'); // 触顶且无空床：不入场
+          return;
+        }
+
+        const ready: ConnectionState = { ...resumed, ready: true };
         // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
         this.replaceOlderConnections(ws, ready.userId);
         ws.serializeAttachment(ready satisfies ConnectionState);
@@ -206,39 +219,70 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 握手时的状态恢复（见 `docs/design/10-hall-runtime.md` §11）：
+   * 握手时的状态恢复与出生点（见 `docs/design/10-hall-runtime.md` §9、§13）：
    * 宽限期内 → 原位置、原路径、原床位（对外表现为无变化，因此不广播）；
-   * 宽限已过、而那张床还留着我的睡痕 → 回到床上（清醒）；
-   * 否则从头开始（入口、漫游）。
+   * 宽限已过、而那张床还留着**未过期**的睡痕 → 回到床上（清醒）；
+   * 否则出现在「编号最小的可认领床」前方走道。整厅没有可认领的床（且已触顶）→ 不入场。
    */
-  private resumeSession(connection: ConnectionState, graced: GraceSession | undefined): ConnectionState {
+  private resumeSession(connection: ConnectionState): ConnectionState | undefined {
+    const graced = this.takeGrace(connection.userId);
     if (graced) return graced.connection;
 
-    const bedNo = findTraceBed(this.ctx.storage.sql, connection.userId);
-    if (bedNo === undefined) return connection;
-
     const now = Date.now();
-    restoreBedOccupancy(this.ctx.storage.sql, {
-      bedNo,
-      name: connection.name,
-      appearance: connection.appearance,
-      timezone: connection.timezone,
-      now,
-    });
-    const position = this.grid.bedPosition(bedNo) ?? { x: connection.x, y: connection.y };
-    const lying: ConnectionState = {
-      ...connection,
-      state: 'lying',
-      bedNo,
-      x: position.x,
-      y: position.y,
-      lastInputAt: now,
-    };
-    // 自己这条连接还没握手完成（收不到广播），但别人得知道睡痕醒了
-    this.broadcastState(lying);
-    return lying;
+    const bedNo = findTraceBed(this.ctx.storage.sql, connection.userId, now);
+    if (bedNo !== undefined) {
+      restoreBedOccupancy(this.ctx.storage.sql, {
+        bedNo,
+        name: connection.name,
+        appearance: connection.appearance,
+        now,
+      });
+      const position = frontPointOf(bedNo) ?? { x: connection.x, y: connection.y };
+      const lying: ConnectionState = {
+        ...connection,
+        state: 'lying',
+        bedNo,
+        x: position.x,
+        y: position.y,
+        lastInputAt: now,
+      };
+      // 自己这条连接还没握手完成（收不到广播），但别人得知道睡痕醒了
+      this.broadcastState(lying);
+      return lying;
+    }
+
+    const spawn = this.spawnPoint(now);
+    return spawn ? { ...connection, x: spawn.x, y: spawn.y, lastInputAt: now } : undefined;
   }
 
+  /** 出生点：编号最小的可认领床的**前方走道**；没有可认领的床时先升级再取（§9）。 */
+  private spawnPoint(now: number): Point | undefined {
+    const sql = this.ctx.storage.sql;
+    const claimable = smallestClaimableBed(sql, this.bedCount(), now);
+    if (claimable !== undefined) return frontPointOf(claimable);
+
+    if (!this.growIfNeeded()) return undefined; // 触顶且无床可认领：不入场（`2002`）
+    const grown = smallestClaimableBed(sql, this.bedCount(), now);
+    return grown === undefined ? undefined : frontPointOf(grown);
+  }
+
+  /**
+   * 入场前的升级判定（见 `10-hall-runtime.md` §8）：**没有可认领的床**（与出生点同一个查询）且未触顶 →
+   * 取下一级容量写进 `meta.bed_count` 并广播 `resize`。**不写任何床位行**（新外圈全是无主空床）。
+   * 返回是否真的升了一级。
+   */
+  private growIfNeeded(): boolean {
+    const bedCount = this.bedCount();
+    const next = nextLevelCapacity(bedCount, this.hasClaimableBed(Date.now()));
+    if (next === undefined) return false;
+
+    writeBedCount(this.ctx.storage.sql, next);
+    this.bedCountCache = next;
+    this.broadcast({ t: 'resize', bedCount: next });
+    return true;
+  }
+
+  /** 标记某种拒绝：回错误码再断开（`2003` / `2004` / `2002` —— 客户端应刷新页面）。 */
   private reject(ws: WebSocket, code: ErrorCode): void {
     ws.send(JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
     ws.close(1000, code);
@@ -265,24 +309,25 @@ export class Hall extends DurableObject<Env> {
 
     switch (message.t) {
       case 'walk': {
-        const x = Number(message.x);
-        const y = Number(message.y);
-        if (!Number.isInteger(x) || !Number.isInteger(y) || !this.grid.isWalkable(x, y)) {
+        const target = { x: Number(message.x), y: Number(message.y) };
+        if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !isWalkable(target.x, target.y, this.bedCount())) {
+          // 目标点不在街网上 → 静默丢弃，**不吸附**（吸附会让「点床躺下」与「点地面走动」的判定出现意外）
           this.sendError(ws, '3006');
           return;
         }
         // 在床上点地面 = 起身 + 走过去（一条命令完成，少点一次）
         const standing = this.standUp(ws, fresh);
-        this.startWalking(ws, standing, { x, y });
+        this.startWalking(ws, this.recoverPosition(ws, standing), target);
         return;
-      }      case 'lie': {
+      }
+      case 'lie': {
         const bedNo = Number(message.bedNo);
         const verdict = lieVerdictFor({
           bedNo,
-          capacity: this.hall.capacity,
+          bedCount: this.bedCount(),
           inBed: fresh.state !== 'roaming',
           userId: fresh.userId,
-          bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo) : undefined,
+          bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo, now) : undefined,
           ownedBedNo: findOwnedBed(this.ctx.storage.sql, fresh.userId, now),
         });
         if (!verdict.ok) {
@@ -327,7 +372,7 @@ export class Hall extends DurableObject<Env> {
         const toId = String(message.toId);
         const target = this.socketOf(toId);
         if (!target) {
-          // 对方不在厅：静默类错误，发送者拿不到任何反馈（见 `docs/api/20-api-ws.md` §4.7）
+          // 对方不在厅：静默类错误，发送者拿不到任何反馈（见 `docs/api/20-api-ws.md` §4.8）
           this.sendError(ws, '2005');
           return;
         }
@@ -357,55 +402,46 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
+   * 位置恢复：降级会把区域收小，落在外圈的旧位置就变成街网之外了。
+   * 这不是对「意图」的吸附（那是被禁止的），而是把权威位置拉回街上，否则这个人再也走不动。
+   */
+  private recoverPosition(ws: WebSocket, connection: ConnectionState): ConnectionState {
+    const bedCount = this.bedCount();
+    if (isWalkable(connection.x, connection.y, bedCount)) return connection;
+    const recovered = nearestStreetPoint({ x: connection.x, y: connection.y }, bedCount);
+    if (!recovered) return connection;
+    const next: ConnectionState = { ...connection, x: recovered.x, y: recovered.y };
+    this.writeConnection(ws, next);
+    return next;
+  }
+
+  /**
    * 走到床边再躺下（复合意图）：站在床边就直接躺，否则把「到达后动作」挂在路径上。
+   * 床边的站位是**床脚前那条横走道的中心点**（`frontPointOf`，与出生点同一个点）。
    */
   private approachBed(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
-    const spot = this.standSpotFor(bedNo, { x: connection.x, y: connection.y });
+    const spot = frontPointOf(bedNo);
     if (!spot) {
-      this.sendError(ws, '3006'); // 床四周没有可站的格（配置问题）
+      this.sendError(ws, '3001'); // 床号没有几何：布局版本对不上或床号越界
       return;
     }
 
-    if (spot.x === connection.x && spot.y === connection.y) {
+    if (connection.x === spot.x && connection.y === spot.y) {
       this.lieDown(ws, connection, bedNo);
       return;
     }
 
-    const path = findPath(this.grid, { x: connection.x, y: connection.y }, spot);
+    const path = findPath({ x: connection.x, y: connection.y }, spot, this.bedCount());
     if (!path || path.length === 0) {
       this.sendError(ws, '3006');
       return;
     }
 
-    this.movers.set(connection.userId, {
-      mover: { x: connection.x, y: connection.y, path, legElapsedMs: 0 },
-      facing: facingFrom(connection.x, connection.y, path[0] as Tile),
-    });
+    this.movers.set(connection.userId, { x: connection.x, y: connection.y, path });
     this.writeConnection(ws, { ...connection, target: spot, arrivalAction: 'lie', arrivalBedNo: bedNo });
     this.startTicking();
     // 走路开始（复合意图）：与 `startWalking` 一样立即补发起点
     this.sendPositions([this.updateOf(connection.userId)]);
-  }
-
-  /** 床四周最近的、可达的站立格（床格本身不可行走）。 */
-  private standSpotFor(bedNo: number, from: Tile): Tile | undefined {
-    const position = this.grid.bedPosition(bedNo);
-    if (!position) return undefined;
-
-    let best: { tile: Tile; length: number } | undefined;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ] as Array<[number, number]>) {
-      const tile = { x: position.x + dx, y: position.y + dy };
-      if (!this.grid.isWalkable(tile.x, tile.y)) continue;
-      const path = findPath(this.grid, from, tile);
-      if (!path) continue;
-      if (!best || path.length < best.length) best = { tile, length: path.length };
-    }
-    return best?.tile;
   }
 
   /** 真的躺下：再次校验（走路期间床可能被别人占了），写库，然后**先发归属再发占用**。 */
@@ -413,10 +449,10 @@ export class Hall extends DurableObject<Env> {
     const now = Date.now();
     const verdict = lieVerdictFor({
       bedNo,
-      capacity: this.hall.capacity,
+      bedCount: this.bedCount(),
       inBed: connection.state !== 'roaming',
       userId: connection.userId,
-      bed: readBed(this.ctx.storage.sql, bedNo),
+      bed: readBed(this.ctx.storage.sql, bedNo, now),
       ownedBedNo: findOwnedBed(this.ctx.storage.sql, connection.userId, now),
     });
     if (!verdict.ok) {
@@ -429,15 +465,17 @@ export class Hall extends DurableObject<Env> {
       userId: connection.userId,
       name: connection.name,
       appearance: connection.appearance,
-      timezone: connection.timezone,
       now,
       claiming: verdict.claiming,
     });
 
+    const standing = frontPointOf(bedNo) ?? { x: connection.x, y: connection.y };
     const lying: ConnectionState = {
       ...connection,
       state: 'lying',
       bedNo,
+      x: standing.x,
+      y: standing.y,
       target: undefined,
       arrivalAction: undefined,
       arrivalBedNo: undefined,
@@ -511,35 +549,36 @@ export class Hall extends DurableObject<Env> {
       this.writeConnection(ws, next);
       // 已经睡着的人不需要「自动睡着」到期事件了
       if (derived === 'asleep') this.due.remove('autosleep', connection.userId);
-      if (next.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, next.bedNo, derived === 'asleep' ? 'asleep' : 'lying', now);
+      if (next.bedNo !== undefined) {
+        setBedOccupancy(this.ctx.storage.sql, next.bedNo, derived === 'asleep' ? 'asleep' : 'lying', now);
+      }
       this.broadcastState(next);
       changed = true;
     }
     if (changed) this.syncAlarm();
   }
 
-  /** 「我要去这一格」：新意图覆盖当前路径；目标为当前格则原地不动。 */
-  private startWalking(ws: WebSocket, connection: ConnectionState, target: Tile): void {
-    if (connection.x === target.x && connection.y === target.y) {
-      // 走路就地结束：立即补发当前位置，客户端手上不会留着跨度几十秒的陈旧窗口
-      const stopped = this.stopWalking(connection.userId);
-      this.writeConnection(ws, { ...connection, target: undefined });
-      const here = tileCenter(connection);
-      this.sendPositions([[connection.userId, here.x, here.y, stopped?.facing ?? 0]]);
-      return;
-    }
-
-    const path = findPath(this.grid, { x: connection.x, y: connection.y }, target);
-    if (!path || path.length === 0) {
+  /**
+   * 「我要去这个世界像素点」：新意图覆盖当前路径（到达后动作一并清掉）；目标就是当前点时视为原地不动。
+   */
+  private startWalking(ws: WebSocket, connection: ConnectionState, target: Point): void {
+    const from = { x: connection.x, y: connection.y };
+    const path = findPath(from, target, this.bedCount());
+    if (!path) {
       this.sendError(ws, '3006');
       return;
     }
 
-    this.movers.set(connection.userId, {
-      mover: { x: connection.x, y: connection.y, path, legElapsedMs: 0 },
-      facing: facingFrom(connection.x, connection.y, path[0] as Tile),
-    });
-    this.writeConnection(ws, { ...connection, target });
+    if (path.length === 0) {
+      // 走路就地结束：立即补发当前位置，客户端手上不会留着跨度几十秒的陈旧窗口
+      this.stopWalking(connection.userId);
+      this.writeConnection(ws, retarget(connection, undefined));
+      this.sendPositions([[connection.userId, from.x, from.y]]);
+      return;
+    }
+
+    this.movers.set(connection.userId, { x: from.x, y: from.y, path });
+    this.writeConnection(ws, retarget(connection, target));
     this.startTicking();
     // 走路开始：立即补发起点（客户端据此开一个新鲜的插值窗口，起步那一帧因此不瞬移）
     this.sendPositions([this.updateOf(connection.userId)]);
@@ -547,16 +586,15 @@ export class Hall extends DurableObject<Env> {
 
   /** 移动者此刻的位置条目（世界像素）。**调用方保证这个人在移动者集合里**。 */
   private updateOf(userId: string): PositionUpdate {
-    const entry = this.movers.get(userId) as { mover: MoverState; facing: Facing };
-    const position = moverPosition(entry.mover, MOVE_MS_PER_TILE);
-    return [userId, position.x, position.y, entry.facing];
+    const mover = this.movers.get(userId) as MoverState;
+    return [userId, mover.x, mover.y];
   }
 
-  private stopWalking(userId: string): { mover: MoverState; facing: Facing } | undefined {
-    const entry = this.movers.get(userId);
+  private stopWalking(userId: string): MoverState | undefined {
+    const mover = this.movers.get(userId);
     this.movers.delete(userId);
     if (this.movers.size === 0) this.stopTicking();
-    return entry;
+    return mover;
   }
 
   /**
@@ -577,29 +615,26 @@ export class Hall extends DurableObject<Env> {
     this.tickTimer = null;
   }
 
-  /** 对象被驱逐后重建工作集：附加数据里还有目标的，重新算一次路径（BFS 是确定性的）。 */
+  /** 对象被驱逐后重建工作集：附加数据里还有目标的，重新算一次路径（街网寻路是确定性的）。 */
   private ensureMovers(): void {
     for (const ws of this.ctx.getWebSockets()) {
       const connection = readConnection(ws);
       if (!connection?.ready || !connection.target) continue;
       if (this.movers.has(connection.userId)) continue;
 
-      const path = findPath(this.grid, { x: connection.x, y: connection.y }, connection.target);
+      const path = findPath({ x: connection.x, y: connection.y }, connection.target, this.bedCount());
       if (!path || path.length === 0) {
         this.writeConnection(ws, { ...connection, target: undefined });
         continue;
       }
-      this.movers.set(connection.userId, {
-        mover: { x: connection.x, y: connection.y, path, legElapsedMs: 0 },
-        facing: facingFrom(connection.x, connection.y, path[0] as Tile),
-      });
+      this.movers.set(connection.userId, { x: connection.x, y: connection.y, path });
     }
   }
 
   /**
    * 一个节拍：按**实际经过的时间**推进所有移动者，然后把**所有移动者此刻的精确位置**合并成一条广播。
    *
-   * 「每拍必发」而不是「格号变了才发」：位置是连续的像素量，只在格号变化时发会让批次间隔随速度与节拍
+   * 「每拍必发」而不是「变了才发」：位置是连续的像素量，只在格号变化时发会让批次间隔随速度与节拍
    * 抖动（实测 202/305/203ms），客户端据此算出的插值窗口跨度跟着变，表现为单帧补跳（见 §4.7）。
    * 无人走动则没有节拍、也就没有消息（对象才能休眠）。
    */
@@ -612,25 +647,20 @@ export class Hall extends DurableObject<Env> {
     const updates: PositionUpdate[] = [];
     const arrived: Array<{ ws: WebSocket; connection: ConnectionState }> = [];
 
-    for (const [userId, entry] of [...this.movers]) {
+    for (const [userId, mover] of [...this.movers]) {
       const ws = this.socketOf(userId);
       if (!ws) {
         this.movers.delete(userId); // 断线：close 里已删，这里兜底
         continue;
       }
 
-      const { mover } = entry;
-      const previousX = mover.x;
-      const previousY = mover.y;
-      const result = advanceMover(mover, elapsed, MOVE_MS_PER_TILE);
-
+      const result = advanceMover(mover, elapsed);
       if (result.moved) {
-        entry.facing = facingFrom(previousX, previousY, mover);
         const connection = readConnection(ws);
         if (connection) this.writeConnection(ws, { ...connection, x: mover.x, y: mover.y });
       }
 
-      updates.push(this.updateOf(userId));
+      updates.push([userId, mover.x, mover.y]);
 
       if (result.arrived) {
         const connection = readConnection(ws);
@@ -723,12 +753,11 @@ export class Hall extends DurableObject<Env> {
     if (this.socketOf(connection.userId, ws)) return;
 
     const now = Date.now();
-    const stopped = this.stopWalking(connection.userId);
+    this.stopWalking(connection.userId);
     this.due.remove('autosleep', connection.userId); // 人已经不在线，「该不该睡着」不再适用于他
     if (connection.bedNo === undefined) {
       // 走路被断线打断：先把端点补发给别人，再说他走了（顺序反了的话，那条位置会落在一个已经删掉的人身上）
-      const here = tileCenter(connection);
-      this.sendPositions([[connection.userId, here.x, here.y, stopped?.facing ?? 0]]);
+      this.sendPositions([[connection.userId, connection.x, connection.y]]);
       // 要排除**正在关闭的这一条**：平台在关闭事件里仍会把它列在 `getWebSockets()` 里，
       // 不排除就会把自己也算成在线
       this.broadcast({ t: 'leave', id: connection.userId, online: this.onlineCount(ws) });
@@ -770,7 +799,7 @@ export class Hall extends DurableObject<Env> {
         continue;
       }
       // 宽限到期时刻就是 `lastSeenAt + 宽限期`（`graceVerdict` 只在非空时判 `expired`）；
-      // 兜底用 `now`——写成 `now + 宽限期` 会变成未来戳，那条睡痕要等到明天才被清
+      // 兜底用 `now`——写成 `now + 宽限期` 会变成未来戳，那条睡痕要等到明天才过期
       const tracedAt = row.lastSeenAt === null ? now : row.lastSeenAt + GRACE_MS;
       this.markTrace(row.bedNo, row.ownerUserId, tracedAt); // 在床上 → 睡痕，**不发 leave**
     }
@@ -787,8 +816,8 @@ export class Hall extends DurableObject<Env> {
   /**
    * 变成睡痕：库里记上，再广播显示态（名字与轮廓由客户端按 `trace` 变暗）。
    *
-   * `updated_at` 写的是**宽限到期的时刻**（`last_seen_at + 宽限期`），不是「发现它的时刻」：睡痕清理拿它
-   * 当日界判据（§7），写发现时刻会让远处过期的睡痕（例如宽限早过期、对象直到次日才醒）多活一天。
+   * `updated_at` 写的是**宽限到期的时刻**（`last_seen_at + 宽限期`），不是「发现它的时刻」：睡痕过期
+   * （`updated_at + TRACE_TTL_MS`）拿它当判据，写发现时刻会让远处的睡痕多活一整个 TTL。
    */
   private markTrace(bedNo: number, userId: string, tracedAt: number): void {
     setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
@@ -834,20 +863,20 @@ export class Hall extends DurableObject<Env> {
     this.syncAlarm();
   }
 
-  /**
-   * 排下一次每日清理（见 `10-hall-runtime.md` §7）。
-   * 每次清理执行完都要重排：`alarm()` 末尾的对账靠堆顶把槽位写到明天。
-   */
-  private armCleanup(): void {
-    this.due.upsert({ kind: 'cleanup', userId: '', at: nextCleanupAt(this.hall.timezone, Date.now()) });
+  /** 排下一个每日唤醒（UTC 20:00）。每次执行完都要重排：`alarm()` 末尾的对账靠堆顶把槽位写到明天。 */
+  private armDailyWake(): void {
+    this.due.upsert({ kind: 'daily', userId: '', at: nextDailyWakeAt(Date.now()) });
   }
 
   /**
-   * 重建堆时排**最近一个** 08:00（见 `10-hall-runtime.md` §7）：堆只在内存里，而 08:00 唤醒的是
-   * 新实例——只排「下一个」会让当天这次清理永远不发生。已经过了 → `runDueEvents()` 当场补跑。
+   * 重建堆时的每日唤醒（见 `10-hall-runtime.md` §7）：**只有当越过的那个 20:00 还没结算过**（堆只在内存里，
+   * 而 20:00 唤醒的是新实例）才排那个时刻当场补跑；已经结算过就排下一个边界。
+   * 不这么分的话，对象每次重建都会补跑一次，缩级会变成「每个对象生命周期一次」。
    */
-  private armCleanupCatchUp(): void {
-    this.due.upsert({ kind: 'cleanup', userId: '', at: previousCleanupAt(this.hall.timezone, Date.now()) });
+  private armDailyWakeCatchUp(): void {
+    const now = Date.now();
+    const settled = shouldSettleDaily(now, readMeta(this.ctx.storage.sql).dailyWakeAt);
+    this.due.upsert({ kind: 'daily', userId: '', at: settled ? previousDailyWakeAt(now) : nextDailyWakeAt(now) });
   }
 
   /**
@@ -862,9 +891,8 @@ export class Hall extends DurableObject<Env> {
     this.scheduled = true;
 
     this.due.clear();
-    // 清理事件是唯一「丢了就会真的漏掉」的一个（对象可能整夜休眠）→ 重建时排最近一个 08:00 以便补跑
-    this.armCleanupCatchUp();
-    const live = this.liveUserIds();
+    // 每日唤醒是唯一「丢了就真的漏掉」的一个（对象可能整夜休眠）→ 重建时排最近一个 20:00 以便补跑
+    this.armDailyWakeCatchUp();
     for (const ws of this.ctx.getWebSockets()) {
       const connection = readConnection(ws);
       if (!connection?.ready) continue;
@@ -872,6 +900,7 @@ export class Hall extends DurableObject<Env> {
       if (event) this.due.upsert(event);
     }
     // 床上但人已离线的人：宽限到期必须发生（上一个实例可能已经把内存里的宽限记录丢了）
+    const live = this.liveUserIds();
     for (const row of listOccupiedBeds(this.ctx.storage.sql)) {
       if (live.has(row.ownerUserId)) continue;
       this.due.upsert({
@@ -891,36 +920,47 @@ export class Hall extends DurableObject<Env> {
     const due = this.due.drainDue(Date.now());
     if (due.some((event) => event.kind === 'grace')) this.expireGrace();
     if (due.some((event) => event.kind === 'autosleep')) this.refreshDerivedStates();
-    if (due.some((event) => event.kind === 'cleanup')) this.runCleanup();
+    if (due.some((event) => event.kind === 'daily')) this.runDailyWake();
   }
 
   /**
-   * 每日清理（见 `10-hall-runtime.md` §7）：**先跑 SQL，再广播**。
-   * 两个任务各一条 `UPDATE` + 各一条取广播主体的 `SELECT`，不逐行更新、不分批；
-   * 也不启停位置节拍循环——处理器里留下内存定时器会让对象不休眠（§4.5）。
+   * 每日唤醒（UTC 20:00，见 `10-hall-runtime.md` §7）：**只做两件事**——归属释放 + 缩级评估，
+   * 然后把**结算过的边界写回** `meta.daily_wake_at`（即使这一轮只做了归属释放、没有降级也要写，
+   * 否则同一个 20:00 会被反复补跑）。
    */
-  private runCleanup(): void {
+  private runDailyWake(): void {
     const now = Date.now();
     const sql = this.ctx.storage.sql;
-    // 边界 = 最近一个 08:00：补跑（实例重建）时只清本该在那个日界前清掉的行，当晚的睡痕不动
-    const boundary = previousCleanupAt(this.hall.timezone, now);
 
-    // 睡痕清空必须先于归属释放：反过来的话，同时满足两个条件的床已经被置空，睡痕那批就发不出 leave
-    const traces = listTraceBeds(sql, boundary);
-    clearAllTraceBeds(sql, now, boundary);
+    // 归属释放：先取出主体（要逐床广播 bed），再一条 UPDATE 清掉
     const released = listExpiredOwnerships(sql, now);
     releaseExpiredOwnerships(sql, now);
-    this.armCleanup();
+    for (const bedNo of released) this.broadcast({ t: 'bed', bedNo, owned: false });
 
-    // 睡痕清掉 = 这个人从别人的 people 里消失（床仍是他的，淡轮廓留着）；
-    // 先睡痕后归属的次序由 `cleanupMessages` 保证（两者都命中同一张床时，先 leave 再 bed）
-    // 睡痕都在离线状态（有连接就不会是 trace），人数不因清理而变化：取当前值即可
-    const messages = cleanupMessages(
-      traces.map((trace) => trace.ownerUserId),
-      released,
-      this.onlineCount(),
-    );
-    for (const message of messages) this.broadcast(message);
+    this.shrinkIfOuterRingEmpty(now);
+    writeDailyWakeAt(sql, previousDailyWakeAt(now));
+    this.armDailyWake();
+  }
+
+  /**
+   * 缩级评估（见 `10-hall-runtime.md` §8）：最外那一圈床**全部无主且无占用**（含未过期睡痕）→
+   * 取下 `meta.bed_count`、广播 `resize`。**不写任何床位行**。
+   * 一天只跳一档：跳档需要「这一圈真的没人要了」的判断，实时判定会在人数波动时来回跳。
+   */
+  private shrinkIfOuterRingEmpty(now: number): void {
+    const sql = this.ctx.storage.sql;
+    const bedCount = this.bedCount();
+    const index = levelIndexOfBedCount(bedCount);
+    if (index === 0) return; // 已经是最小档
+
+    // 外圈 = 上一档容量到当前容量之间的那些床号（`cellOf` 的编号顺序保证它们就是最后建成的那一圈）
+    const lower = (HALL_LEVELS[index - 1] as (typeof HALL_LEVELS)[number]).capacity;
+    const previous = previousLevelCapacity(bedCount, outerRingBusy(sql, lower, bedCount, now));
+    if (previous === undefined) return; // 外圈还有主或有占用
+
+    writeBedCount(sql, previous);
+    this.bedCountCache = previous;
+    this.broadcast({ t: 'resize', bedCount: previous });
   }
 
   /**
@@ -965,40 +1005,20 @@ export class Hall extends DurableObject<Env> {
       me.userId,
     );
 
+    const now = Date.now();
     const sql = this.ctx.storage.sql;
-    const ownedBeds = sql
-      .exec<{ bed_no: number }>('SELECT bed_no FROM bed WHERE owner_user_id IS NOT NULL')
-      .toArray()
-      .map((row) => row.bed_no);
-
-    // 走 state 索引取 trace 行（几十行量级），不是全表扫描后再过滤
-    const traceRows = sql
-      .exec<{ bed_no: number; owner_user_id: string; owner_name: string | null; owner_appearance: string | null }>(
-        "SELECT bed_no, owner_user_id, owner_name, owner_appearance FROM bed WHERE state = 'trace'",
-      )
-      .toArray()
-      .map((row) => ({
-        bedNo: row.bed_no,
-        userId: row.owner_user_id,
-        name: row.owner_name,
-        appearance: row.owner_appearance,
-      }));
-
-    // 我自己的床（归属）：走唯一索引取一行——客户端走路时也要知道哪张床是我的
-    const myOwnedBedNo = sql
-      .exec<{ bed_no: number }>('SELECT bed_no FROM bed WHERE owner_user_id = ?', me.userId)
-      .toArray()[0]?.bed_no ?? null;
-
     return buildSnapshot({
-      hall: this.hall,
-      serverTs: Date.now(),
+      layoutVersion: LAYOUT_VERSION,
+      serverTs: now,
+      bedCount: this.bedCount(),
       online,
       me,
-      myOwnedBedNo,
+      myOwnedBedNo: findOwnedBed(sql, me.userId, now) ?? null,
       others,
-      ownedBeds,
+      // 走 state 索引取 trace 行，并在 SQL 里就滤掉已过期的那些（几十行量级，不是全表扫描）
+      traceRows: listTraceBeds(sql, now),
+      ownedBeds: listOwnedBeds(sql, now),
       offlineOccupants,
-      traceRows,
     });
   }
 }
@@ -1008,19 +1028,13 @@ function readConnection(ws: WebSocket): ConnectionState | null {
   return attachment ? (attachment as ConnectionState) : null;
 }
 
-/** 连接状态 → 协议里的「人在哪」（在床上带床号，否则带坐标；坐标为世界像素）。 */
-function placementOf(connection: ConnectionState): { state: 'roaming'; x: number; y: number } | { state: 'lying' | 'asleep'; bedNo: number } {
+/** 连接状态 → 协议里的「人在哪」（在床上带床号，否则带世界像素坐标）。 */
+function placementOf(
+  connection: ConnectionState,
+): { state: 'roaming'; x: number; y: number } | { state: 'lying' | 'asleep'; bedNo: number } {
   return connection.state === 'roaming' || connection.bedNo === undefined
-    ? { state: 'roaming', ...tileCenter(connection) }
+    ? { state: 'roaming', x: connection.x, y: connection.y }
     : { state: connection.state, bedNo: connection.bedNo };
-}
-
-/** 朝向：0 下 / 1 左 / 2 上 / 3 右（与 `docs/api/20-api-ws.md` §3.1 一致）。 */
-function facingFrom(fromX: number, fromY: number, to: Tile): Facing {
-  if (to.x > fromX) return 3;
-  if (to.x < fromX) return 1;
-  if (to.y > fromY) return 0;
-  return 2;
 }
 
 function decodeName(raw: string | null): string | null {

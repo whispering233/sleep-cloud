@@ -2,13 +2,13 @@ import { getSignedCookie, setSignedCookie } from 'hono/cookie';
 
 import type { Context } from 'hono';
 
-import { HALLS } from '../shared/hall-registry';
-import type { HallConfig } from '../shared/hall-registry';
 import type { Env } from './env';
 
 /**
  * 匿名会话（见 `docs/api/api-public.md` §2）：服务端签发的 **HMAC 签名 cookie**（HttpOnly）。
- * 不放床位号——床位归属的权威在厅的数据库里，多一个真相源只会带来不一致。
+ *
+ * 会话里只有三样东西：用户标识、昵称、18 岁自述位。**不放床位号**（归属的权威在厅的数据库）、
+ * **不放所属厅**（只有一个厅，路由用常量）、**不放时区**（时区概念已删除）。
  */
 
 const COOKIE_NAME = 'sc_session';
@@ -18,12 +18,8 @@ const COOKIE_MAX_AGE_SEC = 400 * 24 * 60 * 60;
 
 export interface Session {
   userId: string;
-  /** 所属厅：不放在会话里，服务端就不知道该把请求交给哪个厅 */
-  hallId: string;
   /** 入场层自己输入的名字；未设置时为空 */
   nickname?: string;
-  /** 用户本地时区（仅用于与个人有关的时间） */
-  timezone: string;
   ageConfirmed: boolean;
 }
 
@@ -56,27 +52,9 @@ function isSecureRequest(request: Request): boolean {
   }
 }
 
-/** 由平台提供的时区挑选最接近的大区（本地开发可能没有该字段，回落到第一个大区）。 */
-/** 由平台提供的时区挑选最接近的大区（本地开发可能没有该字段，回落到第一个大区）。 */
-function pickHall(timezone: string | undefined): HallConfig {
-  if (timezone) {
-    const exact = HALLS.find((hall) => hall.timezone === timezone);
-    if (exact) return exact;
-    const region = timezone.split('/')[0];
-    const sameRegion = HALLS.find((hall) => hall.timezone.startsWith(`${region}/`));
-    if (sameRegion) return sameRegion;
-  }
-  return HALLS[0];
-}
-
-function createSession(c: Context<{ Bindings: Env }>): Session {
-  // 平台在请求对象上提供的时区（本地开发可能没有）；只用到 timezone 一个字段，所以按结构取
-  const cfTimezone = (c.req.raw as { cf?: { timezone?: string } }).cf?.timezone;
-  const hall = pickHall(cfTimezone);
+function createSession(): Session {
   return {
     userId: `u_${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}`,
-    hallId: hall.id,
-    timezone: cfTimezone ?? hall.timezone,
     ageConfirmed: false,
   };
 }
@@ -84,12 +62,10 @@ function createSession(c: Context<{ Bindings: Env }>): Session {
 function parseSession(raw: string): Session | null {
   try {
     const parsed = JSON.parse(raw) as Partial<Session>;
-    if (typeof parsed.userId !== 'string' || typeof parsed.hallId !== 'string') return null;
+    if (typeof parsed.userId !== 'string') return null;
     return {
       userId: parsed.userId,
-      hallId: parsed.hallId,
       nickname: typeof parsed.nickname === 'string' ? parsed.nickname : undefined,
-      timezone: typeof parsed.timezone === 'string' ? parsed.timezone : 'UTC',
       ageConfirmed: parsed.ageConfirmed === true,
     };
   } catch {
@@ -120,7 +96,7 @@ export async function readSession(c: Context<{ Bindings: Env }>): Promise<Sessio
   if (session) return { session, invalid: false, secret };
   // 带了我们这个 cookie 却没用上：签名不合规、验签失败或内容不可解析，一律当「会话失效」处理
   const sentCookie = (c.req.raw.headers.get('cookie') ?? '').includes(`${COOKIE_NAME}=`);
-  return { session: createSession(c), invalid: sentCookie, secret };
+  return { session: createSession(), invalid: sentCookie, secret };
 }
 
 /** 重签并回写 cookie（每次响应都刷新有效期）。 */

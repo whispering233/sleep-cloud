@@ -19,7 +19,7 @@ export interface Motion {
  */
 export const INTERPOLATION_DELAY_MS = 100;
 
-/** 滞后的上限：服务端偶尔卡一大拍时画面也不至于落后太多（400ms ≈ 一格半，见 `MOVE_MS_PER_TILE`）。 */
+/** 滞后的上限：服务端偶尔卡一大拍时画面也不至于落后太多（400ms ≈ 一格半的走道，见 `WALK_SPEED_PX_PER_S`）。 */
 export const MAX_INTERPOLATION_DELAY_MS = 400;
 
 /**

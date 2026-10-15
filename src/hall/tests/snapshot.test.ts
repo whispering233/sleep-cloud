@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { HALLS } from '../../shared/hall-registry';
+import { LAYOUT_VERSION } from '../../shared/layout';
+import { decodeOwnedBeds } from '../../shared/protocol';
 import type { ConnectionState } from '../connection';
 import { buildSnapshot, onlineCountOf, splitLive } from '../snapshot';
-import type { TracePersonRow } from '../snapshot';
+import type { TraceBedRow } from '../bed-store';
 
-const HALL = HALLS[0];
+const BED_COUNT = 114;
 
 function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
   return {
     userId: 'u_me',
     name: '我',
-    appearance: 'a1',
-    timezone: 'Asia/Shanghai',
-    x: 1,
-    y: 1,
+    appearance: 'boy',
+    x: 812.5,
+    y: 430,
     state: 'roaming',
     lastInputAt: 0,
     ready: true,
@@ -22,124 +22,90 @@ function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
   };
 }
 
-function traceRow(overrides: Partial<TracePersonRow> = {}): TracePersonRow {
-  return { bedNo: 5, userId: 'u_trace', name: '夜猫', appearance: 'a2', ...overrides };
+function traceRow(overrides: Partial<TraceBedRow> = {}): TraceBedRow {
+  return { bedNo: 5, userId: 'u_trace', name: '夜猫', appearance: 'girl', traceUntil: 1735728000000, ...overrides };
 }
 
+const snapshot = (overrides: Partial<Parameters<typeof buildSnapshot>[0]> = {}) =>
+  buildSnapshot({
+    layoutVersion: LAYOUT_VERSION,
+    serverTs: 1000,
+    bedCount: BED_COUNT,
+    online: 1,
+    me: connection(),
+    myOwnedBedNo: null,
+    others: [],
+    ownedBeds: [],
+    traceRows: [],
+    offlineOccupants: [],
+    ...overrides,
+  });
+
 describe('快照组装', () => {
-  it('自己在 me 里，不出现在 people 里', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection(),
-      myOwnedBedNo: null,
-      others: [],
-      ownedBeds: [],
-      traceRows: [],
-      offlineOccupants: [],
-    });
+  it('自己在 me 里，不出现在 people 里；厅只有床位数与在线人数', () => {
+    const message = snapshot();
 
-    expect(snapshot.me).toMatchObject({ id: 'u_me', name: '我', state: 'roaming' });
-    expect(snapshot.people).toEqual([]);
-    expect(snapshot.hall).toEqual({
-      id: HALL.id,
-      name: HALL.name,
-      timezone: HALL.timezone,
-      capacity: HALL.capacity,
-      online: 1,
-    });
-    expect(snapshot.sceneGuid).toBe(HALL.sceneGuid);
+    expect(message.me).toMatchObject({ id: 'u_me', name: '我', state: 'roaming', x: 812.5, y: 430 });
+    expect(message.people).toEqual([]);
+    expect(message.hall).toEqual({ bedCount: BED_COUNT, online: 1 });
+    expect(message.layoutVersion).toBe(LAYOUT_VERSION);
+    expect(message.serverTs).toBe(1000);
   });
 
-  it('睡痕条目来自数据库行：名字与外观取快照值，带 bedNo', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection(),
-      myOwnedBedNo: null,
-      others: [],
-      ownedBeds: [5],
-      traceRows: [traceRow()],
-      offlineOccupants: [],
-    });
-
-    expect(snapshot.people).toEqual([{ id: 'u_trace', name: '夜猫', appearance: 'a2', state: 'trace', bedNo: 5 }]);
-    expect(snapshot.ownedBeds).toEqual([5]);
+  it('归属走位图：解码回来就是有主的床号', () => {
+    const message = snapshot({ ownedBeds: [5, 42, 113] });
+    expect(typeof message.ownedBeds).toBe('string');
+    expect(decodeOwnedBeds(message.ownedBeds, BED_COUNT)).toEqual([5, 42, 113]);
   });
 
-  it('宽限中的床上离线者照旧是 lying/asleep（睡痕还没到，占用不能凭空消失）', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection(),
-      myOwnedBedNo: null,
-      others: [],
+  it('睡痕条目来自数据库行：名字与外观取快照值，带 bedNo 与绝对到期时刻', () => {
+    const message = snapshot({ ownedBeds: [5], traceRows: [traceRow()] });
+
+    expect(message.people).toEqual([
+      { id: 'u_trace', name: '夜猫', appearance: 'girl', state: 'trace', bedNo: 5, traceUntil: 1735728000000 },
+    ]);
+  });
+
+  it('宽限中的床上离线者照旧是 lying/asleep（睡痕还没到，占用不能凭空消失），且不带 traceUntil', () => {
+    const message = snapshot({
       ownedBeds: [5],
-      traceRows: [],
-      offlineOccupants: [{ bedNo: 5, state: 'asleep', userId: 'u_sleeper', name: '阿雅', appearance: 'a2' }],
+      offlineOccupants: [{ bedNo: 5, state: 'asleep', userId: 'u_sleeper', name: '阿雅', appearance: 'girl' }],
     });
 
-    expect(snapshot.people).toEqual([
-      { id: 'u_sleeper', name: '阿雅', appearance: 'a2', state: 'asleep', bedNo: 5 },
+    expect(message.people).toEqual([
+      { id: 'u_sleeper', name: '阿雅', appearance: 'girl', state: 'asleep', bedNo: 5 },
     ]);
   });
 
   it('库里外观值不合法时回落到按标识推导', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection(),
-      myOwnedBedNo: null,
-      others: [],
-      ownedBeds: [5],
-      traceRows: [traceRow({ appearance: 'nope' })],
-      offlineOccupants: [],
-    });
-
-    const person = snapshot.people[0];
+    const person = snapshot({ ownedBeds: [5], traceRows: [traceRow({ appearance: 'nope' })] }).people[0];
     expect(person?.state).toBe('trace');
-    expect(['a1', 'a2', 'a3']).toContain(person?.appearance);
+    expect(['boy', 'girl']).toContain(person?.appearance);
   });
 
   it('已经在线的睡痕行不重复出现（在线连接是更新的真相）', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
+    const message = snapshot({
       online: 2,
-      me: connection(),
-      myOwnedBedNo: null,
       others: [connection({ userId: 'u_trace', state: 'roaming' })],
       ownedBeds: [5],
       traceRows: [traceRow()],
-      offlineOccupants: [],
     });
 
-    expect(snapshot.people).toEqual([
-      { id: 'u_trace', name: '我', appearance: 'a1', state: 'roaming', x: 48, y: 48 },
+    expect(message.people).toEqual([
+      { id: 'u_trace', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430 },
     ]);
   });
 
   it('卧室里的在线者带床号、不带坐标', () => {
-    const snapshot = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
+    const message = snapshot({
       online: 2,
-      me: connection(),
-      myOwnedBedNo: null,
       others: [connection({ userId: 'u_sleeper', state: 'asleep', bedNo: 7 })],
-      ownedBeds: [],
-      traceRows: [],
-      offlineOccupants: [],
     });
 
-    expect(snapshot.people[0]).toEqual({
+    expect(message.people[0]).toEqual({
       id: 'u_sleeper',
       name: '我',
-      appearance: 'a1',
+      appearance: 'boy',
       state: 'asleep',
       bedNo: 7,
     });
@@ -171,10 +137,12 @@ describe('在线人数与别人的列表', () => {
   it('同一个人两条连接只算一人（旧连接被顶掉前还在连接列表里）', () => {
     const older = connection({ userId: 'u_ready' });
     expect(onlineCountOf([{ connection: ready }, { connection: older }])).toBe(1);
-    expect(splitLive([
-      { self: false, connection: ready },
-      { self: false, connection: older },
-    ]).online).toBe(1);
+    expect(
+      splitLive([
+        { self: false, connection: ready },
+        { self: false, connection: older },
+      ]).online,
+    ).toBe(1);
   });
 
   it('未握手的连接不算人数', () => {
@@ -199,38 +167,18 @@ describe('在线人数与别人的列表', () => {
   it('别人的两条连接只进 others 一次', () => {
     const first = connection({ userId: 'u_other' });
     const second = connection({ userId: 'u_other' });
-    expect(splitLive([{ self: false, connection: first }, { self: false, connection: second }]).others).toEqual([
-      first,
-    ]);
+    expect(
+      splitLive([
+        { self: false, connection: first },
+        { self: false, connection: second },
+      ]).others,
+    ).toEqual([first]);
   });
 });
 
 describe('自己的归属位', () => {
   it('有床时 me 带 ownedBedNo；没有床时不带这个字段', () => {
-    const withBed = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection({ state: 'roaming' }),
-      myOwnedBedNo: 42,
-      others: [],
-      ownedBeds: [42],
-      traceRows: [],
-      offlineOccupants: [],
-    });
-    expect(withBed.me).toMatchObject({ id: 'u_me', state: 'roaming', ownedBedNo: 42 });
-
-    const withoutBed = buildSnapshot({
-      hall: HALL,
-      serverTs: 1000,
-      online: 1,
-      me: connection({ state: 'roaming' }),
-      myOwnedBedNo: null,
-      others: [],
-      ownedBeds: [],
-      traceRows: [],
-      offlineOccupants: [],
-    });
-    expect('ownedBedNo' in withoutBed.me).toBe(false);
+    expect(snapshot({ myOwnedBedNo: 42, ownedBeds: [42] }).me).toMatchObject({ ownedBedNo: 42 });
+    expect('ownedBedNo' in snapshot().me).toBe(false);
   });
 });

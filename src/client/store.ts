@@ -9,12 +9,14 @@ import type {
   Person,
   PersonPlacement,
   PosMessage,
+  ResizeMessage,
   SnapshotMessage,
   SelfPerson,
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
 import { CHAT_LOG_MAX, EMOTE_MS } from '../shared/constants';
+import { decodeOwnedBeds } from '../shared/protocol';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
@@ -42,8 +44,10 @@ export interface Notice {
  */
 export interface ClientState {
   connected: boolean;
+  /** 厅的事实：当前床位数与在线人数（都是服务端下发的运行时事实） */
   hall?: HallInfo;
-  sceneGuid?: string;
+  /** 布局版本号：客户端据此自检几何是否与本机一致 */
+  layoutVersion?: string;
   me?: SelfPerson;
   /** 归属集合：所有有主的床（不含名字，也不含「谁拥有」） */
   ownedBeds: Set<number>;
@@ -96,10 +100,11 @@ export function setState(patch: Partial<ClientState>): void {
 export function applySnapshot(message: SnapshotMessage): void {
   setState({
     connected: true,
-    sceneGuid: message.sceneGuid,
+    layoutVersion: message.layoutVersion,
     hall: message.hall,
     me: message.me,
-    ownedBeds: new Set(message.ownedBeds),
+    // 归属位图 → 床号集合（位图只编码到 bedCount−1，位图之外的位无意义）
+    ownedBeds: new Set(decodeOwnedBeds(message.ownedBeds, message.hall.bedCount)),
     people: new Map(message.people.map((person) => [person.id, person])),
     motion: new Map(),
     // 客户端据此换算服务端时间轴：插值一律按服务端时间戳算
@@ -123,7 +128,7 @@ export function applyChat(message: ChatMessage): void {
 }
 
 /**
- * 私聊：发送者与接收者收到同一份 payload，收件人靠「发送者是不是我」区分（见 `docs/api/20-api-ws.md` §4.7）。
+ * 私聊：发送者与接收者收到同一份 payload，收件人靠「发送者是不是我」区分（见 `docs/api/20-api-ws.md` §4.8）。
  * 名字同样在追加那一刻固化：`own` 时我必然就是发送者（`me.id === fromId`），所以行内 id 一律是发送者。
  */
 export function applyWhisper(message: WhisperMessage): void {
@@ -158,6 +163,23 @@ export function selectPerson(id: string): void {
 /** 取消选中：点地面、点 ×、目标离开都走这里。 */
 export function clearSelection(): void {
   setState({ selectedId: undefined });
+}
+
+/**
+ * 厅的床位数变了（升级加外圈 / 降级砍最外圈）：只更这一个数字。
+ * 床位是**按布局函数现算**的，归属与占用都不需要变（升级新增的全是无主空床，降级砍掉的全是无人用的床）；
+ * 越界的条目顺手丢掉，免得残留一张已经不存在的床——包括 `me.ownedBedNo`：降级砍掉我的床时，
+ * 暖灯标记不能还指着一张不存在（或已经不属于我）的床。
+ */
+export function applyResize(message: ResizeMessage): void {
+  const hall = state.hall;
+  if (!hall) return;
+  const ownedBeds = new Set([...state.ownedBeds].filter((bedNo) => bedNo < message.bedCount));
+  const people = new Map([...state.people].filter(([, person]) => person.state === 'roaming' || person.bedNo < message.bedCount));
+  const patch: Partial<ClientState> = { hall: { ...hall, bedCount: message.bedCount }, ownedBeds, people };
+  const me = state.me;
+  if (me?.ownedBedNo !== undefined && me.ownedBedNo >= message.bedCount) patch.me = { ...me, ownedBedNo: undefined };
+  setState(patch);
 }
 
 /** 一批权威位置（已合并）→ 插值窗口。 */
@@ -272,10 +294,16 @@ export function applyError(code: string): void {
   setState({ notice: { id: noticeSeq, text } });
 }
 
-/** 床位归属变化：认领或释放（占用完全由「人」的那一类消息派生，不走这里）。 */
+/**
+ * 床位归属变化：认领或释放（占用完全由「人」的那一类消息派生，不走这里）。
+ * 释放的正好是我那张床（30 天没回来）→ `me.ownedBedNo` 一并清掉。
+ */
 export function applyBed(message: BedMessage): void {
   const ownedBeds = new Set(state.ownedBeds);
   if (message.owned) ownedBeds.add(message.bedNo);
   else ownedBeds.delete(message.bedNo);
-  setState({ ownedBeds });
+
+  const me = state.me;
+  if (!message.owned && me?.ownedBedNo === message.bedNo) setState({ ownedBeds, me: { ...me, ownedBedNo: undefined } });
+  else setState({ ownedBeds });
 }

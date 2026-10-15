@@ -1,5 +1,5 @@
-import type { HallSummary, SessionView } from '../../shared/http-api';
-import { confirmAge, setNickname, switchHall } from '../api';
+import type { SessionView } from '../../shared/http-api';
+import { confirmAge, setNickname } from '../api';
 import { ERROR_FALLBACK_TEXT, errorTextFor } from '../error-text';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
@@ -8,36 +8,34 @@ import { useState } from 'react';
 /** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
 const errorText = (code: string) => errorTextFor(code) ?? ERROR_FALLBACK_TEXT;
 
-/** 浏览器本地时区（服务端无从得知，必须由客户端上报一次）。 */
-const localTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-
 export interface EntryOverlayProps {
   session: SessionView;
-  halls: HallSummary[];
+  /** 厅满（`/api/me` 的 `2002`）：只剩最小档也满了，先不让进 */
+  blocked?: boolean;
   onDone: (session: SessionView) => void;
 }
 
 /**
- * 入场层：18 岁自述 + 昵称 + 大区，一次走完。**每次进入大厅前都出现**；
- * 会话已完善时它是「预填 + 一键继续」。改名只发生在这里（建连之前），因此协议不需要「名字变更」消息。
+ * 入场层：18 岁自述 + 昵称。**每次进入大厅前都出现**；会话已完善时它是「预填 + 一键继续」。
+ * 改名只发生在这里（建连之前），因此协议不需要「名字变更」消息。
+ * 没有大区选择：只有一个厅（见 `docs/design/config.md` §1）。
  */
-export function EntryOverlay({ session, halls, onDone }: EntryOverlayProps) {
+export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayProps) {
   const [nickname, setNicknameDraft] = useState(session.nickname);
   const [ageConfirmed, setAgeConfirmed] = useState(session.ageConfirmed);
-  const [hallId, setHallId] = useState(session.hallId);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(blocked ? errorText('2002') : null);
   const [busy, setBusy] = useState(false);
 
   const ready = Boolean(session.nickname) && session.ageConfirmed;
-  const canContinue = ageConfirmed && nickname.trim().length > 0 && !busy;
+  const canContinue = ageConfirmed && nickname.trim().length > 0 && !busy && !blocked;
 
-  /** 把一次写入的结果落到会话上：`1001` 表示会话被换新（静默），`1006` 表示时区回退但昵称已保存。 */
+  /** 把一次写入的结果落到会话上：`1001` 表示会话被换新（静默）。 */
   const runStep = async (
     step: () => Promise<{ code: string; data?: SessionView }>,
     current: SessionView,
   ): Promise<SessionView> => {
     const res = await step();
-    if (res.code === '0' || res.code === '1001' || res.code === '1006') return res.data ?? current;
+    if (res.code === '0' || res.code === '1001') return res.data ?? current;
     throw new Error(errorText(res.code));
   };
 
@@ -49,11 +47,8 @@ export function EntryOverlay({ session, halls, onDone }: EntryOverlayProps) {
       if (!current.ageConfirmed) current = await runStep(confirmAge, current);
 
       const name = nickname.trim();
-      if (name !== current.nickname) {
-        current = await runStep(() => setNickname(name, localTimezone()), current);
-      }
+      if (name !== current.nickname) current = await runStep(() => setNickname(name), current);
 
-      if (hallId !== current.hallId) current = await runStep(() => switchHall(hallId), current);
       onDone(current);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : ERROR_FALLBACK_TEXT);
@@ -85,24 +80,6 @@ export function EntryOverlay({ session, halls, onDone }: EntryOverlayProps) {
             enterKeyHint="go"
             onChange={(event) => setNicknameDraft(event.target.value)}
           />
-        </div>
-
-        <div className="entry-field">
-          <label className="field-label" htmlFor="entry-hall">
-            大区
-          </label>
-          <select
-            id="entry-hall"
-            className="input-field"
-            value={hallId}
-            onChange={(event) => setHallId(event.target.value)}
-          >
-            {halls.map((hall) => (
-              <option key={hall.id} value={hall.id}>
-                {hall.name}（{hall.acceptedBeds}/{hall.capacity}）
-              </option>
-            ))}
-          </select>
         </div>
 
         <label className="checkbox-row">

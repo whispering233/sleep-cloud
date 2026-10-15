@@ -2,28 +2,30 @@ import { APPEARANCES } from '../shared/protocol';
 import { UPSTREAM_TYPES } from '../shared/protocol';
 import type { Appearance, Person, UpstreamMessage, UpstreamType } from '../shared/protocol';
 import type { ErrorCode } from '../shared/error-code';
-import { tileCenter } from './movement';
+import type { Point } from '../shared/layout';
 import type { RateWindow } from './rate-limit';
 
 /**
  * 一条连接上的附加数据（存 WebSocket 的 attachment，跨休眠存活，见 `10-hall-runtime.md` §2）。
  * 位置、路径这类高频量只放这里，不落库：**醒着的人一定有活着的连接**。
+ *
+ * 坐标一律是**世界像素**（可能是小数）——格模型已删除（见 `docs/design/config.md` §7）。
  */
 export interface ConnectionState {
   userId: string;
   name: string;
   appearance: Appearance;
-  timezone: string;
+  /** 当前位置（世界像素） */
   x: number;
   y: number;
   /** 在床上时才有 */
   bedNo?: number;
   state: 'roaming' | 'lying' | 'asleep';
   /**
-   * 正在走向的目标格（走完就清空）。
-   * 路径本身**不存这里**：附件体积要小，而且路径能由场景数据确定性重算（见 `movement.ts`）。
+   * 正在走向的目标点（走完就清空）。
+   * 路径本身**不存这里**：附件体积要小，而且路径能由街网确定性重算（见 `pathfinding.ts`）。
    */
-  target?: { x: number; y: number };
+  target?: Point;
   /** 复合意图：走到目的地之后要做什么（「点床 = 走过去 + 躺下」就靠它） */
   arrivalAction?: 'lie';
   /** 到达后要躺的那张床 */
@@ -46,11 +48,20 @@ export function appearanceFor(userId: string): Appearance {
   return APPEARANCES[hash % APPEARANCES.length] as Appearance;
 }
 
-/** 连接 → 协议里「一个人」的条目（在床上带床号，否则带坐标）。坐标为**世界像素**。 */
+/**
+ * 新意图覆盖当前路径。**到达后动作属于上一个意图，必须一并清掉**：
+ * 点床（`arrivalAction = 'lie'`）后、走到之前又点了地面，如果只把 `target` 换掉，走完还是会躺到那张床上
+ * （见 `hall.ts` 的 `startWalking` 与 `tick` 的到达分支）。
+ */
+export function retarget(connection: ConnectionState, target: Point | undefined): ConnectionState {
+  return { ...connection, target, arrivalAction: undefined, arrivalBedNo: undefined };
+}
+
+/** 连接 → 协议里「一个人」的条目（在床上带床号，否则带世界像素坐标）。 */
 export function personFromConnection(connection: ConnectionState): Person {
   const base = { id: connection.userId, name: connection.name, appearance: connection.appearance };
   return connection.state === 'roaming' || connection.bedNo === undefined
-    ? { ...base, state: 'roaming', ...tileCenter(connection) }
+    ? { ...base, state: 'roaming', x: connection.x, y: connection.y }
     : { ...base, state: connection.state, bedNo: connection.bedNo };
 }
 
@@ -61,7 +72,6 @@ export function personFromConnection(connection: ConnectionState): Person {
 export const IDENTITY_HEADERS = {
   userId: 'x-sleep-user-id',
   name: 'x-sleep-name',
-  timezone: 'x-sleep-tz',
 } as const;
 
 /**
@@ -100,16 +110,19 @@ export function parseUpstream(raw: string): UpstreamMessage | null {
 }
 
 /**
- * 握手门槛（见 `docs/api/20-api-ws.md` §2）：首条必须是 `hello`，场景标识必须一致。
- * 在此之前发业务消息 → `2004`；场景不符 → `2003`。两者都要断开。
+ * 握手门槛（见 `docs/api/20-api-ws.md` §2）：首条必须是 `hello`，布局版本必须一致。
+ * 在此之前发业务消息 → `2004`；版本不符 → `2003`。两者都要断开。
+ *
+ * 校验的对象是**布局版本号**而不是场景标识：几何由共享的纯函数生成，没有场景文件可校验
+ * （见 `docs/design/config.md` §1）。
  */
-export function guardIncoming(connection: ConnectionState, raw: string, sceneGuid: string): IncomingVerdict {
+export function guardIncoming(connection: ConnectionState, raw: string, layoutVersion: string): IncomingVerdict {
   const message = parseUpstream(raw);
   if (!message) return { kind: 'ignore' };
 
   if (message.t === 'hello') {
     if (connection.ready) return { kind: 'ignore' };
-    return message.sceneGuid === sceneGuid ? { kind: 'hello' } : { kind: 'reject', code: '2003' };
+    return message.layoutVersion === layoutVersion ? { kind: 'hello' } : { kind: 'reject', code: '2003' };
   }
 
   if (!connection.ready) return { kind: 'reject', code: '2004' };

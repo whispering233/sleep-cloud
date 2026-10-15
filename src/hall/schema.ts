@@ -1,9 +1,11 @@
 /**
  * 床位表 DDL（唯一权威，见 `docs/db/schema.md` §2）。
- * 行数恒定等于厅容量：初始化后不再增删行，只改字段。
+ *
+ * **惰性行**：只有「有主或有占用」的床才有一行，没有行 = 无主空床。行数 ≈ 有主床数（几百），
+ * 远小于级容量（114 ~ 9790）——一次性预建 9790 行会吃掉每日行写额度的一成。
  *
  * 词表提醒：本表的 `state` 是**一张床**的占用（`empty` / `lying` / `asleep` / `trace`），
- * 没有 `roaming`——人不在床上时那张床就是 `empty`。
+ * 没有 `roaming`——人不在床上时那张床就是 `empty`。**已删 `owner_tz`**（时区概念整体删除）。
  */
 export const BED_TABLE_SQL = `CREATE TABLE IF NOT EXISTS bed (
   bed_no INTEGER PRIMARY KEY,
@@ -11,7 +13,6 @@ export const BED_TABLE_SQL = `CREATE TABLE IF NOT EXISTS bed (
   owner_user_id TEXT,
   owner_name TEXT,
   owner_appearance TEXT,
-  owner_tz TEXT,
   claimed_at INTEGER,
   last_seen_at INTEGER,
   sleep_started_at INTEGER,
@@ -26,8 +27,13 @@ export const BED_INDEX_SQL: readonly string[] = [
 ];
 
 /**
- * 补足床位行（0 ~ capacity-1）。`OR IGNORE` + 主键让重复执行幂等：
- * 首次冷启动写一次 256 行，之后每次启动都只是空转（没有行写入）。
+ * 厅级元信息（见 `docs/db/schema.md` §3）：键值表，每个 key 一行。
+ * `bed_count` = 当前级容量；`daily_wake_at` = 已结算过的那个 UTC 20:00 边界。只在升级 / 降级 / 每日唤醒后写。
  */
-export const BED_SEED_SQL = `WITH RECURSIVE seq(n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM seq WHERE n < ?)
-INSERT OR IGNORE INTO bed (bed_no, state, updated_at) SELECT n, 'empty', ? FROM seq`;
+export const META_TABLE_SQL = `CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+)`;
+
+/** 键名（DDL 与读写共用同一份拼写）。**没有「有主床数」**：判据是与出生点同一个「有没有可认领的床」查询。 */
+export const META_KEYS = { bedCount: 'bed_count', dailyWakeAt: 'daily_wake_at' } as const;

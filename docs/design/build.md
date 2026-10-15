@@ -36,7 +36,7 @@
 | :--- | :--- |
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管 |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量 |
-| 场景数据 | `public/scenes/{guid}.json` 被前端构建复制到 `dist/scenes/`（客户端从这里取）；服务端在构建时读入同一份文件，不存在第二份副本 |
+| 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/config.md` §7）。`public/` 只放素材 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。PixiJS + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。
@@ -60,7 +60,7 @@
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：忘了注入 `SESSION_SECRET`**
-`/api/me` 与 `/api/halls` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
+`/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
 `Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
 
 ### 4.2 生产入口必须是自定义域名

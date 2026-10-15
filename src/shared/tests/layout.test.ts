@@ -10,7 +10,9 @@ import {
   frontPointOf,
   isWalkable,
   levelOf,
+  nearestStreetPoint,
   positionOf,
+  regionOf,
   type HallLevel,
 } from '../layout';
 import { readDoc, tableRows } from './doc';
@@ -457,5 +459,46 @@ describe('命中判定与世界几何', () => {
     expect(isWalkable(0, -1)).toBe(false);
     expect(isWalkable(TOP.width, 0)).toBe(false);
     expect(isWalkable(0, TOP.height)).toBe(false);
+  });
+});
+// ————————————————————————— 吸附到街网（客户端点地面 / 服务端位置恢复） —————————————————————————
+
+describe('`nearestStreetPoint`：离给定点最近的街网点', () => {
+  it('已经在街网上就原样返回（客户端点走道不该被挪动）', () => {
+    const front = frontPointOf(3) as { x: number; y: number };
+    expect(nearestStreetPoint(front, 114)).toEqual(front);
+  });
+
+  it('点在床上 → 竖直方向吸到最近的那条横走道（仍在本级区域内）', () => {
+    const position = positionOf(3) as { x: number; y: number };
+    const center = { x: position.x + BED_W / 2, y: position.y + BED_H / 2 };
+    const snapped = nearestStreetPoint(center, 114) as { x: number; y: number };
+
+    expect(snapped.x).toBe(center.x);
+    expect(snapped.y).toBeGreaterThanOrEqual(position.y + BED_H);
+    expect(snapped.y).toBeLessThan(position.y + PITCH_Y);
+    expect(isWalkable(snapped.x, snapped.y, 114)).toBe(true);
+  });
+
+  it('吸附结果永远可走（随机点扫一遍，含边界与厅外）', () => {
+    const level = levelOf(0);
+    for (let x = -20; x <= level.width + 20; x += 37) {
+      for (let y = -20; y <= level.height + 20; y += 23) {
+        const snapped = nearestStreetPoint({ x, y }, level.capacity);
+        expect(snapped, `(${x}, ${y}) 找不到街网点`).toBeDefined();
+        expect(isWalkable((snapped as { x: number }).x, (snapped as { y: number }).y, level.capacity)).toBe(true);
+      }
+    }
+  });
+
+  it('降级之后：旧外圈的点会被吸回当前区域之内', () => {
+    const outer = positionOf(114) as { x: number; y: number };
+    const snapped = nearestStreetPoint({ x: outer.x + BED_W / 2, y: outer.y + BED_H / 2 }, 114) as {
+      x: number;
+      y: number;
+    };
+    const region = regionOf(0);
+    expect(snapped.x).toBeLessThan(region.width);
+    expect(isWalkable(snapped.x, snapped.y, 114)).toBe(true);
   });
 });

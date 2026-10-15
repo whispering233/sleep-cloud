@@ -74,10 +74,10 @@ export const HALL_LEVELS: readonly HallLevel[] = LEVEL_SHAPE.map(([rows, cols]) 
 const TOP_LEVEL = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;
 
 /** 4 床 + 1 条竖走道的横向周期：一格块 = 260px 床位区 + 56px 走道。 */
-const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
+export const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
 
 /** 一格块内床位区的宽度（超过它就是竖走道）。 */
-const CORRIDOR_START = CORRIDOR_EVERY * PITCH_X;
+export const CORRIDOR_START = CORRIDOR_EVERY * PITCH_X;
 
 /** 级 → 该档的几何。索引越界时夹到两端（超出上限返回最后一档）。 */
 export function levelOf(index: number): HallLevel {
@@ -98,7 +98,7 @@ export function regionOf(index: number): HallLevel {
 }
 
 /** 当前床位数 → 它在级表里的下标（床位数不是正好一档时取能装下它的最小那档）。 */
-function levelIndexOfBedCount(bedCount: number): number {
+export function levelIndexOfBedCount(bedCount: number): number {
   const found = HALL_LEVELS.findIndex((level) => level.capacity >= bedCount);
   return found === -1 ? HALL_LEVELS.length - 1 : found;
 }
@@ -198,4 +198,22 @@ export function isWalkable(x: number, y: number, bedCount?: number): boolean {
   const inRowAisle = y % PITCH_Y >= BED_H;
   const inColumnAisle = x % CORRIDOR_BLOCK >= CORRIDOR_START;
   return inRowAisle || inColumnAisle;
+}
+
+/**
+ * 离给定点最近的街网点（沿竖直方向找最近的横走道带；找不到就夹到区域里再找一次）。
+ *
+ * 两个消费者，语义不同但几何是同一条：
+ * 1. **客户端**在点地面时把目标吸附到街网（服务端只校验、不吸附，见 `docs/api/20-api-ws.md` §7）；
+ * 2. 服务端在降级之后把落在区域外的旧位置拉回街上（那是恢复，不是对意图的静默吸附）。
+ */
+export function nearestStreetPoint(point: Point, bedCount: number): Point | undefined {
+  const region = levelOf(levelIndexOfBedCount(bedCount));
+  const x = Math.min(Math.max(point.x, 0), region.width - 1);
+  for (let distance = 0; distance <= PITCH_Y; distance += 1) {
+    for (const y of [point.y - distance, point.y + distance]) {
+      if (y >= 0 && y < region.height && isWalkable(x, y, bedCount)) return { x, y };
+    }
+  }
+  return undefined;
 }

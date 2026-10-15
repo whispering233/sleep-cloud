@@ -12,7 +12,7 @@ function row(overrides: Partial<OccupiedBedRow> = {}): OccupiedBedRow {
     state: 'lying',
     ownerUserId: 'u_a',
     ownerName: '甲',
-    ownerAppearance: 'a1',
+    ownerAppearance: 'boy',
     lastSeenAt: NOW - 1000,
     ...overrides,
   };

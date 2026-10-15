@@ -7,6 +7,7 @@ import {
   applyJoin,
   applyLeave,
   applyPos,
+  applyResize,
   applySnapshot,
   applyState,
   applyWhisper,
@@ -14,21 +15,21 @@ import {
 } from './store';
 
 /**
- * 进入大厅：建连后第一条必须是 `hello`（带场景标识），通过后才收得到快照。
+ * 进入大厅：建连后第一条必须是 `hello`（带**布局版本号**），通过后才收得到快照。
  *
  * 下行消息全部已接上（`error` 交给文案层：静默类错误什么都不做，可恢复类才出提示条）。
  * 重连语义见 `docs/api/20-api-ws.md` §5（重连后以新的快照为准，不做增量补偿）。
  */
 let active: WebSocket | null = null;
 
-export function connectHall(input: { hallId: string; sceneGuid: string }): () => void {
-  const url = new URL(`/api/halls/${encodeURIComponent(input.hallId)}/ws`, window.location.href);
+export function connectHall(input: { layoutVersion: string }): () => void {
+  const url = new URL('/api/ws', window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
   active = socket;
 
   socket.addEventListener('open', () => {
-    socket.send(JSON.stringify({ t: 'hello', sceneGuid: input.sceneGuid }));
+    socket.send(JSON.stringify({ t: 'hello', layoutVersion: input.layoutVersion }));
   });
 
   socket.addEventListener('message', (event) => {
@@ -57,6 +58,9 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
       case 'bed':
         applyBed(message);
         return;
+      case 'resize':
+        applyResize(message);
+        return;
       case 'chat':
         applyChat(message);
         return;
@@ -83,7 +87,7 @@ export function connectHall(input: { hallId: string; sceneGuid: string }): () =>
   };
 }
 
-/** 上行只发意图：点地面 = 「我要去这一格」。 */
+/** 上行只发意图：点地面 = 「我要去这个世界像素点」。 */
 export function sendWalk(x: number, y: number): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'walk', x, y }));
@@ -113,7 +117,7 @@ export function sendLie(bedNo: number): void {
   active.send(JSON.stringify({ t: 'lie', bedNo }));
 }
 
-/** 起身：从床上回到床边站立（服务端决定站在哪一格）。 */
+/** 起身：从床上回到床边站立（服务端决定站在哪）。 */
 export function sendRise(): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'rise' }));

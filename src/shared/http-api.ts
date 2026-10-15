@@ -10,30 +10,18 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
-/** 会话内容的对外形态（`GET /api/me` 等）。**不含床位号**：归属的权威在厅的数据库。 */
+/**
+ * 会话内容的对外形态（`GET /api/me`）。**不含床位号、不含厅、不含时区**：
+ * 床位归属的权威在厅的数据库；只有一个厅，路由用常量；时区概念整体删除
+ * （见 `docs/api/api-public.md` §2.2）。
+ */
 export interface SessionView {
   userId: string;
-  hallId: string;
   /** 未设置时为空串 */
   nickname: string;
   ageConfirmed: boolean;
   /** 为真表示必须先设昵称才能进厅 */
   needsNickname: boolean;
-  timezone: string;
-}
-
-export interface HallSummary {
-  id: string;
-  name: string;
-  timezone: string;
-  /** 场景标识：客户端建连时首条 `hello` 必须带上它 */
-  sceneGuid: string;
-  capacity: number;
-  /** **归属数**（已被认领的床位数），不是在线人数 */
-  acceptedBeds: number;
-  current: boolean;
-}
-
-export interface HallsView {
-  halls: HallSummary[];
+  /** 布局版本号：客户端建连时首条 `hello` 必须带上它（见 `docs/design/config.md` §1） */
+  layoutVersion: string;
 }

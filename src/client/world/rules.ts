@@ -1,10 +1,11 @@
+import { BED_H, BED_W } from '../../shared/constants';
 import type { Person, PersonState } from '../../shared/protocol';
+import type { Point } from '../../shared/layout';
 import { interpolationDelay, positionAt } from '../motion';
 import type { Motion } from '../motion';
-import { TILE } from './scene-index';
 
 /**
- * 世界画布的纯规则：与 Phaser 无关，可单测。
+ * 世界画布的纯规则：与 Phaser 无关，可单测。坐标一律是**世界像素**（1 世界像素 = 1 CSS 像素）。
  * 这些判断是「床位真值表」的直接翻译（见 `docs/ui/DESIGN.md` Components 节）。
  */
 
@@ -80,34 +81,22 @@ export function dashSegments(input: {
 export function bedDashSegments(input: {
   x: number;
   y: number;
-  size: number;
+  width: number;
+  height: number;
   dash: number;
   gap: number;
 }): DashSegment[] {
-  const { x, y, size, dash, gap } = input;
+  const { x, y, width, height, dash, gap } = input;
   const corners = [
     { x, y },
-    { x: x + size, y },
-    { x: x + size, y: y + size },
-    { x, y: y + size },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height },
   ];
   return corners.flatMap((corner, index) =>
-    dashSegments({ from: corner, to: corners[(index + 1) % corners.length], dash, gap }),
+    dashSegments({ from: corner, to: corners[(index + 1) % corners.length] as Point, dash, gap }),
   );
 }
-
-/** 世界像素矩形。 */
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/**
- * 相机的缩放与夹取交给 Phaser 的 `setBounds`：没有缩放，所以这一层只剩「世界在哪、床在哪」的几何
- * （见 `docs/ui/DESIGN.md`「世界相机」）。
- */
 
 /**
  * 跟随的一步：朝目标**匀速**靠近，帧率无关（`docs/ui/DESIGN.md`「世界相机」的跟随行）。
@@ -180,59 +169,6 @@ export function personPoint(input: {
   return motion ? positionAt(motion, serverNow - interpolationDelay(motion)) : { x: person.x, y: person.y };
 }
 
-/** 墙的几何：`band` 是环带的外沿（场景范围），`inner` 是墙围出的地面。 */
-export interface WallGeometry {
-  band: Rect;
-  inner: Rect;
-}
-
-/**
- * 墙 = 场景最外侧**整行 / 整列**全被 `blocked` 占满的那几圈。
- * 只认整行整列，是因为内部障碍（柱子、家具）不围成环带——把它们当墙会凭空造出一间房。
- * 厚度由扫描得出（不写死 1 格）：某侧厚度为 0 时该侧内沿就贴合场景边界，
- * 整圈都没有厚度时 `band` 退化成空矩形，调用方据此不画墙。
- */
-export function wallGeometry(input: {
-  width: number;
-  height: number;
-  blocked: readonly (readonly [number, number])[];
-}): WallGeometry {
-  const { width, height, blocked } = input;
-  const wall = new Set(blocked.map(([x, y]) => `${x},${y}`));
-  const rowFull = (y: number): boolean => {
-    for (let x = 0; x < width; x += 1) if (!wall.has(`${x},${y}`)) return false;
-    return width > 0;
-  };
-  const colFull = (x: number): boolean => {
-    for (let y = 0; y < height; y += 1) if (!wall.has(`${x},${y}`)) return false;
-    return height > 0;
-  };
-
-  // 相对两边的扫描要互相让位（`- top` / `- left`），否则整场景被占满时会重复计数
-  let top = 0;
-  while (top < height && rowFull(top)) top += 1;
-  let bottom = 0;
-  while (bottom < height - top && rowFull(height - 1 - bottom)) bottom += 1;
-  let left = 0;
-  while (left < width && colFull(left)) left += 1;
-  let right = 0;
-  while (right < width - left && colFull(width - 1 - right)) right += 1;
-
-  const inner: Rect = {
-    x: left * TILE,
-    y: top * TILE,
-    width: (width - left - right) * TILE,
-    height: (height - top - bottom) * TILE,
-  };
-  // 环带画成「整块铺 band + 用 inner 盖回地板色」两次矩形填充（Pixi 没有孔洞填充 API），
-  // 所以 band 取环带的外沿而不是环带本身。
-  const band: Rect =
-    left + right + top + bottom > 0
-      ? { x: 0, y: 0, width: width * TILE, height: height * TILE }
-      : { x: 0, y: 0, width: 0, height: 0 };
-  return { band, inner };
-}
-
 /** 名字只出现在**有人的床上**，且自己一律不画（地上的自己更不画）。 */
 export function shouldDrawName(person: Person, meId: string | undefined): boolean {
   return person.state !== 'roaming' && person.id !== meId;
@@ -244,32 +180,40 @@ export function personAlpha(state: PersonState): number {
 }
 
 /**
- * 轻点命中（屏幕点已换算成**格坐标的浮点值**）：人 > 空床 > 地面（见 `docs/ui/DESIGN.md`）。
+ * 睡痕到期由**客户端**按快照里的 `traceUntil` 自行淡出：服务端不写库、不广播、不起定时器
+ * （见 `docs/api/20-api-ws.md` §4.2）。到点之后这条条目就不该再画出来。
+ */
+export function isFaded(person: Person, serverNow: number): boolean {
+  return person.traceUntil !== undefined && person.traceUntil <= serverNow;
+}
+
+/**
+ * 轻点命中（屏幕点已换算成**世界像素**）：人 > 空床 > 地面（见 `docs/ui/DESIGN.md`）。
  * 命中判定与渲染器无关，可单测。
  */
 
-/** 人物当前位置（格坐标的浮点值；整数部分是格子号）。 */
+/** 人物当前位置（世界像素）。 */
 export interface PersonSpot {
   id: string;
   x: number;
   y: number;
 }
 
-/** 轻点的命中半径（格）。比一格小得多：点人是有意为之，不是「附近有人就算」。 */
-export const PERSON_HIT_TILES = 0.6;
+/** 轻点的命中半径（世界像素）：比一张床（61×100）小得多，点人是有意为之，不是「附近有人就算」。 */
+export const PERSON_HIT_PX = 22;
 
-const inReach = (spot: PersonSpot, point: { x: number; y: number }, radiusTiles: number): boolean =>
-  Math.hypot(spot.x - point.x, spot.y - point.y) <= radiusTiles;
+const inReach = (spot: PersonSpot, point: { x: number; y: number }, radiusPx: number): boolean =>
+  Math.hypot(spot.x - point.x, spot.y - point.y) <= radiusPx;
 
 /** 半径内的人：命中多个时取 **y 最大**者（画面上更靠下 = 更靠前，与按 y 排序的遮挡一致）。 */
 export function personHit(
   spots: readonly PersonSpot[],
   point: { x: number; y: number },
-  radiusTiles: number,
+  radiusPx: number,
 ): PersonSpot | undefined {
   let best: PersonSpot | undefined;
   for (const spot of spots) {
-    if (!inReach(spot, point, radiusTiles)) continue;
+    if (!inReach(spot, point, radiusPx)) continue;
     if (!best || spot.y > best.y) best = spot;
   }
   return best;
@@ -282,64 +226,49 @@ export type TapTarget =
   | { kind: 'recenter' }
   | { kind: 'none' };
 
-interface TapInput {
-  /** 轻点的格坐标浮点值 */
+export interface TapInput {
+  /** 轻点的世界像素 */
   point: { x: number; y: number };
+  /** 视野内的人（世界像素） */
   spots: readonly PersonSpot[];
   selfId?: string;
-  /** 该格床上的占用者 id（含自己）；空床为 `undefined` */
+  /** 点到的那张床的占用者 id（含自己）；空床为 `undefined` */
   residentId?: string;
   bedNo?: number;
-  walkable: boolean;
+  /**
+   * 已经**吸附到街网**的目标点（`layout.nearestStreetPoint`）；那一带没有街网时为 `undefined`。
+   * 服务端只校验街网、不做吸附，所以吸附必须发生在客户端（见 `docs/api/20-api-ws.md` §7）。
+   */
+  walkTarget?: { x: number; y: number };
 }
 
 /**
  * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
- * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的地面 → 走过去；⑥ 其余 → 什么都不做。
+ * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的街网 → 走过去；⑥ 其余 → 什么都不做。
  * ② 与 ④ 都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做，别把两者合成一个 `none`。
  *
  * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
- * `walk` 的 x/y 已向下取整成格号（意图是「我要去这一格」）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkable } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
     point,
-    PERSON_HIT_TILES,
+    PERSON_HIT_PX,
   );
   if (other) return { kind: 'select', id: other.id };
 
   // 点自己：相机居中自己——我知道我是谁，但常想找回自己在哪
-  if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_TILES))) {
+  if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_PX))) {
     return { kind: 'recenter' };
   }
 
   if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };
-  return walkable ? { kind: 'walk', x: Math.floor(point.x), y: Math.floor(point.y) } : { kind: 'none' };
+  return walkTarget ? { kind: 'walk', x: walkTarget.x, y: walkTarget.y } : { kind: 'none' };
 }
 
-export const DAY_START_HOUR = 6;
-export const DAY_END_HOUR = 18;
-
-/** 厅时区里的小时数（时区名非法时回落到 UTC）。 */
-export function hourIn(timezone: string, now: number): number {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: 'numeric',
-      hour12: false,
-    }).formatToParts(now);
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '');
-    return Number.isFinite(hour) ? hour % 24 : new Date(now).getUTCHours();
-  } catch {
-    return new Date(now).getUTCHours();
-  }
-}
-
-/** 昼夜只看**厅的时区**：厅是共享空间，物理上只能有一片天空。 */
-export function isDaytime(timezone: string, now: number): boolean {
-  const hour = hourIn(timezone, now);
-  return hour >= DAY_START_HOUR && hour < DAY_END_HOUR;
-}
+/**
+ * 床位轮廓的内缩与命中判定无关，但渲染与命中必须用同一套床尺寸：`BED_W × BED_H`（素材墨迹 × 0.5）。
+ */
+export const BED_SIZE = { width: BED_W, height: BED_H } as const;
