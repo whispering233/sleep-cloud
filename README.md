@@ -81,14 +81,16 @@
 
 先读 [`AGENTS.md`](AGENTS.md)（硬纪律与术语）与 [`docs/design/tasks.md`](docs/design/tasks.md)（当前任务卡片）。
 
-本地运行：
+本地运行（**干净克隆后先 `npm run tokens`**：`typecheck` 与 `test` 都依赖它的生成物）：
 
 ```bash
 npm install
+npm run tokens                 # 从 docs/ui/DESIGN.md 导出令牌（生成物不入库）
 npm run build && npm run dev   # 完整站点（Worker + 房间服务 + 静态资源，http://localhost:8787）
 npm run dev:web                # 前端热更新开发服务器（/api 代理到 8787）
 npm test
 npm run typecheck
+npm run art                    # （可选）从 tools/art/masters/ 的母图重新生成图集
 npm run deploy                 # 部署（需先有平台账号凭据）
 ```
 

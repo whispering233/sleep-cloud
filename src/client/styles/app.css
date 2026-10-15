@@ -70,11 +70,6 @@
     letter-spacing: var(--tracking-caption);
   }
 
-  /* 白天组：只换令牌，不动布局与排版（昼夜切换不换任何资源） */
-  .hud-day {
-    color: var(--color-day-ink-muted);
-    background-color: var(--color-day-bg);
-  }
 
   /* HUD 里的数值（床号、在线人数）用等宽：数字跳动时不推挤旁边的文字 */
   .hud-numeric {
