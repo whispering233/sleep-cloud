@@ -123,6 +123,21 @@ export function listOccupiedBeds(sql: SqlStorage): OccupiedBedRow[] {
     }));
 }
 
+/**
+ * **我当前拥有的床**（归属未过期）：走唯一索引 `owner_user_id` 取单行。
+ * 没有 = 我还没有床（或归属已过期，那张床按可认领处理）——一人一床的规则靠它判定，
+ * 谓词与 `listExpiredOwnerships` 逐字对应（`last_seen_at` 为空 = 超期）。
+ */
+export function findOwnedBed(sql: SqlStorage, userId: string, now: number): number | undefined {
+  return sql
+    .exec<{ bed_no: number }>(
+      'SELECT bed_no FROM bed WHERE owner_user_id = ? AND last_seen_at IS NOT NULL AND last_seen_at >= ?',
+      userId,
+      now - BED_OWNERSHIP_TTL_MS,
+    )
+    .toArray()[0]?.bed_no;
+}
+
 /** 我的床是否正留着睡痕（宽限已过、人已离线）。走唯一索引 `owner_user_id` 取一行。 */
 export function findTraceBed(sql: SqlStorage, userId: string): number | undefined {
   return sql

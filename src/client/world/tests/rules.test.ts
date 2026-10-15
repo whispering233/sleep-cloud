@@ -3,29 +3,31 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { MOVE_MS_PER_TILE, TICK_MS } from '../../../shared/constants';
 import type { Person } from '../../../shared/protocol';
 import type { Scene } from '../../../shared/scene';
 import { HALLS } from '../../../shared/hall-registry';
+import { interpolationDelay, nextMotion, positionAt } from '../../motion';
+import type { Motion } from '../../motion';
 import {
   bedDashSegments,
   bedOutline,
   bedPaintSignature,
-  cameraFor,
-  clampCamera,
+  cameraStep,
   dashSegments,
-  defaultScale,
+  followStep,
   hourIn,
   isDaytime,
-  markerRadius,
-  outsideCenterBand,
   PERSON_HIT_TILES,
   personAlpha,
   personHit,
+  personPoint,
   shouldDrawName,
   tapTargetFor,
   wallGeometry,
 } from '../rules';
 import type { BedOutline, PersonSpot, Rect } from '../rules';
+import { MARKER_RADIUS } from '../views';
 
 const TILE = 32;
 
@@ -154,33 +156,24 @@ describe('床位画法签名', () => {
   const unowned: BedOutline = { tier: 'claimed', dashed: true };
   const occupied: BedOutline = { tier: 'line', dashed: false };
   const ghost: BedOutline = { tier: 'trace', dashed: false };
-  const paint = (over: Partial<{ mode: 'day' | 'night'; scale: number; outlines: BedOutline[] }> = {}): string =>
-    bedPaintSignature({ mode: 'night', scale: 1, outlines: [empty, unowned, occupied, ghost], ...over });
+  const paint = (over: Partial<{ outline: BedOutline; mine: boolean }> = {}): string =>
+    bedPaintSignature({ outline: empty, mine: false, ...over });
 
-  it('无变化时签名稳定（否则每帧都会重建 256 个床位图形）', () => {
+  it('无变化时签名稳定（否则每一帧都会重建视野里那几十张床的图形）', () => {
     expect(paint()).toBe(paint());
   });
 
   it('占用梯次变化 → 签名变化（描边色跟着变）', () => {
-    expect(paint({ outlines: [empty] })).not.toBe(paint({ outlines: [occupied] }));
-    expect(paint({ outlines: [occupied] })).not.toBe(paint({ outlines: [ghost] }));
+    expect(paint({ outline: empty })).not.toBe(paint({ outline: occupied }));
+    expect(paint({ outline: occupied })).not.toBe(paint({ outline: ghost }));
   });
 
   it('归属变化 → 签名变化（线型跟着变）', () => {
-    expect(paint({ outlines: [empty] })).not.toBe(paint({ outlines: [unowned] }));
+    expect(paint({ outline: empty })).not.toBe(paint({ outline: unowned }));
   });
 
-  it('缩放变化 → 签名变化（线宽与虚线长度按屏幕像素给）', () => {
-    expect(paint({ scale: 1 })).not.toBe(paint({ scale: 1.5 }));
-  });
-
-  it('昼夜变化 → 签名变化（描边色跟着变）', () => {
-    expect(paint({ mode: 'day' })).not.toBe(paint({ mode: 'night' }));
-  });
-
-  it('床数变化 → 签名变化（不能只靠每床一个字符拼出来）', () => {
-    expect(paint({ outlines: [empty] })).not.toBe(paint({ outlines: [empty, empty] }));
-    expect(paint({ outlines: [] })).not.toBe(paint({ outlines: [empty] }));
+  it('我的床标记出现 / 消失 → 签名变化（暖标记不能留在别人的床上）', () => {
+    expect(paint({ mine: true })).not.toBe(paint({ mine: false }));
   });
 });
 
@@ -408,66 +401,144 @@ describe('轻点命中', () => {
   });
 });
 
-describe('世界相机', () => {
-  // 出厂场景都是 35×35 格（`TILE = 32`），与 `docs/ui/DESIGN.md`「世界相机」表格同源
-  const scene = { width: 35 * TILE, height: 35 * TILE };
-  const phone = { width: 393, height: 852 };
+describe('相机夹取仍交给 Phaser', () => {
+  // 没有缩放：默认比例与夹取由 `setBounds` 承担（见 `src/client/world/world.ts`）。
+  // 这条用例盯的是「别再把那条路加回纯规则里」。
+  it('规则层不再导出相机夹取函数', async () => {
+    const rules = await import('../rules');
+    for (const gone of ['clampCamera', 'defaultScale', 'outsideCenterBand', 'markerRadius']) {
+      expect(Object.keys(rules)).not.toContain(gone);
+    }
+  });
+});
 
-  it('默认缩放 = max(整厅 fit, 1.0)：手机竖屏 1.0（fit≈0.35），平板与桌面也是 1.0', () => {
-    expect(defaultScale({ viewport: phone, scene })).toBe(1);
-    expect(defaultScale({ viewport: { width: 852, height: 393 }, scene })).toBe(1); // 手机横屏
-    expect(defaultScale({ viewport: { width: 834, height: 1112 }, scene })).toBe(1);
-    expect(defaultScale({ viewport: { width: 1440, height: 900 }, scene })).toBe(1);
-    expect(defaultScale({ viewport: { width: 1920, height: 1080 }, scene })).toBe(1);
+describe('跟随每帧的一步（`cameraStep`）', () => {
+  it('步进不超过 maxPxPerS × dt/1000，超大距离也一样', () => {
+    const far = cameraStep({ scroll: { x: 0, y: 0 }, target: { x: 10000, y: 0 }, dtMs: 16, maxPxPerS: 500 });
+    expect(Math.hypot(far.x, far.y)).toBeCloseTo(8, 6);
+    expect(far.y).toBe(0);
   });
 
-  it('屏幕高到能装下整厅时才抬高（2560×1440 → 1440/1120 ≈ 1.29）', () => {
-    expect(defaultScale({ viewport: { width: 2560, height: 1440 }, scene })).toBeCloseTo(1.29, 2);
+  it('单调趋近且不越过目标：距离小于一步时直接落到目标', () => {
+    const near = cameraStep({ scroll: { x: 0, y: 0 }, target: { x: 3, y: 4 }, dtMs: 100, maxPxPerS: 500 });
+    expect(near).toEqual({ x: 3, y: 4 }); // 一步 50px > 距离 5px → 落到目标，不冲过头
+
+    const near2 = cameraStep({ scroll: { x: 0, y: 0 }, target: { x: 100, y: 0 }, dtMs: 16, maxPxPerS: 500 });
+    const near3 = cameraStep({ scroll: near2, target: { x: 100, y: 0 }, dtMs: 16, maxPxPerS: 500 });
+    expect(near2.x).toBeGreaterThan(0);
+    expect(near3.x).toBeGreaterThan(near2.x);
+    expect(near3.x).toBeLessThanOrEqual(100);
   });
 
-  it('夹取：拖到边界就停，不出现大厅外的空白（可拖范围是 [viewport - scene*scale, 0]）', () => {
-    expect(clampCamera({ x: 80, y: 80, scale: 1, viewport: phone, scene })).toEqual({ x: 0, y: 0 });
-    expect(clampCamera({ x: -9999, y: -9999, scale: 1, viewport: phone, scene })).toEqual({
-      x: 393 - 1120,
-      y: 852 - 1120,
+  it('帧率无关：同一段 dt 拆成一帧与拆成两帧，累计位移一致', () => {
+    const target = { x: 250, y: 0 };
+    const one = cameraStep({ scroll: { x: 0, y: 0 }, target, dtMs: 90, maxPxPerS: 500 });
+    const first = cameraStep({ scroll: { x: 0, y: 0 }, target, dtMs: 45, maxPxPerS: 500 });
+    const second = cameraStep({ scroll: first, target, dtMs: 45, maxPxPerS: 500 });
+    expect(Math.abs(second.x - one.x)).toBeLessThanOrEqual(1);
+
+    // 最后一步会落到目标的情形：一帧走完 30px 与拆两帧走完，也要一致
+    const short = { x: 30, y: 0 };
+    const oneShort = cameraStep({ scroll: { x: 0, y: 0 }, target: short, dtMs: 100, maxPxPerS: 500 });
+    const firstShort = cameraStep({ scroll: { x: 0, y: 0 }, target: short, dtMs: 50, maxPxPerS: 500 });
+    const secondShort = cameraStep({ scroll: firstShort, target: short, dtMs: 50, maxPxPerS: 500 });
+    expect(Math.abs(secondShort.x - oneShort.x)).toBeLessThanOrEqual(1);
+    expect(oneShort.x).toBe(30);
+    expect(secondShort.x).toBe(30);
+  });
+});
+
+describe('取位点（`personPoint`）：渲染与跟随共用同一个返回值', () => {
+  const motion: Motion = { fromX: 0, fromY: 0, toX: 32, toY: 0, fromTs: 1_000_000, toTs: 1_000_100 };
+
+  it('漫游中 = 渲染用的那一个点（`positionAt` + 本窗口滞后）', () => {
+    for (const serverNow of [1_000_050, 1_000_120, 1_000_180]) {
+      expect(personPoint({ person: walker, motion, serverNow })).toEqual(
+        positionAt(motion, serverNow - interpolationDelay(motion)),
+      );
+    }
+  });
+
+  it('窗口未知时用权威坐标；非漫游用落位点，取不到落位点就没得画', () => {
+    expect(personPoint({ person: walker, motion: undefined, serverNow: 1_000_050 })).toEqual({ x: 3, y: 4 });
+    expect(personPoint({ person: sleeper, motion, bedPoint: { x: 240, y: 112 }, serverNow: 1_000_050 })).toEqual({
+      x: 240,
+      y: 112,
     });
+    expect(personPoint({ person: sleeper, motion, serverNow: 1_000_050 })).toBeUndefined();
+  });
+});
+
+describe('跟随每帧的一步（`followStep`）', () => {
+  const center = { x: 0, y: 0 };
+  const halfWidth = (393 * 0.4) / 2;
+  const halfHeight = (852 * 0.4) / 2;
+
+  it('还在死区里：镜头一动不动', () => {
+    expect(followStep({ point: { x: 20, y: 30 }, center, halfWidth, halfHeight, dtMs: 26, maxPxPerS: 500 })).toEqual(
+      center,
+    );
   });
 
-  it('可见区大于场景时居中：缩到全厅（0.3）两侧留白相等', () => {
-    // 1120 * 0.3 = 336：横竖都比窗口窄，所以两个轴都居中
-    expect(clampCamera({ x: -9999, y: 9999, scale: 0.3, viewport: phone, scene })).toEqual({
-      x: (393 - 336) / 2,
-      y: (852 - 336) / 2,
-    });
+  it('离得远：按 maxPxPerS 追，且不越过', () => {
+    const far = followStep({ point: { x: 10000, y: 0 }, center, halfWidth, halfHeight, dtMs: 20, maxPxPerS: 500 });
+    expect(far).toEqual({ x: 10, y: 0 });
+
+    // 一步能走完「超出的那一段」时，正好落到「把死区边缘钉在小人身上」的位置，不冲进死区
+    const near = followStep({ point: { x: 100, y: 0 }, center, halfWidth, halfHeight, dtMs: 1000, maxPxPerS: 500 });
+    expect(near).toEqual({ x: 100 - halfWidth, y: 0 });
   });
 
-  it('回中：视野中心落在目标上，且照样受夹取约束', () => {
-    const middle = cameraFor({ scale: 1, focus: { x: 560, y: 560 }, viewport: phone, scene });
-    expect({ x: middle.x + 560, y: middle.y + 560 }).toEqual({ x: 393 / 2, y: 852 / 2 });
-    // 对准场景左上角时会被夹回边界，而不是把空白拖进屏幕
-    expect(cameraFor({ scale: 1, focus: { x: 0, y: 0 }, viewport: phone, scene })).toEqual({ x: 0, y: 0 });
-  });
+  /**
+   * 稳态走动：小人从厅中心横着走出去，镜头只在走出死区后开始跟。
+   *
+   * 修前这条用例是红的：跟随朝**死区边缘**走满「半个死区」，于是每拍冲进死区、随后几帧一动不动，
+   * 整幅画面每 ~100ms 回跳一次——28fps 与 38fps 实测都是 4 帧一个脉冲（38fps：13.16, 0, 0, 0），
+   * 幅值就是单帧上限 `500 × dt`（≈ 一个 tick 的行走量）。钉住边缘后相机步进 = 小人的步进。
+   */
+  it('把死区边缘钉在小人身上：稳态段逐帧步进 = 小人的步进，没有 0 帧、没有脉冲', () => {
+    const dtMs = 1000 / 38;
+    const stepPerTick = (TILE * TICK_MS) / MOVE_MS_PER_TILE; // 12.8px / tick
+    const walkPerFrame = (stepPerTick * dtMs) / TICK_MS;
+    const me: Person = { ...walker, x: 0, y: 0 };
+    let serverNow = 1_000_000;
+    let nextTickAt = serverNow;
+    let walkX = 0;
+    let motion: Motion | undefined;
+    let camera = { ...center };
+    const cameraSteps: number[] = [];
+    const screenOffsets: number[] = [];
 
-  it('中央区判定：屏幕中央 40% 内不动镜头，刚出界就算数', () => {
-    const viewport = { width: 400, height: 800 };
-    expect(outsideCenterBand({ point: { x: 200, y: 400 }, viewport })).toBe(false);
-    expect(outsideCenterBand({ point: { x: 280, y: 560 }, viewport })).toBe(false); // 边界上（半宽 80 / 半高 160）
-    expect(outsideCenterBand({ point: { x: 281, y: 400 }, viewport })).toBe(true);
-    expect(outsideCenterBand({ point: { x: 200, y: 561 }, viewport })).toBe(true);
+    for (let frame = 0; frame < 120; frame += 1) {
+      while (nextTickAt <= serverNow) {
+        walkX += stepPerTick;
+        motion = nextMotion(motion, walkX, 0, nextTickAt);
+        nextTickAt += TICK_MS;
+      }
+      // 一帧（与 `WorldScene.update` 同一顺序）：取位**只算一次**，渲染与跟随都用它
+      const point = personPoint({ person: me, motion, serverNow }) as { x: number; y: number };
+      screenOffsets.push(point.x - camera.x);
+      const next = followStep({ point, center: camera, halfWidth, halfHeight, dtMs, maxPxPerS: 500 });
+      cameraSteps.push(Math.hypot(next.x - camera.x, next.y - camera.y));
+      camera = next;
+      serverNow += dtMs;
+    }
+
+    // 前 30 帧是小人从厅中心走进死区：镜头本来就不该动，不在这条用例的范围里
+    const steadySteps = cameraSteps.slice(30);
+    expect(Math.min(...steadySteps)).toBeGreaterThan(walkPerFrame * 0.8);
+    expect(Math.max(...steadySteps)).toBeLessThan(walkPerFrame * 1.2);
+
+    // 小人屏幕上的位置同样不再每拍回跳（旧法是 12~18px 的锯齿）
+    const screen = screenOffsets.slice(30);
+    expect(Math.max(...screen) - Math.min(...screen)).toBeLessThan(walkPerFrame * 2);
   });
 });
 
 describe('暖灯标记', () => {
-  it('有最小屏幕尺寸下限：缩小时不消失', () => {
-    for (const scale of [0.3, 0.5, 1, 2.5]) {
-      expect(markerRadius(scale, TILE) * scale).toBeGreaterThanOrEqual(5);
-    }
-  });
-
-  it('也不允许大到盖住整张床', () => {
-    for (const scale of [0.3, 1, 2.5]) {
-      expect(markerRadius(scale, TILE)).toBeLessThanOrEqual(TILE * 0.6);
-    }
+  it('标记半径是常量：1 世界像素 = 1 CSS 像素，且不小于屏幕上的下限', () => {
+    expect(MARKER_RADIUS).toBeGreaterThanOrEqual(5);
+    expect(MARKER_RADIUS).toBeLessThan(TILE * 0.6);
   });
 });
 

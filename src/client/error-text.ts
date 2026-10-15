@@ -31,6 +31,7 @@ export const ERROR_TEXT: Record<Exclude<ErrorCode, '0'>, string | undefined> = {
   '3004': undefined,
   '3005': undefined,
   '3006': undefined,
+  '3007': '你已经有一张床了',
   '4001': '消息太长了',
   '4002': undefined,
   '4003': undefined,

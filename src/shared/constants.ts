@@ -19,6 +19,14 @@ export const TICK_MS = 100;
 /** 走完一格的目标耗时。推进量按**实际经过时间**算，所以节拍抖动不影响移动速度。 */
 export const MOVE_MS_PER_TILE = 250;
 
+/**
+ * 一格边长（世界像素）。
+ *
+ * shortcut: 格坐标还留在上行 `walk` 与连接附加数据里，**下行位置一律是世界像素**（格心 = 格号 × 这个值 + 半格）；
+ * 几何改成按世界像素生成之后，它连同格坐标一起删。
+ */
+export const TILE_PX = 32;
+
 /** 厅时区 08:00 清理睡痕。 */
 export const SLEEP_TRACE_CLEAR_HOUR = 8;
 

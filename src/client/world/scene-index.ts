@@ -1,7 +1,8 @@
 import type { Scene } from '../../shared/scene';
+import { TILE_PX } from '../../shared/constants';
 
-/** 一个格子在世界坐标里的边长（缩放由相机决定）。 */
-export const TILE = 32;
+/** 一个格子在世界坐标里的边长（没有缩放，所以它就是屏幕上的 32 CSS 像素）。 */
+export const TILE = TILE_PX;
 
 export interface SceneIndex {
   scene: Scene;

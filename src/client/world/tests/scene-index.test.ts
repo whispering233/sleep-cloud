@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Scene } from '../../../shared/scene';
 import { HALLS } from '../../../shared/hall-registry';
-import { buildSceneIndex } from '../scene';
+import { buildSceneIndex } from '../scene-index';
 
 /** 三个厅的场景数据就在仓库里：`一份数据，两个读者`，客户端索引必须与服务端网格同语义。 */
 /** 清单**从厅注册表推导**：新增厅时这些测试自动覆盖它的场景，不需第二处人工维护。 */

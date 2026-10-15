@@ -1,8 +1,8 @@
 /**
- * 位置插值（纯计算）。
+ * 位置插值（纯计算）。坐标是**世界像素**（`pos.items` 就是世界像素，客户端不再乘格边长）。
  *
  * 两条纪律：
- * 1. **不进 React 的渲染循环**——由 Pixi 的 ticker 每帧调用；
+ * 1. **不进 React 的渲染循环**——由 Phaser 的 ticker 每帧调用；
  * 2. **按服务端时间戳插值**，不按「收到两条消息的间隔」推进动画：服务端的节拍只是尽力而为的唤醒。
  */
 export interface Motion {
@@ -15,13 +15,28 @@ export interface Motion {
 }
 
 /**
- * 渲染时往后坐一个节拍。
- *
- * 服务端每 100ms 发一批「此刻在哪」，如果直接用「现在」去求值，收到的瞬间进度就已经是 1，
- * 小人会每隔 100ms 跳一格；往后坐一个节拍就能在【上一批, 本批】这个窗口里平滑地走完。
- * 代价是画面比服务端晚 100ms（不到半格），换来的是平滑。
+ * 渲染时往后坐的那一段滞后：**夹取的下限**，也是窗口跨度未知（≤ 0）时的取值。
  */
 export const INTERPOLATION_DELAY_MS = 100;
+
+/** 滞后的上限：服务端偶尔卡一大拍时画面也不至于落后太多（400ms ≈ 一格半，见 `MOVE_MS_PER_TILE`）。 */
+export const MAX_INTERPOLATION_DELAY_MS = 400;
+
+/**
+ * 渲染滞后 = **这个窗口自己的跨度**，夹在 [100ms, 400ms]。
+ *
+ * 取「本窗口的跨度」而不是「两批的到达间隔」：位置按服务端时间戳求值（文件头纪律 2），
+ * 滞后只要等于窗口跨度，收到新批的那一刻求出来的就是上一批的终点——位置连续，不跳格；
+ * 随后的 `span` 毫秒里线性走到终点。
+ *
+ * **不要再乘一个抖动预算系数**：服务端已经每拍必发（跨度等长），额外预算 = 每拍固定制造一个
+ * 「滞后 − 跨度」的台阶 + 半程两倍速，正是要消灭的「跳一下→走一段」（见 `docs/api/20-api-ws.md` §4.7）。
+ */
+export function interpolationDelay(motion: Motion): number {
+  const span = motion.toTs - motion.fromTs;
+  if (span <= 0) return INTERPOLATION_DELAY_MS;
+  return Math.min(MAX_INTERPOLATION_DELAY_MS, Math.max(INTERPOLATION_DELAY_MS, span));
+}
 
 /** 收到一批权威位置时更新插值窗口（时间为服务端时间轴）。 */
 export function nextMotion(previous: Motion | undefined, x: number, y: number, ts: number): Motion {
@@ -57,10 +72,19 @@ export function anyInterpolating(motions: Iterable<Motion>, serverNow: number): 
   return false;
 }
 
-/** 在服务端时间 `serverNow` 时这个人应该画在哪（格坐标，格内是小数）。 */
+/** 在服务端时间 `serverNow` 时这个人应该画在哪（世界像素）。 */
 export function positionAt(motion: Motion, serverNow: number): { x: number; y: number } {
   const span = motion.toTs - motion.fromTs;
   if (span <= 0) return { x: motion.toX, y: motion.toY };
+
+  // 跨度超过滞后上限（缺口几十秒、或服务端卡了一大拍）：**不跨这个窗口插值**——跨长窗口插值就是
+  // 「快进一格」。直接取窗口那一侧的端点：渲染时间在窗口之前取起点，之后取终点。
+  if (span > MAX_INTERPOLATION_DELAY_MS) {
+    return serverNow < motion.toTs
+      ? { x: motion.fromX, y: motion.fromY }
+      : { x: motion.toX, y: motion.toY };
+  }
+
   const progress = Math.min(1, Math.max(0, (serverNow - motion.fromTs) / span));
   return {
     x: motion.fromX + (motion.toX - motion.fromX) * progress,

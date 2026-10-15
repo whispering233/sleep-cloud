@@ -1,3 +1,5 @@
+import { TILE_PX } from '../shared/constants';
+
 import type { Tile } from './pathfinding';
 
 /**
@@ -39,4 +41,28 @@ export function advanceMover(mover: MoverState, elapsedMs: number, stepMs: numbe
 
   mover.legElapsedMs = mover.path.length > 0 ? remaining : 0;
   return { moved, arrived: mover.path.length === 0 };
+}
+
+/** 格号的格心（世界像素）：协议里所有位置都在这个坐标系里。 */
+export function tileCenter(tile: Tile): { x: number; y: number } {
+  return { x: (tile.x + 0.5) * TILE_PX, y: (tile.y + 0.5) * TILE_PX };
+}
+
+/**
+ * 移动者此刻的精确位置（世界像素）= 当前格格心 + 本格已经走过的比例 × 一格。
+ *
+ * **不量化到格**：量化之后每格只发一次位移，客户端只能「跳一下→走一段」（见 `docs/api/20-api-ws.md` §4.7）。
+ */
+export function moverPosition(mover: MoverState, stepMs: number): { x: number; y: number } {
+  const center = tileCenter(mover);
+  const next = mover.path[0];
+  if (!next || stepMs <= 0) return center;
+
+  const ratio = Math.min(1, Math.max(0, mover.legElapsedMs / stepMs));
+  const offset = ratio * TILE_PX;
+  // 路径是四向的：一步只沿一个轴走，符号就是方向
+  return {
+    x: center.x + Math.sign(next.x - mover.x) * offset,
+    y: center.y + Math.sign(next.y - mover.y) * offset,
+  };
 }

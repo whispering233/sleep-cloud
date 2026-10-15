@@ -10,29 +10,6 @@
 
 ---
 
-## [ ] 卡 1：Phaser 世界层替换（沿用旧几何）
-
-**目标**：把世界渲染从 PixiJS 换成 Phaser 4.2.1，**功能与旧世界对齐**（走动、躺下、跟随、拖拽平移、无缩放、床号常显、我的床标记），并卸掉 `pixi.js`。本卡**不动几何与协议**（仍吃旧的场景 JSON 与旧协议），只换渲染器。
-
-**改动范围**
-
-- `package.json`：加 `phaser@^4.2.1`、删 `pixi.js`
-- `src/client/world/`：删 `world.ts` / `palette.ts` / `scene.ts`，新增 Phaser 版世界层（相机、地板 `TileSprite`、可视窗口 + 对象池、插值渲染、命中判定）
-- `src/client/world/rules.ts`：删掉相机相关函数（缩放/夹取/死区计算交给 Phaser `startFollow` / `setDeadzone` / `setBounds`），保留命中优先级与床位视觉派生
-- `src/client/components/WorldCanvas.tsx`：宿主改为挂载 Phaser 游戏实例
-- `.agents/skills/`：已就位，实施前先读 `scenes` / `game-setup-and-config` / `cameras` / `scale-and-responsive` / `sprites-and-images` / `text-and-bitmaptext`
-
-**必须遵守**（`AGENTS.md` 18/19/20）：无缩放、床号常显、只给视野内对象建对象、不用 Tilemap / 物理引擎 / `setInteractive`
-
-**验收**
-
-- `npm run typecheck`、`npm test` 通过（**除已知的 7 条镜像测试**，本卡不碰它们）
-- `ui-verifier`：iPhone 16 视口（393×852 / DPR 3 / 触摸）实测——轻点走动、点床躺下、点自己回中、单指拖拽平移、**无任何缩放路径**、床号可见、我的床有暖标记；并记录帧率与同屏对象数
-
-**回滚**：单卡回滚（恢复 PixiJS 依赖与世界层）。
-
----
-
 ## [ ] 卡 2：共享布局层 `src/shared/layout.ts`
 
 **目标**：几何从「手写场景 JSON」改成**与床位数无关的纯函数**（`config.md` §7 的契约与四条不变量）。
@@ -41,7 +18,7 @@
 
 - 新增 `src/shared/layout.ts`：级表（`config.md` §2 的 15 档）、`W(C)` / `H(R)` 公式、`cellOf(bedNo)`（**建成顺序编号**：第 1 级整片行优先，此后每级只给新增外圈按行优先编号）、`positionOf`、`bedNoAt`、`isWalkable`（街网）、`regionOf`、`bedCountOf`、`levelOf`
 - 新增布局版本号常量（`LAYOUT_VERSION`，`config.md` §1）
-- 删 `src/shared/scene.ts`、`public/scenes/*.json`、`src/hall/scene.ts` 及其测试
+- **本卡只新增、不删任何文件**：旧的场景数据两端都还在用；删除随「两端同时切换」的卡 3 一起做——这样卡 2 合入后应用仍是可跑的
 
 **验收**
 
@@ -63,6 +40,7 @@
 - `src/hall/hall.ts`：出生点（编号最小的无主空床前方走道）、升级（入场前判定 `owned_count >= bed_count` 且未触顶 → 写 `meta` + 广播 `resize`）、降级（每日唤醒评估：最外圈全无主无占用）、每日唤醒只做「归属释放 + 缩级评估」（**删掉睡痕清理任务与厅时区换算**）
 - `src/worker/`：删 `/api/halls` 与 `/api/hall`（单厅）；会话删 `hallId` / `timezone`；`/api/me` 加布局版本
 - `src/shared/`：`protocol.ts` 的 `capacity → bedCount`、`ownedBeds` 改**位图**编码、加 `resize` 消息与 `traceUntil` 字段、删 `Facing`；`hall-registry.ts` 收敛为单厅常量；`http-api.ts` 删厅列表与 `HallsView`；`constants.ts` 按 `config.md` §3/§4/§5 更新（`TRACE_TTL_MS`、`DAILY_WAKE_UTC_HOUR`、`WALK_SPEED_PX_PER_S`、几何常量、`POOL_SIZE`；删 `SLEEP_TRACE_CLEAR_HOUR`、`SCENE_BED_COUNT`）
+- **删除旧场景数据**：`public/scenes/*.json`、`src/shared/scene.ts`、`src/hall/scene.ts`、`src/client/world/scene-index.ts` 及其测试（两端已切到 `layout.ts`；卡 2 只新增了 `layout.ts`，没删任何东西），同时把客户端世界层的格/像素换算改成直接吃 `layout.ts`
 
 **验收**
 

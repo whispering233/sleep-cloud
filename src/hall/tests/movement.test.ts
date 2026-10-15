@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { advanceMover } from '../movement';
+import { advanceMover, moverPosition, tileCenter } from '../movement';
 import type { MoverState } from '../movement';
 
 const STEP = 250;
@@ -54,5 +54,34 @@ describe('按实际经过的时间推进（不是按拍数）', () => {
     expect(advanceMover(state, 0, STEP)).toEqual({ moved: false, arrived: false });
     expect(advanceMover(state, -500, STEP)).toEqual({ moved: false, arrived: false });
     expect(state).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe('移动者的世界像素位置（不量化到格）', () => {
+  it('格心 = 格号 × 一格 + 半格', () => {
+    expect(tileCenter({ x: 0, y: 0 })).toEqual({ x: 16, y: 16 });
+    expect(tileCenter({ x: 3, y: 2 })).toEqual({ x: 112, y: 80 });
+  });
+
+  it('本格内按已走时间给小数：整格是格心，半格是半格', () => {
+    const state = mover([...straight]);
+    expect(moverPosition(state, STEP)).toEqual({ x: 16, y: 16 }); // 本格刚起步
+
+    advanceMover(state, STEP / 2, STEP); // 半格：0→1 的半路
+    expect(moverPosition(state, STEP)).toEqual({ x: 16, y: 32 });
+
+    advanceMover(state, STEP, STEP); // 再走满一格：累计一格半，正在走 1→2 的半路
+    expect(moverPosition(state, STEP)).toEqual({ x: 16, y: 64 });
+  });
+
+  it('走完（路径空）就是最终格心，不拖尾巴', () => {
+    const state = mover([{ x: 0, y: 1 }]);
+    advanceMover(state, STEP, STEP);
+    expect(moverPosition(state, STEP)).toEqual({ x: 16, y: 48 });
+  });
+
+  it('走路开始时求出的位置就是当前格心：客户端据此开的窗口两端同点，起步不瞬移', () => {
+    const state = mover([...straight]);
+    expect(moverPosition(state, STEP)).toEqual(tileCenter({ x: state.x, y: state.y }));
   });
 });

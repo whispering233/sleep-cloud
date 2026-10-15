@@ -1,8 +1,10 @@
 import type { Person, PersonState } from '../../shared/protocol';
-import { TILE } from './scene';
+import { interpolationDelay, positionAt } from '../motion';
+import type { Motion } from '../motion';
+import { TILE } from './scene-index';
 
 /**
- * 世界画布的纯规则：与 Pixi 无关，可单测。
+ * 世界画布的纯规则：与 Phaser 无关，可单测。
  * 这些判断是「床位真值表」的直接翻译（见 `docs/ui/DESIGN.md` Components 节）。
  */
 
@@ -23,19 +25,12 @@ export function bedOutline(input: { owned: boolean; occupant?: PersonState }): B
 }
 
 /**
- * 床位画法签名：占用走梯次首字母（l/t/c）、归属走 d，加上昼夜、缩放与床数。
- * 任何一项变了画法就变（线宽与虚线按屏幕像素给、描边色随昼夜），签名不变才能跳过整段重建。
+ * 单张床的画法签名：占用走梯次首字母（l/t/c）、归属走线型（d/s）、我的床标记走 m。
+ * 任何一项变了画法就变；签名不变才能跳过重建（床在视野里常驻，重建图形是每帧最贵的部分）。
  */
-export function bedPaintSignature(input: {
-  mode: 'day' | 'night';
-  scale: number;
-  outlines: readonly BedOutline[];
-}): string {
-  const { mode, scale, outlines } = input;
-  // 每床一个字符本来已隐含床数，但显式写出来，签名才不依赖「一床一字符」这条编码约定
-  return `${mode}|${scale}|${outlines.length}|${outlines
-    .map((outline) => (outline.dashed ? 'd' : outline.tier.charAt(0)))
-    .join('')}`;
+export function bedPaintSignature(input: { outline: BedOutline; mine: boolean }): string {
+  const { outline, mine } = input;
+  return `${outline.tier.charAt(0)}|${outline.dashed ? 'd' : 's'}|${mine ? 'm' : '-'}`;
 }
 
 /** 一条虚线段（世界坐标）。 */
@@ -109,79 +104,80 @@ export interface Rect {
   height: number;
 }
 
-/** 一个尺寸对（视口用 CSS 像素、场景用世界像素，形状相同）。 */
-export interface Size {
-  width: number;
-  height: number;
-}
-
 /**
- * 世界相机（见 `docs/ui/DESIGN.md`「世界相机」）：默认缩放、夹取、回中、跟随判定。
- * 相机位置 = 屏幕左上角对应的世界坐标，于是「可见区」就是 `[viewport, scene * scale]` 这两条线的关系。
+ * 相机的缩放与夹取交给 Phaser 的 `setBounds`：没有缩放，所以这一层只剩「世界在哪、床在哪」的几何
+ * （见 `docs/ui/DESIGN.md`「世界相机」）。
  */
 
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
-
-/** 默认缩放的下限 = 设计像素 1:1（一格 `TILE` 世界像素正好落在 `TILE` CSS 像素上）。 */
-export const DEFAULT_SCALE_FLOOR = 1;
-
 /**
- * 默认缩放 = `max(整厅刚好放得下, 1.0)`。
- * 手机竖屏整厅 fit≈0.35，按 fit 铺满就得把 35 格塞进一屏，人看不清、也点不中；
- * 写成 `max` 而不是断点分支，是因为断点在旋屏时会从 1.66 直接掉到 0.57，镜头一次跳三级。
+ * 跟随的一步：朝目标**匀速**靠近，帧率无关（`docs/ui/DESIGN.md`「世界相机」的跟随行）。
+ *
+ * 不用 Phaser 的逐帧固定比例 lerp：那会让首帧步进正比于距离（实测跳 20~33px），且帧率一变速度就变。
+ * 步长沿距离向量取而不是逐轴取，否则斜向靠近会比单轴快 √2 倍；`距离 ≤ 一步` 时直接落到目标，不越过。
  */
-export function defaultScale(input: { viewport: Size; scene: Size }): number {
-  const fit = Math.min(input.viewport.width / input.scene.width, input.viewport.height / input.scene.height);
-  return Math.max(fit, DEFAULT_SCALE_FLOOR);
-}
-
-/**
- * 相机夹取：不越过场景边界（禁止拖出大厅看到一片空白）；可见区大于场景时居中。
- * 能拖的范围因此是 `[viewport - scene * scale, 0]`，越界值回夹到端点，而不是把画面留白。
- */
-export function clampCamera(input: {
-  x: number;
-  y: number;
-  scale: number;
-  viewport: Size;
-  scene: Size;
+export function cameraStep(input: {
+  scroll: { x: number; y: number };
+  target: { x: number; y: number };
+  dtMs: number;
+  maxPxPerS: number;
 }): { x: number; y: number } {
-  const axis = (value: number, view: number, span: number): number => {
-    const scaled = span * input.scale;
-    return scaled <= view ? (view - scaled) / 2 : clamp(value, view - scaled, 0);
-  };
-  return {
-    x: axis(input.x, input.viewport.width, input.scene.width),
-    y: axis(input.y, input.viewport.height, input.scene.height),
-  };
+  const { scroll, target, dtMs, maxPxPerS } = input;
+  const dx = target.x - scroll.x;
+  const dy = target.y - scroll.y;
+  const distance = Math.hypot(dx, dy);
+  const step = (Math.max(0, maxPxPerS) * Math.max(0, dtMs)) / 1000;
+  if (distance === 0 || distance <= step) return { x: target.x, y: target.y };
+  return { x: scroll.x + (dx / distance) * step, y: scroll.y + (dy / distance) * step };
 }
 
-/** 让某个世界坐标落在屏幕正中的相机位置（已夹取）：初始对准、点自己回中、跟随共用一套算法。 */
-export function cameraFor(input: {
-  scale: number;
-  focus: { x: number; y: number };
-  viewport: Size;
-  scene: Size;
+/**
+ * 跟随的一步：朝**超出死区的那一段**靠近，而不是朝死区边缘靠近。
+ *
+ * 朝死区边缘靠：步长是「半个死区」，远大于小人一帧的位移，于是每拍都冲进死区、之后几帧一动不动——
+ * 稳态走动时整幅画面每拍回跳一次（实测 28fps 与 38fps 都是 4 帧一个脉冲，幅值 = 单帧上限 500×dt）。
+ * 靠「超出的那一段」正好把死区边缘钉在小人身上：稳态下相机步进 = 小人的步进，没有 0 帧；
+ * 离得远（拖拽松手、点自己回中）时仍是 `maxPxPerS` 上限，追平段与修前一致。
+ */
+export function followStep(input: {
+  /** 小人的取位点（渲染用的是**同一个**点，见 `personPoint`） */
+  point: { x: number; y: number };
+  /** 相机的视野中心（世界像素） */
+  center: { x: number; y: number };
+  halfWidth: number;
+  halfHeight: number;
+  dtMs: number;
+  maxPxPerS: number;
 }): { x: number; y: number } {
-  return clampCamera({
-    x: input.viewport.width / 2 - input.focus.x * input.scale,
-    y: input.viewport.height / 2 - input.focus.y * input.scale,
-    scale: input.scale,
-    viewport: input.viewport,
-    scene: input.scene,
+  const { point, center, halfWidth, halfHeight, dtMs, maxPxPerS } = input;
+  const overshoot = {
+    x: point.x - Math.min(Math.max(point.x, center.x - halfWidth), center.x + halfWidth),
+    y: point.y - Math.min(Math.max(point.y, center.y - halfHeight), center.y + halfHeight),
+  };
+  if (overshoot.x === 0 && overshoot.y === 0) return center; // 还在死区里：镜头一动不动
+  return cameraStep({
+    scroll: center,
+    target: { x: center.x + overshoot.x, y: center.y + overshoot.y },
+    dtMs,
+    maxPxPerS,
   });
 }
 
-/** 屏幕中央区（占屏幕的比例）。放在这一块里的自己不值得动镜头，否则一走动画面就晃。 */
-export const CENTER_BAND = 0.4;
-
-/** 这个屏幕点是否已在中央区之外（跟随的触发条件）。 */
-export function outsideCenterBand(input: { point: { x: number; y: number }; viewport: Size }): boolean {
-  const { point, viewport } = input;
-  return (
-    Math.abs(point.x - viewport.width / 2) > (viewport.width * CENTER_BAND) / 2 ||
-    Math.abs(point.y - viewport.height / 2) > (viewport.height * CENTER_BAND) / 2
-  );
+/**
+ * 一个人此刻画在哪（世界像素）：漫游中按插值（滞后取**这个窗口自己的跨度**），其余状态用给定的落位点。
+ *
+ * **渲染与相机跟随必须共用同一个返回值**：同一个人、同一帧、同一个 `serverNow` 只能取一次位。
+ * 两处各取一次时，只要有一处用了上一次的窗口或另一个时刻，相机就会追着画面外的那个点走。
+ */
+export function personPoint(input: {
+  person: Person;
+  motion: Motion | undefined;
+  /** 非漫游状态的落位点（自己的床 / 别人的床）；取不到就没得画 */
+  bedPoint?: { x: number; y: number };
+  serverNow: number;
+}): { x: number; y: number } | undefined {
+  const { person, motion, bedPoint, serverNow } = input;
+  if (person.state !== 'roaming') return bedPoint;
+  return motion ? positionAt(motion, serverNow - interpolationDelay(motion)) : { x: person.x, y: person.y };
 }
 
 /** 墙的几何：`band` 是环带的外沿（场景范围），`inner` 是墙围出的地面。 */
@@ -248,19 +244,8 @@ export function personAlpha(state: PersonState): number {
 }
 
 /**
- * 暖灯标记的半径：**有最小屏幕尺寸下限**（缩小时不得消隐，否则找不到我的床）。
- * 上限只用来避免「比床还大」的荒唐值，所以下限优先于上限。
- */
-export function markerRadius(scale: number, tile: number): number {
-  const minScreenPx = 5;
-  const floorRadius = minScreenPx / Math.max(scale, 0.01);
-  const ceilingRadius = tile * 0.6;
-  return Math.min(Math.max(floorRadius, tile * 0.12), ceilingRadius);
-}
-
-/**
  * 轻点命中（屏幕点已换算成**格坐标的浮点值**）：人 > 空床 > 地面（见 `docs/ui/DESIGN.md`）。
- * 命中判定与 Pixi 无关，可单测。
+ * 命中判定与渲染器无关，可单测。
  */
 
 /** 人物当前位置（格坐标的浮点值；整数部分是格子号）。 */

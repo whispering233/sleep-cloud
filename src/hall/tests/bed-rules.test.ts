@@ -21,7 +21,7 @@ const input = (overrides: Partial<Parameters<typeof checkLie>[0]> = {}) => ({
   ...overrides,
 });
 
-describe('躺下的四重校验', () => {
+describe('躺下的五重校验', () => {
   it('空床可以躺，并且要认领归属', () => {
     expect(checkLie(input())).toEqual({ ok: true, claiming: true });
   });
@@ -49,6 +49,30 @@ describe('躺下的四重校验', () => {
 
   it('床属于别人 → 3003', () => {
     expect(checkLie(input({ bed: bed({ ownerUserId: 'u_other', ownerName: '别人' }) }))).toEqual({ ok: false, code: '3003' });
+  });
+
+  it('可认领的床、而我已经有一张床 → 3007（一人一床，不能换床）', () => {
+    const owned = input({ bed: bed({ bedNo: 3 }), ownedBedNo: 7 });
+    expect(checkLie(owned)).toEqual({ ok: false, code: '3007' });
+    // 寻路到达后再校验的那条路径走同一个函数
+    expect(lieVerdictFor(owned)).toEqual({ ok: false, code: '3007' });
+  });
+
+  it('目标就是自己那张 → 允许躺（不报 3007，也不再认领）', () => {
+    expect(checkLie(input({ bed: bed({ ownerUserId: 'u_me', ownerName: '我' }), ownedBedNo: 7 }))).toEqual({
+      ok: true,
+      claiming: false,
+    });
+  });
+
+  it('归属已过期（我当前没有床）→ 允许认领，不是 3007', () => {
+    expect(checkLie(input({ ownedBedNo: undefined }))).toEqual({ ok: true, claiming: true });
+    expect(checkLie(input({ bed: bed({ bedNo: 3 }), ownedBedNo: undefined }))).toEqual({ ok: true, claiming: true });
+  });
+
+  it('优先级：床被占用（3002）/ 属于别人（3003）都先于「我已有床」（3007）', () => {
+    expect(checkLie(input({ bed: bed({ state: 'lying' }), ownedBedNo: 7 }))).toEqual({ ok: false, code: '3002' });
+    expect(checkLie(input({ bed: bed({ ownerUserId: 'u_other' }), ownedBedNo: 7 }))).toEqual({ ok: false, code: '3003' });
   });
 
   it('优先级：已在床上先报 3004，而不是去挑床的毛病', () => {

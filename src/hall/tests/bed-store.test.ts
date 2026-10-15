@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { BED_OWNERSHIP_TTL_MS } from '../../shared/constants';
 import {
   clearAllTraceBeds,
+  findOwnedBed,
   listExpiredOwnerships,
   listTraceBeds,
   readBed,
@@ -179,5 +180,30 @@ describe('30 天归属释放（真 SQL）', () => {
     insertBed(sql, 1, { state: 'asleep', ownerUserId: 'u_here', lastSeenAt: NOW - 500, updatedAt: NOW });
 
     expect(listExpiredOwnerships(sql, NOW)).toEqual([]);
+  });
+});
+
+describe('我当前拥有的床（真 SQL）', () => {
+  it('归属未过期的取到床号；不是我的归属取不到', () => {
+    const sql = freshSql();
+    insertBed(sql, 5, { state: 'empty', ownerUserId: 'u_me', lastSeenAt: NOW, updatedAt: NOW });
+
+    expect(findOwnedBed(sql, 'u_me', NOW)).toBe(5);
+    expect(findOwnedBed(sql, 'u_other', NOW)).toBeUndefined();
+  });
+
+  it('正好 30 天不算超期，多 1 毫秒算（与释放谓词是同一条边）', () => {
+    const sql = freshSql();
+    insertBed(sql, 5, { state: 'empty', ownerUserId: 'u_me', lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS, updatedAt: NOW });
+
+    expect(findOwnedBed(sql, 'u_me', NOW)).toBe(5);
+    expect(findOwnedBed(sql, 'u_me', NOW + 1)).toBeUndefined();
+  });
+
+  it('last_seen_at 为空的有主床 = 归属已过期 → 我当前没有床（可以认领别的）', () => {
+    const sql = freshSql();
+    insertBed(sql, 5, { state: 'empty', ownerUserId: 'u_me', lastSeenAt: null, updatedAt: NOW });
+
+    expect(findOwnedBed(sql, 'u_me', NOW)).toBeUndefined();
   });
 });

@@ -2,6 +2,7 @@ import { APPEARANCES } from '../shared/protocol';
 import { UPSTREAM_TYPES } from '../shared/protocol';
 import type { Appearance, Person, UpstreamMessage, UpstreamType } from '../shared/protocol';
 import type { ErrorCode } from '../shared/error-code';
+import { tileCenter } from './movement';
 import type { RateWindow } from './rate-limit';
 
 /**
@@ -45,11 +46,11 @@ export function appearanceFor(userId: string): Appearance {
   return APPEARANCES[hash % APPEARANCES.length] as Appearance;
 }
 
-/** 连接 → 协议里「一个人」的条目（在床上带床号，否则带坐标）。 */
+/** 连接 → 协议里「一个人」的条目（在床上带床号，否则带坐标）。坐标为**世界像素**。 */
 export function personFromConnection(connection: ConnectionState): Person {
   const base = { id: connection.userId, name: connection.name, appearance: connection.appearance };
   return connection.state === 'roaming' || connection.bedNo === undefined
-    ? { ...base, state: 'roaming', x: connection.x, y: connection.y }
+    ? { ...base, state: 'roaming', ...tileCenter(connection) }
     : { ...base, state: connection.state, bedNo: connection.bedNo };
 }
 

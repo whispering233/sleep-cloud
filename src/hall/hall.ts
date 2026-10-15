@@ -14,6 +14,7 @@ import { emoteVerdictFor } from './emote';
 import {
   clearAllTraceBeds,
   clearBed,
+  findOwnedBed,
   findTraceBed,
   listExpiredOwnerships,
   listOccupiedBeds,
@@ -27,7 +28,7 @@ import {
 import { cleanupMessages, nextCleanupAt, previousCleanupAt } from './cleanup';
 import { graceVerdict } from './grace';
 import type { GraceSession } from './grace';
-import { advanceMover } from './movement';
+import { advanceMover, moverPosition, tileCenter } from './movement';
 import type { MoverState } from './movement';
 import { findPath } from './pathfinding';
 import type { Tile } from './pathfinding';
@@ -39,6 +40,9 @@ import type { DueEvent } from './scheduler';
 import { consumeUpstream } from './rate-limit';
 import { buildSnapshot, onlineCountOf, splitLive } from './snapshot';
 import type { OfflineOccupantRow } from './snapshot';
+
+/** 一条位置条目（`pos.items` 的一个元素）：`[用户id, x, y, 朝向]`，坐标是世界像素。 */
+type PositionUpdate = [string, number, number, Facing];
 
 /**
  * 大厅房间服务：一个厅一个实例（`idFromName(hallId)`），自带一份私有 SQLite。
@@ -271,8 +275,7 @@ export class Hall extends DurableObject<Env> {
         const standing = this.standUp(ws, fresh);
         this.startWalking(ws, standing, { x, y });
         return;
-      }
-      case 'lie': {
+      }      case 'lie': {
         const bedNo = Number(message.bedNo);
         const verdict = lieVerdictFor({
           bedNo,
@@ -280,6 +283,7 @@ export class Hall extends DurableObject<Env> {
           inBed: fresh.state !== 'roaming',
           userId: fresh.userId,
           bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo) : undefined,
+          ownedBedNo: findOwnedBed(this.ctx.storage.sql, fresh.userId, now),
         });
         if (!verdict.ok) {
           this.sendError(ws, verdict.code);
@@ -379,6 +383,8 @@ export class Hall extends DurableObject<Env> {
     });
     this.writeConnection(ws, { ...connection, target: spot, arrivalAction: 'lie', arrivalBedNo: bedNo });
     this.startTicking();
+    // 走路开始（复合意图）：与 `startWalking` 一样立即补发起点
+    this.sendPositions([this.updateOf(connection.userId)]);
   }
 
   /** 床四周最近的、可达的站立格（床格本身不可行走）。 */
@@ -411,6 +417,7 @@ export class Hall extends DurableObject<Env> {
       inBed: connection.state !== 'roaming',
       userId: connection.userId,
       bed: readBed(this.ctx.storage.sql, bedNo),
+      ownedBedNo: findOwnedBed(this.ctx.storage.sql, connection.userId, now),
     });
     if (!verdict.ok) {
       this.sendError(ws, verdict.code);
@@ -514,8 +521,11 @@ export class Hall extends DurableObject<Env> {
   /** 「我要去这一格」：新意图覆盖当前路径；目标为当前格则原地不动。 */
   private startWalking(ws: WebSocket, connection: ConnectionState, target: Tile): void {
     if (connection.x === target.x && connection.y === target.y) {
-      this.stopWalking(connection.userId);
+      // 走路就地结束：立即补发当前位置，客户端手上不会留着跨度几十秒的陈旧窗口
+      const stopped = this.stopWalking(connection.userId);
       this.writeConnection(ws, { ...connection, target: undefined });
+      const here = tileCenter(connection);
+      this.sendPositions([[connection.userId, here.x, here.y, stopped?.facing ?? 0]]);
       return;
     }
 
@@ -531,11 +541,22 @@ export class Hall extends DurableObject<Env> {
     });
     this.writeConnection(ws, { ...connection, target });
     this.startTicking();
+    // 走路开始：立即补发起点（客户端据此开一个新鲜的插值窗口，起步那一帧因此不瞬移）
+    this.sendPositions([this.updateOf(connection.userId)]);
   }
 
-  private stopWalking(userId: string): void {
+  /** 移动者此刻的位置条目（世界像素）。**调用方保证这个人在移动者集合里**。 */
+  private updateOf(userId: string): PositionUpdate {
+    const entry = this.movers.get(userId) as { mover: MoverState; facing: Facing };
+    const position = moverPosition(entry.mover, MOVE_MS_PER_TILE);
+    return [userId, position.x, position.y, entry.facing];
+  }
+
+  private stopWalking(userId: string): { mover: MoverState; facing: Facing } | undefined {
+    const entry = this.movers.get(userId);
     this.movers.delete(userId);
     if (this.movers.size === 0) this.stopTicking();
+    return entry;
   }
 
   /**
@@ -575,14 +596,20 @@ export class Hall extends DurableObject<Env> {
     }
   }
 
-  /** 一个节拍：按**实际经过的时间**推进所有移动者，然后把变化合并成一条广播。 */
+  /**
+   * 一个节拍：按**实际经过的时间**推进所有移动者，然后把**所有移动者此刻的精确位置**合并成一条广播。
+   *
+   * 「每拍必发」而不是「格号变了才发」：位置是连续的像素量，只在格号变化时发会让批次间隔随速度与节拍
+   * 抖动（实测 202/305/203ms），客户端据此算出的插值窗口跨度跟着变，表现为单帧补跳（见 §4.7）。
+   * 无人走动则没有节拍、也就没有消息（对象才能休眠）。
+   */
   private tick(): void {
     const now = Date.now();
     this.refreshDerivedStates();
     const elapsed = Math.max(0, now - this.lastTickAt);
     this.lastTickAt = now;
 
-    const updates: Array<[string, number, number, Facing]> = [];
+    const updates: PositionUpdate[] = [];
     const arrived: Array<{ ws: WebSocket; connection: ConnectionState }> = [];
 
     for (const [userId, entry] of [...this.movers]) {
@@ -599,23 +626,23 @@ export class Hall extends DurableObject<Env> {
 
       if (result.moved) {
         entry.facing = facingFrom(previousX, previousY, mover);
-        updates.push([userId, mover.x, mover.y, entry.facing]);
         const connection = readConnection(ws);
         if (connection) this.writeConnection(ws, { ...connection, x: mover.x, y: mover.y });
       }
 
+      updates.push(this.updateOf(userId));
+
       if (result.arrived) {
         const connection = readConnection(ws);
         this.movers.delete(userId);
+        // 到达：本拍的这一条位置就是端点（与所有人合并成同一条）
         if (connection) arrived.push({ ws, connection: { ...connection, target: undefined } });
       }
     }
 
     // 顺序：**位置先于状态**。同一个节拍里最后一步的位置要排在「我躺下了」前面，
     // 否则客户端会先看到状态变化、再收到一条对已经躺下的人的位置更新。
-    if (updates.length > 0) {
-      this.broadcast({ t: 'pos', ts: now, items: updates });
-    }
+    this.sendPositions(updates, now);
     for (const item of arrived) {
       if (item.connection.arrivalAction === 'lie' && item.connection.arrivalBedNo !== undefined) {
         this.lieDown(item.ws, item.connection, item.connection.arrivalBedNo);
@@ -625,6 +652,16 @@ export class Hall extends DurableObject<Env> {
     }
 
     if (this.movers.size === 0) this.stopTicking();
+  }
+
+  /**
+   * 一批位置：一拍一条（已合并）。无人走动时**不调用**（没有节拍也就没有消息，对象才能休眠）。
+   *
+   * `ts` 是本批对应的服务端时刻（推进就是按它算的），客户端按它插值。
+   */
+  private sendPositions(items: PositionUpdate[], ts = Date.now()): void {
+    if (items.length === 0) return;
+    this.broadcast({ t: 'pos', ts, items });
   }
 
   /** 出站消息不计费，但要克制：只在有人真的移动时才发，且一批一条。 */
@@ -686,9 +723,12 @@ export class Hall extends DurableObject<Env> {
     if (this.socketOf(connection.userId, ws)) return;
 
     const now = Date.now();
-    this.stopWalking(connection.userId);
+    const stopped = this.stopWalking(connection.userId);
     this.due.remove('autosleep', connection.userId); // 人已经不在线，「该不该睡着」不再适用于他
     if (connection.bedNo === undefined) {
+      // 走路被断线打断：先把端点补发给别人，再说他走了（顺序反了的话，那条位置会落在一个已经删掉的人身上）
+      const here = tileCenter(connection);
+      this.sendPositions([[connection.userId, here.x, here.y, stopped?.facing ?? 0]]);
       // 要排除**正在关闭的这一条**：平台在关闭事件里仍会把它列在 `getWebSockets()` 里，
       // 不排除就会把自己也算成在线
       this.broadcast({ t: 'leave', id: connection.userId, online: this.onlineCount(ws) });
@@ -968,10 +1008,10 @@ function readConnection(ws: WebSocket): ConnectionState | null {
   return attachment ? (attachment as ConnectionState) : null;
 }
 
-/** 连接状态 → 协议里的「人在哪」（在床上带床号，否则带坐标）。 */
+/** 连接状态 → 协议里的「人在哪」（在床上带床号，否则带坐标；坐标为世界像素）。 */
 function placementOf(connection: ConnectionState): { state: 'roaming'; x: number; y: number } | { state: 'lying' | 'asleep'; bedNo: number } {
   return connection.state === 'roaming' || connection.bedNo === undefined
-    ? { state: 'roaming', x: connection.x, y: connection.y }
+    ? { state: 'roaming', ...tileCenter(connection) }
     : { state: connection.state, bedNo: connection.bedNo };
 }
 

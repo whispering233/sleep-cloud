@@ -29,8 +29,8 @@ describe('连接附加数据', () => {
     }
   });
 
-  it('漫游带坐标、躺下带床号', () => {
-    expect(personFromConnection(connection())).toMatchObject({ state: 'roaming', x: 1, y: 1 });
+  it('漫游带坐标（世界像素：格心）、躺下带床号', () => {
+    expect(personFromConnection(connection())).toMatchObject({ state: 'roaming', x: 48, y: 48 });
     expect(personFromConnection(connection({ state: 'asleep', bedNo: 42 }))).toEqual({
       id: 'u_1',
       name: '小明',

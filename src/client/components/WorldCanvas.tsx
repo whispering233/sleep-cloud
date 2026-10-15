@@ -6,7 +6,7 @@ import type { WorldHandle } from '../world/world';
 
 /**
  * 世界画布的宿主：React 只负责挂载与卸载。
- * 画什么、什么时候重画由 Pixi 的 ticker 与 store 决定——**画布不参与 React 的渲染循环**。
+ * 画什么、什么时候重画由 Phaser 的 game loop 与 store 决定——**画布不参与 React 的渲染循环**。
  */
 export function WorldCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -19,9 +19,9 @@ export function WorldCanvas() {
     let cancelled = false;
     void (async () => {
       try {
-        // Pixi 单独成块：上场层不必等这几百 KB 下载完（手机是主场景）
+        // 世界层单独成块：入场层不必等这几百 KB 下载完（手机是主场景）
         const { createWorld } = await import('../world/world');
-        const handle = await createWorld(host, {
+        const handle = createWorld(host, {
           onWalk: (tile) => sendWalk(tile.x, tile.y),
           onLie: (bedNo) => sendLie(bedNo),
           onSelect: (id) => selectPerson(id),

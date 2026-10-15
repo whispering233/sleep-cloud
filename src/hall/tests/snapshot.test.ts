@@ -119,7 +119,7 @@ describe('快照组装', () => {
     });
 
     expect(snapshot.people).toEqual([
-      { id: 'u_trace', name: '我', appearance: 'a1', state: 'roaming', x: 1, y: 1 },
+      { id: 'u_trace', name: '我', appearance: 'a1', state: 'roaming', x: 48, y: 48 },
     ]);
   });
 
