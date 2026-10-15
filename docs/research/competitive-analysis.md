@@ -56,7 +56,7 @@
 | **`cloudflare/partykit`（PartyServer）** | DO 的 room 抽象：连接生命周期钩子、`broadcast()`、`getConnections(tags)`、hibernation、`partysub` 跨 DO 分片 pubsub | 可省掉自写 WebSocket 样板；需在 `wrangler.jsonc` 手写 DO binding 与 migration |
 | **tldraw `templates/sync-cloudflare`** | DO + SQLite 存储 + 房间懒创建 + hibernation resume + presence 光标 | presence（谁在线、在哪张床）与「休眠后恢复会话」的参考实现 |
 | **Cloudflare 文档 `websocket-hibernation-server` 示例** | 最小可跑的 Hibernation 服务端代码（`ctx.acceptWebSocket` + `serializeAttachment` + `setWebSocketAutoResponse`） | 起手模板 |
-| **PixiJS / p5.js** | 2D 渲染 | Habbo 系项目均用 Pixi；本项目小人+床位+房间用 Pixi 或纯 Canvas 皆可 |
+| **Phaser 4 / PixiJS / p5.js** | 2D 渲染 | Habbo 系项目均用 Pixi；本项目选 **Phaser 4**（相机、输入、图集与批量渲染一站齐备，见 `../design/architecture.md` §1）|
 | DiceBear / Habbo avatar imager | 头像生成 | 「用户小人」外观方案 |
 
 ## 4. WheatCloudSleep 拆解（最接近的开源同类项目）

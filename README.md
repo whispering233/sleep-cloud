@@ -6,7 +6,7 @@
 
 > **线上入口：<https://sleep-cloud.<zone>>**（`workers.dev` 与 Preview URLs 已关闭，生产入口写死在 `wrangler.jsonc` 的 `routes` 里。）
 >
-> **当前状态：开发中。** 世界渲染正在从 PixiJS 换成 **Phaser 4**，床位模型改为「单厅 + 自动伸缩」（设计已定稿，代码按卡落地）。开发任务见 [`docs/design/tasks.md`](docs/design/tasks.md)。
+> **当前状态：开发中（未发布）。** 单厅 + 床位自动伸缩、无缩放、无昼夜、Phaser 4 世界层、真素材与氛围明暗均已落地，测试与类型检查全绿。**尚未完成的是真机验收**（DPR 3 / 真实手指触摸 / 低端机帧率 / 平台定时器行为），清单见 [`docs/design/backlog.md`](docs/design/backlog.md)。
 
 ## 它是什么
 
@@ -43,7 +43,7 @@
 | 后端入口 | Hono + TypeScript（自带 HMAC 签名 cookie） |
 | 房间服务 | Durable Object，**整个应用只有一个实例**，自带一份私有 SQLite |
 | 前端 | React + TypeScript + Vite + Tailwind（移动端优先） |
-| 世界渲染 | **Phaser 4.2.1**（独立画布，`Scale.NONE`，无缩放；地板用 `TileSprite`，床位与小人用**可视窗口 + 对象池**；不用 Tilemap、不用物理引擎） |
+| 世界渲染 | **Phaser 4.2.1**（独立画布，`Scale.NONE`，无缩放；地板是纯色矩形、厅外一圈是屏幕空间背景，床位与小人用**可视窗口 + 对象池**；不用 Tilemap、不用物理引擎） |
 | 布局 | **共享纯函数**（`src/shared/layout.ts`）：床号 ↔ 位置、厅的区域、可走性。几何程序化生成，**没有场景文件** |
 | 开发助手技能 | `.agents/skills/` = Phaser 4 的 28 份技能文档（项目专用，供编码助手按需读取） |
 
