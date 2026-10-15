@@ -10,10 +10,14 @@ import {
   bedDashSegments,
   bedOutline,
   bedPaintSignature,
+  cameraFor,
+  clampCamera,
   dashSegments,
+  defaultScale,
   hourIn,
   isDaytime,
   markerRadius,
+  outsideCenterBand,
   PERSON_HIT_TILES,
   personAlpha,
   personHit,
@@ -355,9 +359,18 @@ describe('轻点命中', () => {
     expect(tapTargetFor({ point: { x: 3, y: 3 }, spots: [], walkable: true })).toEqual({ kind: 'walk', x: 3, y: 3 });
   });
 
-  it('点自己：不做任何动作（即使自己站在空床上）', () => {
+  it('点自己：相机居中自己（即使自己站在床上）', () => {
     expect(
       tapTargetFor({ point: { x: 5.5, y: 5.5 }, spots: [self], selfId: 'u_me', bedNo: 9, walkable: false }),
+    ).toEqual({ kind: 'recenter' });
+    expect(tapTargetFor({ point: { x: 5.5, y: 5.5 }, spots: [self], selfId: 'u_me', walkable: true })).toEqual({
+      kind: 'recenter',
+    });
+  });
+
+  it('点自己的床但人不在命中半径内：`none`（回中只认自己这个点，不认床位）', () => {
+    expect(
+      tapTargetFor({ point: { x: 2, y: 2 }, spots: [self], selfId: 'u_me', residentId: 'u_me', bedNo: 42, walkable: false }),
     ).toEqual({ kind: 'none' });
   });
 
@@ -392,6 +405,55 @@ describe('轻点命中', () => {
       x: 3,
       y: 4,
     });
+  });
+});
+
+describe('世界相机', () => {
+  // 出厂场景都是 35×35 格（`TILE = 32`），与 `docs/ui/DESIGN.md`「世界相机」表格同源
+  const scene = { width: 35 * TILE, height: 35 * TILE };
+  const phone = { width: 393, height: 852 };
+
+  it('默认缩放 = max(整厅 fit, 1.0)：手机竖屏 1.0（fit≈0.35），平板与桌面也是 1.0', () => {
+    expect(defaultScale({ viewport: phone, scene })).toBe(1);
+    expect(defaultScale({ viewport: { width: 852, height: 393 }, scene })).toBe(1); // 手机横屏
+    expect(defaultScale({ viewport: { width: 834, height: 1112 }, scene })).toBe(1);
+    expect(defaultScale({ viewport: { width: 1440, height: 900 }, scene })).toBe(1);
+    expect(defaultScale({ viewport: { width: 1920, height: 1080 }, scene })).toBe(1);
+  });
+
+  it('屏幕高到能装下整厅时才抬高（2560×1440 → 1440/1120 ≈ 1.29）', () => {
+    expect(defaultScale({ viewport: { width: 2560, height: 1440 }, scene })).toBeCloseTo(1.29, 2);
+  });
+
+  it('夹取：拖到边界就停，不出现大厅外的空白（可拖范围是 [viewport - scene*scale, 0]）', () => {
+    expect(clampCamera({ x: 80, y: 80, scale: 1, viewport: phone, scene })).toEqual({ x: 0, y: 0 });
+    expect(clampCamera({ x: -9999, y: -9999, scale: 1, viewport: phone, scene })).toEqual({
+      x: 393 - 1120,
+      y: 852 - 1120,
+    });
+  });
+
+  it('可见区大于场景时居中：缩到全厅（0.3）两侧留白相等', () => {
+    // 1120 * 0.3 = 336：横竖都比窗口窄，所以两个轴都居中
+    expect(clampCamera({ x: -9999, y: 9999, scale: 0.3, viewport: phone, scene })).toEqual({
+      x: (393 - 336) / 2,
+      y: (852 - 336) / 2,
+    });
+  });
+
+  it('回中：视野中心落在目标上，且照样受夹取约束', () => {
+    const middle = cameraFor({ scale: 1, focus: { x: 560, y: 560 }, viewport: phone, scene });
+    expect({ x: middle.x + 560, y: middle.y + 560 }).toEqual({ x: 393 / 2, y: 852 / 2 });
+    // 对准场景左上角时会被夹回边界，而不是把空白拖进屏幕
+    expect(cameraFor({ scale: 1, focus: { x: 0, y: 0 }, viewport: phone, scene })).toEqual({ x: 0, y: 0 });
+  });
+
+  it('中央区判定：屏幕中央 40% 内不动镜头，刚出界就算数', () => {
+    const viewport = { width: 400, height: 800 };
+    expect(outsideCenterBand({ point: { x: 200, y: 400 }, viewport })).toBe(false);
+    expect(outsideCenterBand({ point: { x: 280, y: 560 }, viewport })).toBe(false); // 边界上（半宽 80 / 半高 160）
+    expect(outsideCenterBand({ point: { x: 281, y: 400 }, viewport })).toBe(true);
+    expect(outsideCenterBand({ point: { x: 200, y: 561 }, viewport })).toBe(true);
   });
 });
 

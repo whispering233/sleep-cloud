@@ -4,15 +4,19 @@ import type { Person, PersonState } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { getState, subscribe } from '../store';
 import type { ClientState } from '../store';
-import { positionAt, INTERPOLATION_DELAY_MS } from '../motion';
+import { positionAt, INTERPOLATION_DELAY_MS, isInterpolating, anyInterpolating } from '../motion';
 import { palette } from './palette';
 import type { WorldPalette } from './palette';
 import {
   bedDashSegments,
   bedOutline,
   bedPaintSignature,
+  cameraFor,
+  clampCamera,
+  defaultScale,
   isDaytime,
   markerRadius,
+  outsideCenterBand,
   personAlpha,
   shouldDrawName,
   tapTargetFor,
@@ -33,6 +37,8 @@ import type { SceneIndex } from './scene';
 /** 缩放区间：再小就只剩颜色，再大一张床占满屏幕。 */
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.5;
+/** 跟随的每帧靠近比例：约 0.5 秒追上（跟得上，又不像镜头被硬拖）。 */
+const FOLLOW_EASE = 0.15;
 /** 线稿宽度按屏幕像素给：缩放时视觉粗细不变（等宽线稿）。 */
 const LINE_PX = 1.5;
 /** 名字按屏幕像素给：不随缩放变大变小。 */
@@ -129,9 +135,15 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
 
   const fontFamily = cssVar('--font-body', 'ui-sans-serif, system-ui, sans-serif');
   const camera = { x: 0, y: 0, scale: 1 };
+  /** 上一次 `resize` 时的视口尺寸：尺寸变化的处理要保持视野中心的相对位置，所以要知道旧的是多大 */
+  let screenSize = { width: app.screen.width, height: app.screen.height };
   let scene: SceneIndex | null = null;
   let loadedGuid: string | undefined;
   let dirty = true;
+  /** 上一帧重画用的昼夜：空厅里没人走动时也要察觉到 06:00 / 18:00 的翻档（见 ticker） */
+  let paintedMode: 'day' | 'night' = modeOf(getState());
+  /** 上一次看到的连接状态：断线后重连要重新对准我的床 */
+  let wasConnected = false;
   /** 上一帧人物的格坐标（命中判定用；1 帧延迟可接受） */
   let spots: PersonSpot[] = [];
   let background = palette(modeOf(getState())).background;
@@ -145,19 +157,117 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   };
 
   function applyCamera(): void {
+    // 夹取放在这里：拖动、缩放、跟随、回中、旋屏都经过 `applyCamera`，一处夹住就不会漏掉某条路径
+    if (scene) {
+      const clamped = clampCamera({
+        x: camera.x,
+        y: camera.y,
+        scale: camera.scale,
+        viewport: app.screen,
+        scene: { width: scene.widthPx, height: scene.heightPx },
+      });
+      camera.x = clamped.x;
+      camera.y = clamped.y;
+    }
     world.position.set(camera.x, camera.y);
     world.scale.set(camera.scale);
   }
 
-  /** 初始视野：整间厅刚好放得下。 */
-  function fitCamera(): void {
+  /** 默认缩放（见 `docs/ui/DESIGN.md`「世界相机」）：夹在捏合区间内，巨型屏幕上不至于把一格放大到几屏。 */
+  function baseScale(index: SceneIndex): number {
+    const scale = defaultScale({
+      viewport: app.screen,
+      scene: { width: index.widthPx, height: index.heightPx },
+    });
+    return clamp(scale, MIN_SCALE, MAX_SCALE);
+  }
+
+  /**
+   * 初始视野：默认缩放 + 对准我的床（还没有床时对准自己）。
+   * 不再整厅居中：手机上整厅 fit≈0.35，一进厅就看得见整个厅等于谁都看不清。
+   */
+  function alignCamera(state: ClientState): void {
     if (!scene) return;
-    const { width, height } = app.screen;
-    const scale = clamp(Math.min(width / scene.widthPx, height / scene.heightPx), MIN_SCALE, 1.2);
-    camera.scale = scale;
-    camera.x = (width - scene.widthPx * scale) / 2;
-    camera.y = (height - scene.heightPx * scale) / 2;
+    camera.scale = baseScale(scene);
+    const focus = focusPoint(state);
+    if (focus) {
+      const target = cameraFor({
+        scale: camera.scale,
+        focus,
+        viewport: app.screen,
+        scene: { width: scene.widthPx, height: scene.heightPx },
+      });
+      camera.x = target.x;
+      camera.y = target.y;
+    } else {
+      // 连自己都还不知道在哪：退回整厅居中（视野里总得有点东西）
+      camera.x = (app.screen.width - scene.widthPx * camera.scale) / 2;
+      camera.y = (app.screen.height - scene.heightPx * camera.scale) / 2;
+    }
     applyCamera();
+    markDirty();
+  }
+
+  /** 自己所在的世界像素位置（走动时按插值、躺着时就是那张床）。 */
+  function selfPoint(state: ClientState): { x: number; y: number } | undefined {
+    const me = state.me;
+    if (!me) return undefined;
+    const serverNow = Date.now() + state.clockOffsetMs - INTERPOLATION_DELAY_MS;
+    const grid = me.state === 'roaming' ? roamGrid(me, state, serverNow) : bedGrid(me.bedNo);
+    return grid ? { x: grid.x * TILE, y: grid.y * TILE } : undefined;
+  }
+
+  /** 初始对准的目标：我的床优先（我知道我的床在哪），还没有床时才对准自己。 */
+  function focusPoint(state: ClientState): { x: number; y: number } | undefined {
+    const bedNo = state.me?.ownedBedNo;
+    if (bedNo !== undefined) {
+      const grid = bedGrid(bedNo);
+      if (grid) return { x: grid.x * TILE, y: grid.y * TILE };
+    }
+    return selfPoint(state);
+  }
+
+  /**
+   * 温和跟随：自己**正在走动**且已走出屏幕中央区时，每帧往自己靠固定比例。
+   * 停下即停、看别人走动镜头不动；用户拖拽 / 捏合期间完全不动——否则手指和相机抢方向盘。
+   */
+  function followSelf(state: ClientState, serverNow: number): void {
+    const me = state.me;
+    // 「在动」看插值窗口开没开，不看 `motion` 里有没有条目（走完的残留条目会让人一直被判在动）
+    if (!me || me.state !== 'roaming' || !isInterpolating(state.motion.get(me.id), serverNow) || pointers.size > 0 || !scene)
+      return;
+    const grid = roamGrid(me, state, serverNow);
+    if (!grid) return;
+    const focus = { x: grid.x * TILE, y: grid.y * TILE };
+    const onScreen = { x: focus.x * camera.scale + camera.x, y: focus.y * camera.scale + camera.y };
+    if (!outsideCenterBand({ point: onScreen, viewport: app.screen })) return;
+
+    const target = cameraFor({
+      scale: camera.scale,
+      focus,
+      viewport: app.screen,
+      scene: { width: scene.widthPx, height: scene.heightPx },
+    });
+    camera.x += (target.x - camera.x) * FOLLOW_EASE;
+    camera.y += (target.y - camera.y) * FOLLOW_EASE;
+    applyCamera();
+  }
+
+  /** 点自己 = 相机居中自己（`dispatchTap` 的 `recenter`）。 */
+  function centerOnSelf(state: ClientState): void {
+    if (!scene) return;
+    const focus = selfPoint(state);
+    if (!focus) return;
+    const target = cameraFor({
+      scale: camera.scale,
+      focus,
+      viewport: app.screen,
+      scene: { width: scene.widthPx, height: scene.heightPx },
+    });
+    camera.x = target.x;
+    camera.y = target.y;
+    applyCamera();
+    markDirty();
   }
 
   function zoomAt(x: number, y: number, factor: number): void {
@@ -272,8 +382,8 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
       const grid = person.state === 'roaming' ? roamGrid(person, state, serverNow) : bedGrid(person.bedNo);
       if (!grid) continue;
 
-      // 命中判定用的格坐标（**跳过自己**：点自己不做任何动作，不需要参与命中）
-      if (person.id !== state.me?.id) nextSpots.push({ id: person.id, x: grid.x, y: grid.y });
+      // 命中判定用的格坐标（**含自己**：点自己 = 相机居中，服务端不参与）
+      nextSpots.push({ id: person.id, x: grid.x, y: grid.y });
 
       const node = new Container();
       node.position.set(grid.x * TILE, grid.y * TILE);
@@ -435,6 +545,9 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
         handlers.onClearSelection();
         handlers.onWalk({ x: target.x, y: target.y });
         return;
+      case 'recenter':
+        centerOnSelf(state);
+        return;
       default:
         return;
     }
@@ -454,7 +567,7 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
           background = pal.background;
           app.renderer.background.color = background;
           drawSceneBody(pal, mode);
-          fitCamera();
+          alignCamera(getState());
           markDirty();
         })
         .catch(() => {
@@ -462,12 +575,19 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
         });
     }
 
+    // 断线后重连：与进厅同一套规则，重新对准我的床（`wasConnected` 只在真实翻转时才为真）
+    if (state.connected && !wasConnected && scene) alignCamera(state);
+    wasConnected = state.connected;
+
     const mode = modeOf(state);
+    paintedMode = mode;
     const pal = palette(mode);
     if (pal.background !== background) {
       background = pal.background;
       app.renderer.background.color = background;
     }
+    // 先把相机推到这一帧该在的位置，再画：否则跟随的镜头与人在同一帧里错开一帧
+    followSelf(state, serverNow);
     // 每帧都调（内部按签名守卫跳过）：缩放变了而底色没变时，墙内沿线宽与灯的光晕也要跟着重画
     drawSceneBody(pal, mode);
     drawBeds(state, pal, mode);
@@ -479,11 +599,23 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
    * 否则「最后画过气泡的那帧」会留在画布上（没人走动时 ticker 就不再渲染了）。
    */
   let emoteShown = false;
+  /** 上一次问过昼夜的整秒；-1 表示还没问过。
+   * `modeOf` 每次要造一个 `Intl` 格式化器（约几十微秒），所以按秒缓存：翻档晚 ≤1 秒看不出来。 */
+  let modeSecond = -1;
   app.ticker.add(() => {
     const current = getState();
     const emoteVisible = hasVisibleEmote(current);
-    // 有人在动就每帧重画（插值走 ticker，不进 React 的渲染循环）
-    if (current.motion.size > 0 || emoteVisible || emoteShown) dirty = true;
+    // 昼夜翻档也是结构性变化（整套配色），但空厅里没人走动时这里就不再重画了，跨 06:00 / 18:00 会停在旧配色。
+    // 每帧只做一次整数比较，重算频率封在每秒一次。
+    const second = Math.floor(Date.now() / 1000);
+    if (second !== modeSecond) {
+      modeSecond = second;
+      if (modeOf(current) !== paintedMode) dirty = true;
+    }
+    // 有人在动就每帧重画（插值走 ticker，不进 React 的渲染循环）；
+    // 走完的人还留着条目，按窗口判定才不会一直重画
+    const serverNow = Date.now() + current.clockOffsetMs - INTERPOLATION_DELAY_MS;
+    if (anyInterpolating(current.motion.values(), serverNow) || emoteVisible || emoteShown) dirty = true;
     emoteShown = emoteVisible;
     if (!dirty) return;
     dirty = false;
@@ -551,6 +683,27 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
     tapStart = null;
   };
 
+  /**
+   * 尺寸变化（旋屏 / 地址栏收放）：按默认缩放重算，并保持视野中心的相对位置。
+   * shortcut: 重算会把用户手动缩放重置为默认值。等「手动缩放要跨旋屏保留」出现真实需求方时，
+   * 改成只换视口、保留 `camera.scale`（那时也得重算能拖的范围）。
+   */
+  const onResize = (): void => {
+    const previous = screenSize;
+    screenSize = { width: app.screen.width, height: app.screen.height };
+    if (!scene || previous.width === 0 || previous.height === 0) return;
+
+    // 旧视野中心在场景里的相对位置（0–1）：尺寸变了也钉在同一个地方，旋转屏幕不会错位
+    const centerX = (previous.width / 2 - camera.x) / (camera.scale * scene.widthPx);
+    const centerY = (previous.height / 2 - camera.y) / (camera.scale * scene.heightPx);
+    camera.scale = baseScale(scene);
+    camera.x = app.screen.width / 2 - centerX * camera.scale * scene.widthPx;
+    camera.y = app.screen.height / 2 - centerY * camera.scale * scene.heightPx;
+    applyCamera();
+    markDirty();
+  };
+
+  app.renderer.on('resize', onResize);
   app.canvas.addEventListener('wheel', onWheel, { passive: false });
   app.canvas.addEventListener('pointerdown', onPointerDown);
   app.canvas.addEventListener('pointermove', onPointerMove);
@@ -560,6 +713,7 @@ export async function createWorld(host: HTMLElement, handlers: WorldHandlers): P
   return {
     destroy(): void {
       unsubscribe();
+      app.renderer.off('resize', onResize);
       app.canvas.removeEventListener('wheel', onWheel);
       app.canvas.removeEventListener('pointerdown', onPointerDown);
       app.canvas.removeEventListener('pointermove', onPointerMove);

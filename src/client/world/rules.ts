@@ -109,10 +109,80 @@ export interface Rect {
   height: number;
 }
 
+/** 一个尺寸对（视口用 CSS 像素、场景用世界像素，形状相同）。 */
+export interface Size {
+  width: number;
+  height: number;
+}
+
 /**
  * 世界相机（见 `docs/ui/DESIGN.md`「世界相机」）：默认缩放、夹取、回中、跟随判定。
  * 相机位置 = 屏幕左上角对应的世界坐标，于是「可见区」就是 `[viewport, scene * scale]` 这两条线的关系。
  */
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+/** 默认缩放的下限 = 设计像素 1:1（一格 `TILE` 世界像素正好落在 `TILE` CSS 像素上）。 */
+export const DEFAULT_SCALE_FLOOR = 1;
+
+/**
+ * 默认缩放 = `max(整厅刚好放得下, 1.0)`。
+ * 手机竖屏整厅 fit≈0.35，按 fit 铺满就得把 35 格塞进一屏，人看不清、也点不中；
+ * 写成 `max` 而不是断点分支，是因为断点在旋屏时会从 1.66 直接掉到 0.57，镜头一次跳三级。
+ */
+export function defaultScale(input: { viewport: Size; scene: Size }): number {
+  const fit = Math.min(input.viewport.width / input.scene.width, input.viewport.height / input.scene.height);
+  return Math.max(fit, DEFAULT_SCALE_FLOOR);
+}
+
+/**
+ * 相机夹取：不越过场景边界（禁止拖出大厅看到一片空白）；可见区大于场景时居中。
+ * 能拖的范围因此是 `[viewport - scene * scale, 0]`，越界值回夹到端点，而不是把画面留白。
+ */
+export function clampCamera(input: {
+  x: number;
+  y: number;
+  scale: number;
+  viewport: Size;
+  scene: Size;
+}): { x: number; y: number } {
+  const axis = (value: number, view: number, span: number): number => {
+    const scaled = span * input.scale;
+    return scaled <= view ? (view - scaled) / 2 : clamp(value, view - scaled, 0);
+  };
+  return {
+    x: axis(input.x, input.viewport.width, input.scene.width),
+    y: axis(input.y, input.viewport.height, input.scene.height),
+  };
+}
+
+/** 让某个世界坐标落在屏幕正中的相机位置（已夹取）：初始对准、点自己回中、跟随共用一套算法。 */
+export function cameraFor(input: {
+  scale: number;
+  focus: { x: number; y: number };
+  viewport: Size;
+  scene: Size;
+}): { x: number; y: number } {
+  return clampCamera({
+    x: input.viewport.width / 2 - input.focus.x * input.scale,
+    y: input.viewport.height / 2 - input.focus.y * input.scale,
+    scale: input.scale,
+    viewport: input.viewport,
+    scene: input.scene,
+  });
+}
+
+/** 屏幕中央区（占屏幕的比例）。放在这一块里的自己不值得动镜头，否则一走动画面就晃。 */
+export const CENTER_BAND = 0.4;
+
+/** 这个屏幕点是否已在中央区之外（跟随的触发条件）。 */
+export function outsideCenterBand(input: { point: { x: number; y: number }; viewport: Size }): boolean {
+  const { point, viewport } = input;
+  return (
+    Math.abs(point.x - viewport.width / 2) > (viewport.width * CENTER_BAND) / 2 ||
+    Math.abs(point.y - viewport.height / 2) > (viewport.height * CENTER_BAND) / 2
+  );
+}
 
 /** 墙的几何：`band` 是环带的外沿（场景范围），`inner` 是墙围出的地面。 */
 export interface WallGeometry {
@@ -224,6 +294,7 @@ export type TapTarget =
   | { kind: 'select'; id: string }
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
+  | { kind: 'recenter' }
   | { kind: 'none' };
 
 interface TapInput {
@@ -238,8 +309,9 @@ interface TapInput {
 }
 
 /**
- * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 什么都不做；
+ * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
  * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的地面 → 走过去；⑥ 其余 → 什么都不做。
+ * ② 与 ④ 都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做，别把两者合成一个 `none`。
  *
  * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
  * `walk` 的 x/y 已向下取整成格号（意图是「我要去这一格」）。
@@ -254,9 +326,9 @@ export function tapTargetFor(input: TapInput): TapTarget {
   );
   if (other) return { kind: 'select', id: other.id };
 
-  // 点自己：不做任何动作（我知道我是谁）
+  // 点自己：相机居中自己——我知道我是谁，但常想找回自己在哪
   if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_TILES))) {
-    return { kind: 'none' };
+    return { kind: 'recenter' };
   }
 
   if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { INTERPOLATION_DELAY_MS, nextMotion, positionAt } from '../motion';
+import {
+  INTERPOLATION_DELAY_MS,
+  MOTION_SLACK_MS,
+  anyInterpolating,
+  isInterpolating,
+  nextMotion,
+  positionAt,
+} from '../motion';
 
 describe('位置插值', () => {
   it('第一次收到位置：直接落位，不插值', () => {
@@ -43,6 +50,35 @@ describe('位置插值', () => {
 
     expect(nextMotion(current, 9, 9, 1100)).toBe(current); // 旧的 ts
     expect(nextMotion(current, 9, 9, 1200)).toBe(current); // 同一个 ts
+  });
+
+  it('没有条目 = 没在插值', () => {
+    expect(isInterpolating(undefined, 1000)).toBe(false);
+  });
+
+  it('窗口内 = 在插值；恰在 `toTs` 也算（服务端节拍是尽力而为，边界上不能判停）', () => {
+    const motion = nextMotion(nextMotion(undefined, 0, 0, 1000), 0, 1, 1200);
+    expect(isInterpolating(motion, 1000)).toBe(true);
+    expect(isInterpolating(motion, 1100)).toBe(true);
+    expect(isInterpolating(motion, 1200)).toBe(true);
+    expect(isInterpolating(motion, 1200 + MOTION_SLACK_MS)).toBe(false);
+    expect(isInterpolating(motion, 1200 + MOTION_SLACK_MS + 1)).toBe(false);
+  });
+
+  it('空集合没有人在插值', () => {
+    expect(anyInterpolating([], 1000)).toBe(false);
+  });
+
+  it('只剩走完的残留条目 = 没人在动（不为它每帧重画）', () => {
+    const stale = nextMotion(nextMotion(undefined, 0, 0, 1000), 0, 1, 1200);
+    expect(anyInterpolating([stale], 5000)).toBe(false);
+    expect(anyInterpolating(new Map([['a', stale]]).values(), 5000)).toBe(false);
+  });
+
+  it('有一条开着 = 有人在动', () => {
+    const stale = nextMotion(nextMotion(undefined, 0, 0, 1000), 0, 1, 1200);
+    const live = nextMotion(nextMotion(undefined, 5, 5, 4900), 5, 6, 5100);
+    expect(anyInterpolating([stale, live], 5100)).toBe(true);
   });
 
   it('连续两批：新窗口从上一批的终点接上，不跳格', () => {
