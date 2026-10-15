@@ -128,6 +128,65 @@ export function followStep(input: {
   });
 }
 
+/** 世界像素矩形（相机取景与夹取都在这个空间里算；1 世界像素 = 1 CSS 像素）。 */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 界面实占的像素高度（世界像素）：顶部 HUD 与底部聊天面板。 */
+export interface ViewInsets {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * 可用视口（世界像素）= 视口 − 顶部 HUD − 底部聊天面板的**实际占位**
+ * （`docs/ui/DESIGN.md`「世界相机」；占位指「从视口边缘量到界面内沿」，**含外边距**）。
+ * 取景中心、垂直夹取、死区都按它算：按整视口算时最底一行永远压在聊天面板之下，走不到也点不到。
+ *
+ * 顶 + 底 ≥ 视口高（极端情况）时退回整个视口：宁可让底部被盖住，也不能把相机算崩。
+ */
+export function usableView(view: Rect, insets: ViewInsets): Rect {
+  const height = view.height - insets.top - insets.bottom;
+  if (height <= 0) return { ...view };
+  return { x: view.x, y: view.y + insets.top, width: view.width, height };
+}
+
+/**
+ * 相机夹取的范围（交给 Phaser 的 `setBounds`）：让**可用视口**贴着厅的矩形滚动。
+ *
+ * Phaser 夹的是整视口那个世界视窗矩形，所以要在 bounds 上把「被界面盖住的那一段」让出来：
+ * y 上移 `insets.top`、height 加回顶 + 底（推法：视窗下沿最大 = `y + height − 视口高`，
+ * 令它 + `insets.top` + 可用高 = 厅的下边缘）。可见区比厅大时照旧居中。
+ */
+export function cameraBounds(region: { width: number; height: number }, view: Rect, usable: Rect): Rect {
+  const width = Math.max(region.width, usable.width);
+  const height = Math.max(region.height, usable.height);
+  return {
+    x: -(width - region.width) / 2,
+    y: -(height - region.height) / 2 - (usable.y - view.y),
+    width,
+    height: height + (view.height - usable.height),
+  };
+}
+
+/**
+ * 可用带中心相对整视口中心的偏移（世界像素）：**回中时要从焦点里减去它**。
+ *
+ * 单独抽出来是因为**符号很容易写反**——写反的表现就是「点自己」把人物推到聊天面板那一边。
+ * 底部界面占位通常大于顶部 → 可用带中心在视口中心**之上** → 偏移为负。
+ */
+export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number; y: number } {
+  const usable = usableView(view, insets);
+  return {
+    x: usable.x + usable.width / 2 - (view.x + view.width / 2),
+    y: usable.y + usable.height / 2 - (view.y + view.height / 2),
+  };
+}
+
 /**
  * 一个人此刻画在哪（世界像素）：漫游中按插值（滞后取**这个窗口自己的跨度**），其余状态用给定的落位点。
  *

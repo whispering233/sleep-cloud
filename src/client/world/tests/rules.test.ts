@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BED_H, BED_W, PITCH_X, PITCH_Y } from '../../../shared/constants';
+import { levelIndexOfBedCount, regionOf } from '../../../shared/layout';
 import type { Person } from '../../../shared/protocol';
 import { PITCH_X as PX } from '../../../shared/constants';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
@@ -9,6 +10,7 @@ import {
   PERSON_HIT_PX,
   TRACE_ALPHA,
   bedLook,
+  cameraBounds,
   cameraStep,
   followStep,
   isFaded,
@@ -19,6 +21,8 @@ import {
   personPoint,
   shouldDrawName,
   tapTargetFor,
+  usableView,
+  usableCenterOffset,
 } from '../rules';
 import type { Occupant, PersonSpot } from '../rules';
 import { MARKER_RADIUS } from '../views';
@@ -233,6 +237,75 @@ describe('跟随每帧的一步（`followStep`）', () => {
     const next = followStep({ point: { x: 1000, y: 500 }, center, ...box });
     expect(next.x).toBeCloseTo(508, 6);
     expect(next.y).toBe(500);
+  });
+});
+
+describe('可用视口（相机取景、夹取与死区都按它算）', () => {
+  // 393×852 竖屏：顶部 HUD 60px、底部聊天面板 129px
+  const view = { x: 0, y: 0, width: 393, height: 852 };
+  const insets = { top: 60, bottom: 129 };
+
+  it('可用高度 = 视口高 − 面板高：只缩高度，宽度与横向原点不变', () => {
+    expect(usableView(view, { top: 0, bottom: 129 })).toEqual({ x: 0, y: 0, width: 393, height: 723 });
+    expect(usableView(view, insets)).toEqual({ x: 0, y: 60, width: 393, height: 663 });
+  });
+
+  it('顶 + 底 ≥ 视口高：退回整个视口（别把相机算崩）', () => {
+    expect(usableView(view, { top: 60, bottom: 852 })).toEqual(view);
+    expect(usableView(view, { top: 500, bottom: 400 })).toEqual(view);
+  });
+
+  it('夹取让地板区的最下边缘滚到面板之上（这正是「最底一行永远到不了」的修复）', () => {
+    const region = regionOf(levelIndexOfBedCount(114));
+    const usable = usableView(view, insets);
+    const bounds = cameraBounds(region, view, usable);
+    // Phaser 夹的是整视口那个世界视窗矩形：滚到最下时它的下沿 = y + height − 视口高
+    const worldViewBottom = bounds.y + bounds.height - view.height;
+    const bandBottom = worldViewBottom + (usable.y - view.y) + usable.height;
+    expect(bandBottom).toBe(region.height);
+    // 夹取范围横着照旧：可见区比厅窄时不越出厅
+    expect(bounds.width).toBe(Math.max(region.width, view.width));
+    expect(bounds.x).toBeCloseTo(-(Math.max(region.width, view.width) - region.width) / 2);
+  });
+
+  it('厅比可用视口小：厅在可用带里居中（不因 insets 偏心）', () => {
+    const region = { width: 200, height: 300 };
+    const usable = usableView(view, insets);
+    const bounds = cameraBounds(region, view, usable);
+    expect(bounds.height).toBe(view.height);
+    const bandTop = bounds.y + (usable.y - view.y);
+    expect(bandTop + usable.height / 2).toBe(region.height / 2);
+  });
+
+  it('可用带中心的偏移：底部占位大于顶部 → 为负（**回中要从焦点里减掉它**）', () => {
+    const offset = usableCenterOffset(view, { top: 32.8, bottom: 129 });
+    expect(offset.x).toBe(0);
+    // 可用带中心 = 32.8 + (852 − 32.8 − 129)/2 = 377.9；视口中心 = 426 → 偏移 = −48.1
+    expect(offset.y).toBeCloseTo(377.9 - 426, 6);
+  });
+
+  it('没有界面占位时偏移为零（等价于按整视口居中）', () => {
+    expect(usableCenterOffset(view, { top: 0, bottom: 0 })).toEqual({ x: 0, y: 0 });
+  });
+
+  it('回中把焦点放到**可用带中心**（符号写反会让它掉到聊天面板那一边）', () => {
+    const tilts = { top: 32.8, bottom: 129 };
+    const offset = usableCenterOffset(view, tilts);
+    // 传给 `camera.centerOn` 的 y，以及该点最后落在屏幕上的 y
+    const centerOnY = 500 - offset.y;
+    const screenY = 500 - (centerOnY - view.height / 2);
+    const usable = usableView(view, tilts);
+    expect(screenY).toBeCloseTo(usable.y + usable.height / 2, 6);
+  });
+
+  it('insets 为 0（入场层期间）：夹取与整视口时完全相同', () => {
+    const region = regionOf(levelIndexOfBedCount(114));
+    const usable = usableView(view, { top: 0, bottom: 0 });
+    const bounds = cameraBounds(region, view, usable);
+    expect(bounds.width).toBe(Math.max(region.width, view.width));
+    expect(bounds.height).toBe(region.height);
+    expect(bounds.x).toBeCloseTo(0);
+    expect(bounds.y).toBeCloseTo(0);
   });
 });
 

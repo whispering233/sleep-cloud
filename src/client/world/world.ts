@@ -10,14 +10,17 @@ import { getState } from '../store';
 import type { ClientState } from '../store';
 import {
   bedLook,
+  cameraBounds,
   followStep,
   isFaded,
   isMoving,
   personPoint,
   shouldDrawName,
   tapTargetFor,
+  usableView,
+  usableCenterOffset,
 } from './rules';
-import type { Occupant, PersonSpot } from './rules';
+import type { Occupant, PersonSpot, ViewInsets } from './rules';
 import {
   COLORS,
   LINE_WIDTH,
@@ -57,6 +60,16 @@ export interface WorldHandlers {
 
 export interface WorldHandle {
   destroy(): void;
+}
+
+/**
+ * 界面实占的两块（顶部 HUD、底部聊天面板）由 UI 层交进来：世界层只**读**它们的
+ * `getBoundingClientRect`，不写样式也不写结构（`docs/ui/DESIGN.md`「世界相机」）。
+ * 进厅前（入场层期间）这两个元素还不存在，所以传的是取值函数而不是元素。
+ */
+export interface UiInsets {
+  top: HTMLElement | null;
+  bottom: HTMLElement | null;
 }
 
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
@@ -99,6 +112,7 @@ interface BedRow {
 class WorldScene extends Phaser.Scene {
   private readonly host: HTMLElement;
   private readonly handlers: WorldHandlers;
+  private readonly insetsOf: () => UiInsets;
   /** 已建索引的床位数：`resize` 之后要重建（床号区间变了） */
   private loadedBedCount: number | undefined;
   /** 上一帧人物的世界坐标（命中判定用；1 帧延迟可接受） */
@@ -122,11 +136,16 @@ class WorldScene extends Phaser.Scene {
   /** 当前地板底色（困倦度的缓动值）：与目标色一致时整段跳过重画 */
   private ambience = COLORS.floor;
   private observer: ResizeObserver | null = null;
+  /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
+  private insetElements: UiInsets = { top: null, bottom: null };
+  private insets: ViewInsets = { top: 0, bottom: 0 };
+  private insetsObserver: ResizeObserver | null = null;
 
-  constructor(host: HTMLElement, handlers: WorldHandlers) {
+  constructor(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets) {
     super('world');
     this.host = host;
     this.handlers = handlers;
+    this.insetsOf = insetsOf;
   }
 
   /** 图集是一个文件、一次载入：`preload` 之后 `create` 才被调用，池子建出来时帧一定在 */
@@ -142,6 +161,8 @@ class WorldScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.observer?.disconnect();
       this.observer = null;
+      this.insetsObserver?.disconnect();
+      this.insetsObserver = null;
     });
     this.bindInput();
   }
@@ -157,6 +178,8 @@ class WorldScene extends Phaser.Scene {
       this.buildBedIndex(bedCount);
       this.rebuildRegion();
     }
+    // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
+    this.syncInsets();
 
     // 断线后重连：与进厅同一套规则，重新对准我的床（`wasConnected` 只在真实翻转时才为真）
     if (state.connected && !this.wasConnected) this.alignCamera(state);
@@ -343,9 +366,26 @@ class WorldScene extends Phaser.Scene {
   // ——— 相机 ———
 
   /**
+   * 可用视口的 insets：面板高度随消息条数与选中行变化，所以观察这两个元素的**实际高度**，
+   * 变了就重算夹取。元素换了（进厅前还没有这两个元素）就重挂观察者。
+   */
+  private syncInsets(): void {
+    // 两个元素一旦挂上就一直在：只查一次，之后全靠 ResizeObserver（不为每帧多查一遍 DOM）
+    if (this.insetElements.top?.isConnected && this.insetElements.bottom?.isConnected) return;
+    const next = this.insetsOf();
+    if (next.top === this.insetElements.top && next.bottom === this.insetElements.bottom) return;
+    this.insetElements = next;
+    this.insetsObserver ??= new ResizeObserver(() => this.applyCameraBounds());
+    this.insetsObserver.disconnect();
+    for (const element of [next.top, next.bottom]) if (element) this.insetsObserver.observe(element);
+    this.applyCameraBounds();
+  }
+
+  /**
    * 温和跟随：自己**正在走动**且走出屏幕中央区（死区）时才跟随，**按 dt 匀速靠近**（见 `followStep`）。
    * 停下即停、看别人走动镜头不动、拖拽期间完全不跟随。
    *
+   * 死区按**可用视口**算（不是整视口）：否则自己会在面板后面走出死区而镜头不动。
    * 取位点由 `update` 取一次后传进来（与那一帧渲染用的小人位置是同一个点）。
    */
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
@@ -355,14 +395,14 @@ class WorldScene extends Phaser.Scene {
     const moving = me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0;
     if (!moving || !point) return;
 
-    const view = this.viewRect();
-    const center = { x: view.x + view.width / 2, y: view.y + view.height / 2 };
-    // 死区 = 视野中心 ± CENTER_BAND/2（与 Phaser 的 `setDeadzone` 同一条规则，只是自己算）
+    const usable = usableView(this.viewRect(), this.insets);
+    const center = { x: usable.x + usable.width / 2, y: usable.y + usable.height / 2 };
+    // 死区 = 可用视口中心 ± CENTER_BAND/2（与 Phaser 的 `setDeadzone` 同一条规则，只是自己算）
     const next = followStep({
       point,
       center,
-      halfWidth: (view.width * CENTER_BAND) / 2,
-      halfHeight: (view.height * CENTER_BAND) / 2,
+      halfWidth: (usable.width * CENTER_BAND) / 2,
+      halfHeight: (usable.height * CENTER_BAND) / 2,
       dtMs,
       maxPxPerS: CAMERA_FOLLOW_PX_PER_S,
     });
@@ -390,28 +430,55 @@ class WorldScene extends Phaser.Scene {
   /** 初始视野：对准我的床（还没有床时对准自己）；连自己都还不知道在哪时退回厅中心。 */
   private alignCamera(state: ClientState): void {
     const focus = this.focusPoint(state);
-    if (focus) this.cameras.main.centerOn(focus.x, focus.y);
+    if (focus) this.centerOnUsable(focus);
     else if (this.loadedBedCount !== undefined) {
       const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
-      this.cameras.main.centerOn(region.width / 2, region.height / 2);
+      this.centerOnUsable({ x: region.width / 2, y: region.height / 2 });
     }
   }
 
   /** 点自己 = 相机对准自己（`docs/ui/DESIGN.md`「世界相机」）。 */
   private centerOnSelf(state: ClientState): void {
     const focus = this.selfPoint(state, Date.now() + state.clockOffsetMs);
-    if (!focus) return;
-    this.cameras.main.centerOn(focus.x, focus.y);
+    if (focus) this.centerOnUsable(focus);
   }
 
-  /** 夹取：不越出厅的矩形；可见区比厅大时（宽档 / 横屏）把边界扩成视野大小，让厅居中。 */
+  /**
+   * 回中：把世界点放到**可用视口**的中心，而不是整视口的中心
+   * ——按整视口居中时，人物正好落在聊天面板后面。
+   */
+  private centerOnUsable(point: Point): void {
+    const view = this.viewRect();
+    // **减**偏移：可用带中心在视口中心**之上**（底部界面占位通常更大），所以焦点要跟着往上挑
+    const offset = usableCenterOffset(view, this.insets);
+    this.cameras.main.centerOn(point.x - offset.x, point.y - offset.y);
+  }
+
+  /**
+   * 夹取：不越出厅的矩形；可见区比厅大时（宽档 / 横屏）把边界扩成视野大小，让厅居中。
+   * **垂直按「可用视口」夹**：这样地板区的最下边缘能滚到聊天面板之上。
+   */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
     const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
-    const camera = this.cameras.main;
-    const width = Math.max(region.width, camera.width / camera.zoomX);
-    const height = Math.max(region.height, camera.height / camera.zoomY);
-    camera.setBounds(-(width - region.width) / 2, -(height - region.height) / 2, width, height);
+    const view = this.viewRect();
+    const bounds = cameraBounds(region, view, usableView(view, this.measureInsets()));
+    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+  }
+
+  /**
+   * 界面实占的区域只从 DOM 的**实际**值读：面板随消息条数变高变矮、横屏面板底部还留 12px 外边距，
+   * 都不硬编码。所以量的是「**从视口边缘到界面内沿**」的距离，而不是元素自身高度。
+   */
+  private measureInsets(): ViewInsets {
+    const host = this.host.getBoundingClientRect();
+    const top = this.insetElements.top?.getBoundingClientRect();
+    const bottom = this.insetElements.bottom?.getBoundingClientRect();
+    this.insets = {
+      top: top ? Math.max(0, top.bottom - host.top) : 0,
+      bottom: bottom ? Math.max(0, host.bottom - bottom.top) : 0,
+    };
+    return this.insets;
   }
 
   /**
@@ -551,7 +618,7 @@ class WorldScene extends Phaser.Scene {
   }
 }
 
-export function createWorld(host: HTMLElement, handlers: WorldHandlers): WorldHandle {
+export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
   const rect = host.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
   const game = new Phaser.Game({
@@ -567,7 +634,7 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers): WorldHa
     },
     // 手势交给相机（单指拖拽平移），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
-    scene: [new WorldScene(host, handlers)],
+    scene: [new WorldScene(host, handlers, insetsOf)],
   });
 
   return {
