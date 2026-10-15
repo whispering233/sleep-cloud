@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BED_H, BED_W, PITCH_X, PITCH_Y } from '../../../shared/constants';
-import { levelIndexOfBedCount, regionOf } from '../../../shared/layout';
+import { levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
 import type { Person } from '../../../shared/protocol';
 import { PITCH_X as PX } from '../../../shared/constants';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
@@ -256,20 +256,20 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
   });
 
   it('夹取让地板区的最下边缘滚到面板之上（这正是「最底一行永远到不了」的修复）', () => {
-    const region = regionOf(levelIndexOfBedCount(114));
+    const region = wallRegionOf(levelIndexOfBedCount(114));
     const usable = usableView(view, insets);
     const bounds = cameraBounds(region, view, usable);
     // Phaser 夹的是整视口那个世界视窗矩形：滚到最下时它的下沿 = y + height − 视口高
     const worldViewBottom = bounds.y + bounds.height - view.height;
     const bandBottom = worldViewBottom + (usable.y - view.y) + usable.height;
-    expect(bandBottom).toBe(region.height);
-    // 夹取范围横着照旧：可见区比厅窄时不越出厅
+    expect(bandBottom).toBe(region.y + region.height);
+    // 夹取范围横着照旧：可见区比厅窄时不越出厅（厅在负坐标一侧也有余量）
     expect(bounds.width).toBe(Math.max(region.width, view.width));
-    expect(bounds.x).toBeCloseTo(-(Math.max(region.width, view.width) - region.width) / 2);
+    expect(bounds.x).toBeCloseTo(region.x - (Math.max(region.width, view.width) - region.width) / 2);
   });
 
   it('厅比可用视口小：厅在可用带里居中（不因 insets 偏心）', () => {
-    const region = { width: 200, height: 300 };
+    const region = { x: 0, y: 0, width: 200, height: 300 };
     const usable = usableView(view, insets);
     const bounds = cameraBounds(region, view, usable);
     expect(bounds.height).toBe(view.height);
@@ -299,13 +299,13 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
   });
 
   it('insets 为 0（入场层期间）：夹取与整视口时完全相同', () => {
-    const region = regionOf(levelIndexOfBedCount(114));
+    const region = wallRegionOf(levelIndexOfBedCount(114));
     const usable = usableView(view, { top: 0, bottom: 0 });
     const bounds = cameraBounds(region, view, usable);
     expect(bounds.width).toBe(Math.max(region.width, view.width));
     expect(bounds.height).toBe(region.height);
-    expect(bounds.x).toBeCloseTo(0);
-    expect(bounds.y).toBeCloseTo(0);
+    expect(bounds.x).toBeCloseTo(region.x);
+    expect(bounds.y).toBeCloseTo(region.y);
   });
 });
 

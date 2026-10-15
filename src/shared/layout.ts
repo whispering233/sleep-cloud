@@ -33,6 +33,17 @@ export interface Point {
   y: number;
 }
 
+/**
+ * 地板与墙的矩形（世界像素）：**比床位区大一圈**——左/上各一条走道、右/下是下一级与本级之差。
+ * 床位区仍锚在世界原点，所以左/上那一条余量落在负坐标一侧（`docs/design/config.md` §7）。
+ */
+export interface WallRegion {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** 级表里**唯一需要人工维护**的部分：每档的行数 `R` 与每行床数 `C`（`docs/design/config.md` §2）。 */
 const LEVEL_SHAPE: ReadonlyArray<readonly [rows: number, cols: number]> = [
   [6, 19],
@@ -62,16 +73,18 @@ function heightOfRows(rows: number): number {
   return PITCH_Y * rows;
 }
 
+/** 行列数 → 一档的几何：`W(C)` 与 `H(R)` 是唯一的两条尺寸公式。 */
+function shapeOf([rows, cols]: readonly [number, number]): HallLevel {
+  return { rows, cols, capacity: rows * cols, width: widthOfCols(cols), height: heightOfRows(rows) };
+}
+
 /** 15 档级表：容量 114（6×19）~ 9790（55×178）。触顶后不再生长。 */
-export const HALL_LEVELS: readonly HallLevel[] = LEVEL_SHAPE.map(([rows, cols]) => ({
-  rows,
-  cols,
-  capacity: rows * cols,
-  width: widthOfCols(cols),
-  height: heightOfRows(rows),
-}));
+export const HALL_LEVELS: readonly HallLevel[] = LEVEL_SHAPE.map(shapeOf);
 
 const TOP_LEVEL = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;
+
+/** 理论下一档（64×207）：**只给最后一档的地板与墙用**，不进级表、也不补床位（`docs/design/config.md` §2）。 */
+const TOP_WALL_LEVEL = shapeOf([64, 207]);
 
 /** 4 床 + 1 条竖走道的横向周期：一格块 = 260px 床位区 + 56px 走道。 */
 export const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
@@ -79,12 +92,16 @@ export const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
 /** 一格块内床位区的宽度（超过它就是竖走道）。 */
 export const CORRIDOR_START = CORRIDOR_EVERY * PITCH_X;
 
-/** 级 → 该档的几何。索引越界时夹到两端（超出上限返回最后一档）。 */
-export function levelOf(index: number): HallLevel {
+/** 级 → 级表下标。越界时夹到两端（超出上限返回最后一档）。 */
+function levelIndex(index: number): number {
   // NaN / Infinity：返回最小那一档（fail-safe）——绝不要让下标变成 NaN 再被断言成 HallLevel
   const safe = Number.isFinite(index) ? Math.trunc(index) : 0;
-  const clamped = Math.min(Math.max(safe, 0), HALL_LEVELS.length - 1);
-  return HALL_LEVELS[clamped] as HallLevel;
+  return Math.min(Math.max(safe, 0), HALL_LEVELS.length - 1);
+}
+
+/** 级 → 该档的几何。索引越界时夹到两端（超出上限返回最后一档）。 */
+export function levelOf(index: number): HallLevel {
+  return HALL_LEVELS[levelIndex(index)] as HallLevel;
 }
 
 /** 级 → 床位数。 */
@@ -92,9 +109,20 @@ export function bedCountOf(index: number): number {
   return levelOf(index).capacity;
 }
 
-/** 级 → 该级的区域（行列数与像素尺寸）。 */
+/** 级 → 该级的**床位区**（行列数与像素尺寸，左上角锚在世界原点）。 */
 export function regionOf(index: number): HallLevel {
   return levelOf(index);
+}
+
+/**
+ * 级 → **地板与墙**的矩形：取**下一级**的床位区，再向左上各留一条走道（最后一档用理论下一档 64×207）。
+ *
+ * 为什么不是「本级床位区」：床位区的最外圈原本正好贴着边界（0px），最外侧是墙、绕不过去。
+ * 留出一档之后每一侧都有走道：右/下来自级差，左/上来自负坐标那一条（`docs/design/config.md` §7）。
+ */
+export function wallRegionOf(index: number): WallRegion {
+  const next = HALL_LEVELS[levelIndex(index) + 1] ?? TOP_WALL_LEVEL;
+  return { x: -AISLE, y: -AISLE, width: next.width + AISLE, height: next.height + AISLE };
 }
 
 /** 当前床位数 → 它在级表里的下标（床位数不是正好一档时取能装下它的最小那档）。 */
@@ -184,16 +212,22 @@ export function bedNoAt(x: number, y: number, bedCount?: number): number | undef
 }
 
 /**
- * 世界像素 → 能不能走。街网 = 床脚前横走道带 ∪ 竖向走道带。
+ * 世界像素 → 能不能走。街网 = 床脚前横走道带 ∪ 竖向走道带 ∪ **边界那一条走道余量**。
  *
  * 走道带与床的占用矩形按构造互不相交：横走道只覆盖 `y % 156 ∈ [100, 156)`，而床占着
  * `[0, 100)`；竖走道落在两组 4 床之间，那里没有床格只有床间距。
  *
+ * 边界 = `wallRegionOf`（下一级 + 左/上各一条走道）：最外圈的床四侧都有走道，**降级后旧外圈
+ * 落回地板区、变成可走的余量**。左/上那一条在负坐标一侧，整条都是走道（街网在边界闭合）。
+ *
  * 同 `bedNoAt`：不传 `bedCount` 按整张表判定。
  */
 export function isWalkable(x: number, y: number, bedCount?: number): boolean {
-  const region = levelOf(bedCount === undefined ? HALL_LEVELS.length - 1 : levelIndexOfBedCount(bedCount));
-  if (!(x >= 0) || !(y >= 0) || x >= region.width || y >= region.height) return false;
+  const region = wallRegionOf(bedCount === undefined ? HALL_LEVELS.length - 1 : levelIndexOfBedCount(bedCount));
+  if (!(x >= region.x) || !(y >= region.y) || x >= region.x + region.width || y >= region.y + region.height) {
+    return false;
+  }
+  if (x < 0 || y < 0) return true;
 
   const inRowAisle = y % PITCH_Y >= BED_H;
   const inColumnAisle = x % CORRIDOR_BLOCK >= CORRIDOR_START;
@@ -208,11 +242,12 @@ export function isWalkable(x: number, y: number, bedCount?: number): boolean {
  * 2. 服务端在降级之后把落在区域外的旧位置拉回街上（那是恢复，不是对意图的静默吸附）。
  */
 export function nearestStreetPoint(point: Point, bedCount: number): Point | undefined {
-  const region = levelOf(levelIndexOfBedCount(bedCount));
-  const x = Math.min(Math.max(point.x, 0), region.width - 1);
+  // 夹取按**地板区**：否则站在（或点在）余量里的人会被拉回床位区，与「余量是可走的地板」相冲
+  const region = wallRegionOf(levelIndexOfBedCount(bedCount));
+  const x = Math.min(Math.max(point.x, region.x), region.x + region.width - 1);
   for (let distance = 0; distance <= PITCH_Y; distance += 1) {
     for (const y of [point.y - distance, point.y + distance]) {
-      if (y >= 0 && y < region.height && isWalkable(x, y, bedCount)) return { x, y };
+      if (y >= region.y && y < region.y + region.height && isWalkable(x, y, bedCount)) return { x, y };
     }
   }
   return undefined;

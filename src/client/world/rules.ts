@@ -157,17 +157,18 @@ export function usableView(view: Rect, insets: ViewInsets): Rect {
 
 /**
  * 相机夹取的范围（交给 Phaser 的 `setBounds`）：让**可用视口**贴着厅的矩形滚动。
+ * 厅的矩形是 `wallRegionOf`：左/上那一条余量在负坐标一侧，所以 bounds 也跟着带上原点。
  *
  * Phaser 夹的是整视口那个世界视窗矩形，所以要在 bounds 上把「被界面盖住的那一段」让出来：
  * y 上移 `insets.top`、height 加回顶 + 底（推法：视窗下沿最大 = `y + height − 视口高`，
  * 令它 + `insets.top` + 可用高 = 厅的下边缘）。可见区比厅大时照旧居中。
  */
-export function cameraBounds(region: { width: number; height: number }, view: Rect, usable: Rect): Rect {
+export function cameraBounds(region: Rect, view: Rect, usable: Rect): Rect {
   const width = Math.max(region.width, usable.width);
   const height = Math.max(region.height, usable.height);
   return {
-    x: -(width - region.width) / 2,
-    y: -(height - region.height) / 2 - (usable.y - view.y),
+    x: region.x - (width - region.width) / 2,
+    y: region.y - (height - region.height) / 2 - (usable.y - view.y),
     width,
     height: height + (view.height - usable.height),
   };

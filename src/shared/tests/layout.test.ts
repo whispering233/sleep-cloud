@@ -13,7 +13,9 @@ import {
   nearestStreetPoint,
   positionOf,
   regionOf,
+  wallRegionOf,
   type HallLevel,
+  type WallRegion,
 } from '../layout';
 import { readDoc, tableRows } from './doc';
 
@@ -121,6 +123,86 @@ function levelMismatches(row: string[], index: number): string[] {
   }
   return out;
 }
+
+// ————————————————————————— 地板与墙（不变式 ⑤） —————————————————————————
+
+/** 理论下一档 64×207 的像素尺寸：按 `docs/design/config.md` §2 的两条公式独立算一遍。 */
+const THEORETICAL_NEXT = {
+  width: BED_W * 207 + BED_GAP * 206 + AISLE * Math.floor(207 / CORRIDOR_EVERY),
+  height: PITCH_Y * 64,
+};
+
+describe('不变式 ⑤：地板与墙按「下一级 + 左/上各一条走道」画', () => {
+  it('`wallRegionOf` 逐档 = 下一级的床位区再加一条走道；四侧余量都 ≥ 一条走道宽', () => {
+    const bad: string[] = [];
+    HALL_LEVELS.forEach((level, index) => {
+      const next = HALL_LEVELS[index + 1] ?? THEORETICAL_NEXT;
+      const wall = wallRegionOf(index);
+      const note = (detail: string): void => void bad.push(`第 ${index + 1} 级：${detail}`);
+      const margins = [
+        ['左', 0 - wall.x],
+        ['上', 0 - wall.y],
+        ['右', wall.x + wall.width - level.width],
+        ['下', wall.y + wall.height - level.height],
+      ] as Array<[string, number]>;
+
+      if (wall.x !== -AISLE || wall.y !== -AISLE) note(`左/上余量不在负坐标那一条走道上（${wall.x}, ${wall.y}）`);
+      if (wall.width !== next.width + AISLE || wall.height !== next.height + AISLE) {
+        note('宽高不是「下一级 + 一条走道」');
+      }
+      for (const [side, margin] of margins) {
+        if (margin < AISLE) note(`${side}侧余量只有 ${margin}px`);
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('末级用理论下一档 64×207 → 16307 × 9984（矩形 16363 × 10040）；越界的级号夹到末档', () => {
+    expect(THEORETICAL_NEXT).toEqual({ width: 16307, height: 9984 });
+    expect(wallRegionOf(HALL_LEVELS.length - 1)).toEqual({ x: -56, y: -56, width: 16363, height: 10040 });
+    expect(wallRegionOf(HALL_LEVELS.length)).toEqual(wallRegionOf(HALL_LEVELS.length - 1));
+    expect(wallRegionOf(-1)).toEqual(wallRegionOf(0));
+  });
+
+  it('逐档四侧余量里都有真的可走的点（左/上取负坐标带里的点，右/下取级差带里的点）', () => {
+    const bad: string[] = [];
+    HALL_LEVELS.forEach((level, index) => {
+      for (const point of marginProbes(level)) {
+        if (!isWalkable(point.x, point.y, level.capacity)) {
+          bad.push(`第 ${index + 1} 级余量里的点 (${point.x}, ${point.y}) 不可走`);
+        }
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+});
+
+// ————————————————————————— 降级：旧外圈落回地板区 —————————————————————————
+
+describe('降级后旧外圈落回地板区（可走的余量，不是厅外）', () => {
+  it('旧外圈的点仍可走、且不再是床；床区本身也没变', () => {
+    const bad: string[] = [];
+    for (let index = 1; index < HALL_LEVELS.length; index += 1) {
+      const bedCount = bedCountOf(index - 1);
+      const level = HALL_LEVELS[index] as HallLevel;
+      const wall = wallRegionOf(index - 1);
+
+      for (const bedNo of [bedCount, Math.floor((bedCount + level.capacity) / 2), level.capacity - 1]) {
+        const front = frontPointOf(bedNo) as { x: number; y: number };
+        const position = positionOf(bedNo) as { x: number; y: number };
+        const center = { x: position.x + BED_W / 2, y: position.y + BED_H / 2 };
+        const inside = (point: { x: number; y: number }): boolean =>
+          point.x >= wall.x && point.y >= wall.y && point.x < wall.x + wall.width && point.y < wall.y + wall.height;
+
+        if (!inside(front) || !inside(center)) bad.push(`降级后床 ${bedNo} 的位置落到了地板区外`);
+        if (!isWalkable(front.x, front.y, bedCount)) bad.push(`降级后床 ${bedNo} 的前方走道不可走`);
+        if (bedNoAt(center.x, center.y, bedCount) !== undefined) bad.push(`降级后床 ${bedNo} 还算一张床`);
+        if (isWalkable(center.x, center.y, bedCount)) bad.push(`降级后床 ${bedNo} 的床心变成可走的`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+});
 
 // ————————————————————————— 不变式 ① ②：位置与床位数无关 —————————————————————————
 
@@ -259,23 +341,57 @@ interface StreetGraph {
   start: number;
 }
 
+/** 该级**地板与墙**的矩形：采样格子的原点（左/上那条余量因此是格子的第 0 行 / 第 0 列）。 */
+function wallRectOf(level: HallLevel): WallRegion {
+  return wallRegionOf(HALL_LEVELS.indexOf(level));
+}
+
+/** 采样格子 (i, j) → 世界点。 */
+function nodePoint(level: HallLevel, i: number, j: number): { x: number; y: number } {
+  const wall = wallRectOf(level);
+  return { x: wall.x + i * STEP, y: wall.y + j * STEP };
+}
+
 function nodeWalkable(level: HallLevel, i: number, j: number): boolean {
-  return isWalkable(i * STEP, j * STEP, level.capacity);
+  const point = nodePoint(level, i, j);
+  return isWalkable(point.x, point.y, level.capacity);
 }
 
 function graphCols(level: HallLevel): number {
-  return Math.ceil(level.width / STEP);
+  return Math.ceil(wallRectOf(level).width / STEP);
 }
 
-/** 前方走道 → 最近的一个街网采样节点（同一行带内，所以两者之间只走街网）。 */
+function graphRows(level: HallLevel): number {
+  return Math.ceil(wallRectOf(level).height / STEP);
+}
+
+/** 世界点 → 最近的一个街网采样节点（同一行带 / 走道里，所以两者之间只走街网）。 */
 function nodeOf(level: HallLevel, x: number, y: number): number {
+  const wall = wallRectOf(level);
+  return Math.floor((y - wall.y) / STEP) * graphCols(level) + Math.floor((x - wall.x) / STEP);
+}
+
+/** 采样节点可不可走。 */
+function nodeWalkableAt(level: HallLevel, node: number): boolean {
   const cols = graphCols(level);
-  return Math.floor(y / STEP) * cols + Math.floor(x / STEP);
+  const i = node % cols;
+  return nodeWalkable(level, i, (node - i) / cols);
+}
+
+/** 四侧的地板余量里各取一点：左/上在负坐标那一侧，右/下在级差那一侧（`docs/design/config.md` §7 不变式 5）。 */
+function marginProbes(level: HallLevel): Array<{ x: number; y: number }> {
+  const wall = wallRectOf(level);
+  return [
+    { x: -AISLE / 2, y: 0 },
+    { x: AISLE / 2, y: -AISLE / 2 },
+    { x: level.width + AISLE / 2, y: BED_H + AISLE / 2 },
+    { x: AISLE / 2, y: level.height + BED_H + AISLE / 2 },
+  ].filter((point) => point.x < wall.x + wall.width && point.y < wall.y + wall.height);
 }
 
 function bfs(level: HallLevel, start: number): StreetGraph {
   const cols = graphCols(level);
-  const rows = Math.ceil(level.height / STEP);
+  const rows = graphRows(level);
   const visited = new Uint8Array(cols * rows);
   const from = new Int32Array(cols * rows).fill(-1);
   const queue: number[] = [start];
@@ -354,10 +470,10 @@ describe('不变式 ③：街网连通（逐级 BFS，路径只走街网）', ()
         if (center && isWalkable(center.x + BED_W / 2, center.y + BED_H / 2, level.capacity)) {
           bad.push(`床 ${bedNo} 自己变成了可走的格子`);
         }
-        if (!front || !nodeWalkable(level, Math.floor(front.x / STEP), Math.floor(front.y / STEP))) {
-          bad.push(`床 ${bedNo} 的前方走道不在街网采样上`);
-        }
-        return front ? nodeOf(level, front.x, front.y) : -1;
+        if (!front) return -1;
+        const node = nodeOf(level, front.x, front.y);
+        if (!nodeWalkableAt(level, node)) bad.push(`床 ${bedNo} 的前方走道不在街网采样上`);
+        return node;
       });
 
       // 从最前与最后一张床各搜一次，其余每一张都必须可达
@@ -371,6 +487,13 @@ describe('不变式 ③：街网连通（逐级 BFS，路径只走街网）', ()
           else bad.push(`床 ${bedNos[offset]} 从床 ${bedNos[origin]} 走不到`);
         }
         stats.reached += reached;
+
+        // 四侧余量里的点也必须在同一片街网上（地板区比床位区大一圈）
+        for (const probe of marginProbes(level)) {
+          const node = nodeOf(level, probe.x, probe.y);
+          if (!nodeWalkableAt(level, node)) bad.push(`余量里的点 (${probe.x}, ${probe.y}) 不在街网采样上`);
+          else if (graph.visited[node] !== 1) bad.push(`余量里的点 (${probe.x}, ${probe.y}) 从床 ${bedNos[origin]} 走不到`);
+        }
 
         const target = nodes[nodes.length - 1 - origin] as number;
         const path = streetPath(level, graph, target, bad);
@@ -440,25 +563,27 @@ describe('命中判定与世界几何', () => {
     expect(bedNoAt(corridorX, position.y + BED_H / 2)).toBeUndefined();
   });
 
-  it('传了 bedCount 时，越过当前级容量的床不算床，旧外圈也不再可走', () => {
+  it('传了 bedCount 时，越过当前级容量的床不算床，它前方那条走道成了可走的地板', () => {
     const outer = positionOf(114) as { x: number; y: number };
-    expect(bedNoAt(outer.x + BED_W / 2, outer.y + BED_H / 2, 114)).toBeUndefined();
-    expect(bedNoAt(outer.x + BED_W / 2, outer.y + BED_H / 2, 161)).toBe(114);
+    const center = { x: outer.x + BED_W / 2, y: outer.y + BED_H / 2 };
+    expect(bedNoAt(center.x, center.y, 114)).toBeUndefined();
+    expect(bedNoAt(center.x, center.y, 161)).toBe(114);
+    expect(isWalkable(center.x, center.y, 114)).toBe(false); // 床心不是走道
+    expect(isWalkable(center.x, center.y + BED_H / 2 + AISLE / 2, 114)).toBe(true); // 床脚前的走道是地板
 
+    // 第 1 级右侧余量里的横走道：整张表里可走，降到第 1 级之后仍是可走的地板（不再算厅外）
     const level1 = levelOf(0);
-    expect(isWalkable(outer.x, outer.y, 114)).toBe(false);
-
-    // 第一级区域右侧的横走道：整张表里可走，第 1 级里就在厅外了
     expect(isWalkable(level1.width + 145, 130)).toBe(true);
-    expect(isWalkable(level1.width + 145, 130, 114)).toBe(false);
+    expect(isWalkable(level1.width + 145, 130, 114)).toBe(true);
   });
 
-  it('厅外一律不是床也不可走', () => {
+  it('墙之外一律不是床也不可走', () => {
+    const wall = wallRegionOf(HALL_LEVELS.length - 1);
     expect(bedNoAt(-1, -1)).toBeUndefined();
-    expect(isWalkable(-1, 0)).toBe(false);
-    expect(isWalkable(0, -1)).toBe(false);
-    expect(isWalkable(TOP.width, 0)).toBe(false);
-    expect(isWalkable(0, TOP.height)).toBe(false);
+    expect(isWalkable(wall.x - 1, 0)).toBe(false);
+    expect(isWalkable(0, wall.y - 1)).toBe(false);
+    expect(isWalkable(wall.x + wall.width, 0)).toBe(false);
+    expect(isWalkable(0, wall.y + wall.height)).toBe(false);
   });
 });
 // ————————————————————————— 吸附到街网（客户端点地面 / 服务端位置恢复） —————————————————————————
@@ -491,14 +616,40 @@ describe('`nearestStreetPoint`：离给定点最近的街网点', () => {
     }
   });
 
-  it('降级之后：旧外圈的点会被吸回当前区域之内', () => {
+  it('降级之后：旧外圈的旧位置仍落在可走的地板余量里（不再被拉回床位区）', () => {
     const outer = positionOf(114) as { x: number; y: number };
+    const wall = wallRegionOf(0);
     const snapped = nearestStreetPoint({ x: outer.x + BED_W / 2, y: outer.y + BED_H / 2 }, 114) as {
       x: number;
       y: number;
     };
-    const region = regionOf(0);
-    expect(snapped.x).toBeLessThan(region.width);
+    // 旧断言（夹进床位区）已被本轮的语义取代：余量是可走的地板，目标就留在余量里
+    expect(snapped.x).toBeGreaterThanOrEqual(regionOf(0).width);
+    expect(snapped.x).toBeLessThan(wall.x + wall.width);
     expect(isWalkable(snapped.x, snapped.y, 114)).toBe(true);
+  });
+
+  it('点在右/下余量里的地面：目标留在余量里，不被拉回床位区', () => {
+    const level = levelOf(0);
+    const point = { x: level.width + AISLE / 2, y: BED_H + AISLE / 2 };
+    expect(nearestStreetPoint(point, 114)).toEqual(point);
+  });
+});
+
+// ————————————————————————— 床位编号与位置的黄金值（本轮不许动） —————————————————————————
+
+describe('床位编号与位置与上一版逐位一致（地板外扩不许动床位）', () => {
+  it('抽几条：格子、床的锚点、床脚前走道中心', () => {
+    expect(cellOf(0)).toEqual({ row: 0, col: 0 });
+    expect(cellOf(113)).toEqual({ row: 5, col: 18 });
+    expect(cellOf(114)).toEqual({ row: 0, col: 19 });
+    expect(positionOf(0)).toEqual({ x: 0, y: 0 });
+    expect(frontPointOf(0)).toEqual({ x: 30.5, y: 128 });
+    expect(bedNoAt(30.5, 50)).toBe(0);
+  });
+
+  it('床位区本身也没变（地板区是它向外扩的那一圈）', () => {
+    expect(regionOf(0)).toMatchObject({ rows: 6, cols: 19, width: 1455, height: 936 });
+    expect(wallRegionOf(0)).toEqual({ x: -56, y: -56, width: 1827, height: 1148 });
   });
 });

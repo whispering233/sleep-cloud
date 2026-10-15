@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 
 import { BED_H, BED_W, MAX_DPR, PITCH_X, PITCH_Y, POOL_SIZE } from '../../shared/constants';
-import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, regionOf } from '../../shared/layout';
-import type { Point } from '../../shared/layout';
+import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, wallRegionOf } from '../../shared/layout';
+import type { Point, WallRegion } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
@@ -127,9 +127,9 @@ class WorldScene extends Phaser.Scene {
   private readonly scenery: Phaser.GameObjects.GameObject[] = [];
   /** 上一次看到的连接状态：断线后重连要重新对准我的床 */
   private wasConnected = false;
-  /** 地板图形（氛围明暗要重画它）与厅的区域尺寸（重画时的矩形） */
+  /** 地板与墙的矩形（氛围明暗要重画地板、相机夹取也用它） */
   private floorGfx?: Phaser.GameObjects.Graphics;
-  private regionSize = { width: 0, height: 0 };
+  private region: WallRegion = { x: 0, y: 0, width: 0, height: 0 };
   /** 屏幕空间背景（铺满视口，钉在相机上）：厅外那一圈的颜色也随氛围变 */
   private backdrop?: Phaser.GameObjects.Graphics;
   private backdropSize = { width: 0, height: 0 };
@@ -213,7 +213,7 @@ class WorldScene extends Phaser.Scene {
     if (this.floorGfx) {
       this.floorGfx.clear();
       this.floorGfx.fillStyle(next, 1);
-      this.floorGfx.fillRect(0, 0, this.regionSize.width, this.regionSize.height);
+      this.floorGfx.fillRect(this.region.x, this.region.y, this.region.width, this.region.height);
     }
   }
 
@@ -240,22 +240,22 @@ class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** 厅的区域（地板 + 外沿）：升级/降级之后尺寸变了，这里跟着重建。 */
+  /** 厅的地板与墙（边界按 `wallRegionOf`：左/上那一条余量落在负坐标一侧）：尺寸变了这里跟着重建。 */
   private rebuildRegion(): void {
     for (const object of this.scenery) object.destroy();
     this.scenery.length = 0;
     if (this.loadedBedCount === undefined) return;
 
-    const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
-    this.regionSize = { width: region.width, height: region.height };
+    const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
+    this.region = region;
     this.backdrop = this.add.graphics().setScrollFactor(0).setDepth(DEPTH.backdrop);
     const floor = this.add.graphics().setDepth(DEPTH.floor);
     this.floorGfx = floor;
     floor.fillStyle(this.ambience, 1);
-    floor.fillRect(0, 0, region.width, region.height);
+    floor.fillRect(region.x, region.y, region.width, region.height);
     const bound = this.add.graphics().setDepth(DEPTH.bound);
     bound.lineStyle(LINE_WIDTH, COLORS.line, 1);
-    bound.strokeRect(0.5, 0.5, region.width - 1, region.height - 1);
+    bound.strokeRect(region.x + 0.5, region.y + 0.5, region.width - 1, region.height - 1);
     this.scenery.push(floor, bound);
 
     this.applyCameraBounds();
@@ -432,8 +432,8 @@ class WorldScene extends Phaser.Scene {
     const focus = this.focusPoint(state);
     if (focus) this.centerOnUsable(focus);
     else if (this.loadedBedCount !== undefined) {
-      const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
-      this.centerOnUsable({ x: region.width / 2, y: region.height / 2 });
+      const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
+      this.centerOnUsable({ x: region.x + region.width / 2, y: region.y + region.height / 2 });
     }
   }
 
@@ -460,7 +460,7 @@ class WorldScene extends Phaser.Scene {
    */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
-    const region = regionOf(levelIndexOfBedCount(this.loadedBedCount));
+    const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
     const view = this.viewRect();
     const bounds = cameraBounds(region, view, usableView(view, this.measureInsets()));
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);

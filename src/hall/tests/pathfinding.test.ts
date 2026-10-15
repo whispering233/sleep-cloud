@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { BED_H, BED_W, PITCH_Y } from '../../shared/constants';
-import { HALL_LEVELS, frontPointOf, isWalkable, positionOf } from '../../shared/layout';
+import { AISLE, BED_H, BED_W, PITCH_Y } from '../../shared/constants';
+import { HALL_LEVELS, frontPointOf, isWalkable, positionOf, wallRegionOf } from '../../shared/layout';
 import type { HallLevel, Point } from '../../shared/layout';
 import { findPath } from '../pathfinding';
 
@@ -72,8 +72,8 @@ describe('街网寻路', () => {
     const from = front(0);
     const bedCenter = positionOf(3) as Point;
     expect(findPath(from, { x: bedCenter.x + BED_W / 2, y: bedCenter.y + BED_H / 2 }, CAPACITY)).toBeNull(); // 床心
-    expect(findPath(from, { x: -5, y: from.y }, CAPACITY)).toBeNull(); // 厅外
-    expect(findPath(from, { x: from.x, y: -5 }, CAPACITY)).toBeNull();
+    expect(findPath(from, { x: wallRegionOf(0).x - 1, y: from.y }, CAPACITY)).toBeNull(); // 左侧墙外
+    expect(findPath(from, { x: from.x, y: wallRegionOf(0).y - 1 }, CAPACITY)).toBeNull(); // 上侧墙外
     const top = { x: TOP.width - 1, y: front(0).y };
     expect(findPath(from, top, CAPACITY)).toBeNull(); // 越过当前级的右边界
     // 床与床之间的 4px 缝：不在街网上
@@ -86,10 +86,30 @@ describe('街网寻路', () => {
     expect(findPath(outside, front(0), CAPACITY)).toBeNull();
   });
 
-  it('降级后旧外圈的目标点也不再可达（区域即真相）', () => {
+  it('降级后旧外圈的那张床不再是床（区域即真相），它前面那条走道则是可走的地板', () => {
     const outerFront = front(CAPACITY); // 第 2 级才有的床
-    expect(findPath(front(0), outerFront, CAPACITY)).toBeNull();
+    const outerCenter = positionOf(CAPACITY) as Point;
+    const bedPoint = { x: outerCenter.x + BED_W / 2, y: outerCenter.y + BED_H / 2 };
+    expect(findPath(front(0), bedPoint, CAPACITY)).toBeNull(); // 床心不在街网上
+    expect(findPath(front(0), outerFront, CAPACITY)).not.toBeNull(); // 床脚前的走道落回地板区
     expect(findPath(front(0), outerFront, TOP.capacity)).not.toBeNull();
+  });
+
+  it('四侧的边界余量都走得到（左/上那条在负坐标一侧）', () => {
+    const wall = wallRegionOf(0);
+    const level = HALL_LEVELS[0] as HallLevel;
+    const from = front(0);
+    const probes = [
+      { x: wall.x, y: from.y }, // 左侧墙边
+      { x: wall.x + AISLE / 2, y: BED_H / 2 }, // 左余量里、紧贴着最左列床的那一段
+      { x: AISLE / 2, y: wall.y }, // 上侧墙边
+      { x: level.width + 100, y: from.y }, // 右侧余量
+      { x: from.x, y: level.height + BED_H + AISLE / 2 }, // 下侧余量
+    ];
+    for (const point of probes) {
+      expect(isWalkable(point.x, point.y, CAPACITY), `(${point.x}, ${point.y}) 不可走`).toBe(true);
+      expect(findPath(from, point, CAPACITY), `床 0 → (${point.x}, ${point.y}) 走不到`).not.toBeNull();
+    }
   });
 
   it('任意两张床的前方走道都互相可达（逐档抽样，含最高档）', () => {
