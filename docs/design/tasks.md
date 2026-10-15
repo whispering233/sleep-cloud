@@ -10,25 +10,6 @@
 
 ---
 
-## [ ] 卡 2：共享布局层 `src/shared/layout.ts`
-
-**目标**：几何从「手写场景 JSON」改成**与床位数无关的纯函数**（`config.md` §7 的契约与四条不变量）。
-
-**改动范围**
-
-- 新增 `src/shared/layout.ts`：级表（`config.md` §2 的 15 档）、`W(C)` / `H(R)` 公式、`cellOf(bedNo)`（**建成顺序编号**：第 1 级整片行优先，此后每级只给新增外圈按行优先编号）、`positionOf`、`bedNoAt`、`isWalkable`（街网）、`regionOf`、`bedCountOf`、`levelOf`
-- 新增布局版本号常量（`LAYOUT_VERSION`，`config.md` §1）
-- **本卡只新增、不删任何文件**：旧的场景数据两端都还在用；删除随「两端同时切换」的卡 3 一起做——这样卡 2 合入后应用仍是可跑的
-
-**验收**
-
-- 单测逐条覆盖四条不变量：① `bedNo` 位置与 `bedCount` 无关；② 任意级内 `bedNo < capacity` 的位置在更高一级完全相同；③ 街网连通（任两张床的前方走道互相可达）；④ 编号连续、降级砍掉的正是最大那些编号
-- 级表逐档校验：容量、`W×H`、`y:x` 落在 0.604 ~ 0.643
-
-**依赖**：无代码依赖，但**必须排在卡 1 之后合入**——卡 1 仍在读旧的场景 JSON，而本卡会把它删掉（卡 1 与卡 2 并行开发可以，合入顺序必须是卡 1 → 卡 2）
-
----
-
 ## [ ] 卡 3：厅服务切布局 + 床位模型
 
 **目标**：房间服务改用布局函数，床位改为「惰性行 + 级表伸缩」，并把睡痕/归属的过期改成读取时推导。
@@ -40,6 +21,7 @@
 - `src/hall/hall.ts`：出生点（编号最小的无主空床前方走道）、升级（入场前判定 `owned_count >= bed_count` 且未触顶 → 写 `meta` + 广播 `resize`）、降级（每日唤醒评估：最外圈全无主无占用）、每日唤醒只做「归属释放 + 缩级评估」（**删掉睡痕清理任务与厅时区换算**）
 - `src/worker/`：删 `/api/halls` 与 `/api/hall`（单厅）；会话删 `hallId` / `timezone`；`/api/me` 加布局版本
 - `src/shared/`：`protocol.ts` 的 `capacity → bedCount`、`ownedBeds` 改**位图**编码、加 `resize` 消息与 `traceUntil` 字段、删 `Facing`；`hall-registry.ts` 收敛为单厅常量；`http-api.ts` 删厅列表与 `HallsView`；`constants.ts` 按 `config.md` §3/§4/§5 更新（`TRACE_TTL_MS`、`DAILY_WAKE_UTC_HOUR`、`WALK_SPEED_PX_PER_S`、几何常量、`POOL_SIZE`；删 `SLEEP_TRACE_CLEAR_HOUR`、`SCENE_BED_COUNT`）
+- **`bedNoAt` / `isWalkable` 的每个调用点都要显式传 `bedCount`**：不传 = 按最高档判定（fail-open，墙会静默消失），只给校验用
 - **删除旧场景数据**：`public/scenes/*.json`、`src/shared/scene.ts`、`src/hall/scene.ts`、`src/client/world/scene-index.ts` 及其测试（两端已切到 `layout.ts`；卡 2 只新增了 `layout.ts`，没删任何东西），同时把客户端世界层的格/像素换算改成直接吃 `layout.ts`
 
 **验收**
