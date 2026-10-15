@@ -3,11 +3,6 @@
 > 规则：按端到端垂直切片；一张卡必须能独立提交、独立验证、独立回滚。**完成后从本文件删除**（它不是历史记录）。
 > 依据：`00-master-design.md`、`architecture.md`、`10-hall-runtime.md`、`config.md`、`build.md`、`../db/schema.md`、`../api/`、`../ui/DESIGN.md`、`../../AGENTS.md`（硬纪律）。
 
-- [ ] 卡 2：街网定义搬进 `layout.ts`（纯重构，数值零变化）
-  - **为什么**：今天「街网长什么样」写了两遍——`layout.ts`（`isWalkable`、`CORRIDOR_BLOCK` / `CORRIDOR_START`）与 `pathfinding.ts`（`nodeX` / `nodeY` / `bandOf` / `blockOf` / `bandCount` / `blockCount`）。不先合并，卡 3 就得同时改几何与寻路，回滚粒度变粗。
-  - **改**：把「街列 / 街行的位置与计数、节点坐标、某个点落在哪条街列 / 街行」这一组函数搬进 `src/shared/layout.ts` 并导出；`src/hall/pathfinding.ts` 只留搜索算法与图组装，几何一律向 `layout` 要。**数值与行为零变化**（`CORRIDOR_BLOCK` / `CORRIDOR_START` 的对外值也不变）。
-  - **验收**：`npm test` + `npm run typecheck` 全绿，且 `src/hall/tests/pathfinding.test.ts` **一个字符都不改**（这是「纯重构」的证据）；`layout.ts` 的改动只增导出、不改既有函数的语义。
-
 - [ ] 卡 3：新几何（1 间 1 床 + 交错 + 对称墙带）与级表重推（几何收口卡）
   - **先文档后代码**：本卡同批更新 `config.md` §2/§4/§7、`00-master-design.md` §3/§6/§7、`10-hall-runtime.md` §5.1/§8/§9、`db/schema.md`、`../ui/DESIGN.md`（响应式基线里的同屏床数、世界相机、组件与令牌）。
   - **数值（已与用户逐条确认）**：`BED_W/BED_H/AISLE = 61/100/56` 不变；新增 `RESERVE_W = 56`（预留装饰位，全高一条）；格 `CELL_W = 173 = AISLE + BED_W + RESERVE_W`、`CELL_H = 156 = BED_H + AISLE`；床在房内按**行奇偶左右错位**（偶行靠走道侧、奇行靠另一侧，错位量 = 56）；`WALL_WIDTH = 3`、`WALL_BODY = 20`。

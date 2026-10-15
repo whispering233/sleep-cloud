@@ -92,6 +92,52 @@ export const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
 /** 一格块内床位区的宽度（超过它就是竖走道）。 */
 export const CORRIDOR_START = CORRIDOR_EVERY * PITCH_X;
 
+/**
+ * 街网：横走道带（**街行**，每行的床脚前）× 竖走道带（**街列**，每 `CORRIDOR_EVERY` 床一条），
+ * 加上**贴墙那一圈余量**（左 = 又一街列、上 = 又一街行）。
+ *
+ * 街行与街列的编号都从 `STREET_BELT` 起。寻路只按这套编号拼图，几何一律从下面几个函数要
+ * （`docs/design/config.md` §7）。
+ */
+
+/** 街网里「贴墙那一圈余量」的编号：街列 = 左余量、街行 = 上余量（与 `wallRegionOf` 同一条）。 */
+export const STREET_BELT = -1;
+
+/** 街行 × 街列 → 街网节点的世界坐标（走道中心；`STREET_BELT` 那一条取墙内半条走道）。 */
+export function streetPointAt(band: number, block: number): Point {
+  const x = block === STREET_BELT ? -AISLE / 2 : block * CORRIDOR_BLOCK + CORRIDOR_START + AISLE / 2;
+  const y = band === STREET_BELT ? -AISLE / 2 : band * PITCH_Y + BED_H + AISLE / 2;
+  return { x, y };
+}
+
+/** `y` 落在哪一条街行（横走道带）里；落在床的占用行里（`y % 156 ∈ [0, 100)`）返回空。 */
+export function streetBandAt(y: number): number | undefined {
+  if (y < 0) return STREET_BELT;
+  if (y % PITCH_Y < BED_H) return undefined;
+  return Math.floor(y / PITCH_Y);
+}
+
+/** `x` 落在哪一条街列（竖走道）里；不在走道里（`x % 316 < 260`，即床与床间距那一档）返回空。 */
+export function streetBlockAt(x: number): number | undefined {
+  if (x < 0) return STREET_BELT;
+  if (x % CORRIDOR_BLOCK < CORRIDOR_START) return undefined;
+  return Math.floor(x / CORRIDOR_BLOCK);
+}
+
+/** 地板矩形里有几条街行（**不含**上侧那条余量：街行 `STREET_BELT` 就是它）。 */
+export function streetBandCount(wall: WallRegion): number {
+  let count = 0;
+  while (count * PITCH_Y + BED_H < wall.y + wall.height) count += 1;
+  return count;
+}
+
+/** 地板矩形里有几条街列（**不含**左侧那条余量：街列 `STREET_BELT` 就是它）。 */
+export function streetBlockCount(wall: WallRegion): number {
+  let count = 0;
+  while (count * CORRIDOR_BLOCK + CORRIDOR_START < wall.x + wall.width) count += 1;
+  return count;
+}
+
 /** 级 → 级表下标。越界时夹到两端（超出上限返回最后一档）。 */
 function levelIndex(index: number): number {
   // NaN / Infinity：返回最小那一档（fail-safe）——绝不要让下标变成 NaN 再被断言成 HallLevel
@@ -227,11 +273,8 @@ export function isWalkable(x: number, y: number, bedCount?: number): boolean {
   if (!(x >= region.x) || !(y >= region.y) || x >= region.x + region.width || y >= region.y + region.height) {
     return false;
   }
-  if (x < 0 || y < 0) return true;
-
-  const inRowAisle = y % PITCH_Y >= BED_H;
-  const inColumnAisle = x % CORRIDOR_BLOCK >= CORRIDOR_START;
-  return inRowAisle || inColumnAisle;
+  // 落在某条街行或某条街列里就是街网；`x<0` / `y<0` 那两条贴墙余量整条都算（两个函数都返回 `STREET_BELT`）
+  return streetBandAt(y) !== undefined || streetBlockAt(x) !== undefined;
 }
 
 /**
