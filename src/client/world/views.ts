@@ -3,6 +3,14 @@ import * as Phaser from 'phaser';
 import { ART_SCALE, BED_H, BED_W } from '../../shared/constants';
 import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
+// 气泡几何与提示共用一份（那个模块是 Phaser-free 的，界面层与单测都能拿，见 `../bubble-fit.ts`）
+import {
+  BUBBLE_PAD,
+  BUBBLE_TEXT_PX,
+  CHAT_BUBBLE_MAX_LINES,
+  FONT_FAMILY,
+  LABEL_PX,
+} from '../bubble-fit';
 import tokens from '../styles/tokens.json';
 import { personAlpha, personFrame, truncateToLines } from './rules';
 import type { BedLook } from './rules';
@@ -32,9 +40,6 @@ function color(name: string): number {
   return Number.parseInt(token(name).slice(1), 16);
 }
 
-const FONT_FAMILY = (theme.fontFamily.body as string[])[0];
-/** 床号与名字都是 `caption` 档，且**不随镜头变化**（没有缩放，所以世界像素就是 CSS 像素）。 */
-const LABEL_PX = 12;
 /** 床号离床角的距离（世界像素）。 */
 const NUMBER_INSET = 3;
 /**
@@ -52,17 +57,12 @@ const STAND_NAME_Y = -BED_H * 0.62;
 const STAND_EMOTE_Y = -BED_H * 0.84;
 /** 「自己的小人脚下」那个暖灯标记：原点已经在脚下，所以几乎不需要偏移。 */
 const FOOT_MARKER_Y = 3;
-/** 气泡内边距。 */
-const BUBBLE_PAD = 4;
 /**
- * 聊天气泡的**宽度上限**（世界像素）。
- * 气泡底与尾巴都是程序化绘制（圆角矩形 + 三角），不走素材——上游那张 36×30 的底图
- * 只有 1–2px 竖描边，横向拉伸到文字宽度就糊了（理由见 `docs/ui/DESIGN.md`「气泡不走素材」）。
+ * 气泡的宽度上限与内边距来自 `../bubble-fit`：气泡底与尾巴都是程序化绘制（圆角矩形 + 三角），
+ * 不走素材——上游那张 36×30 的底图只有 1–2px 竖描边，横向拉伸到文字宽度就糊了
+ * （理由见 `docs/ui/DESIGN.md`「气泡不走素材」）。
+ * 气泡底圆角半径与尾巴（朝下的小三角）的宽高，世界像素。
  */
-const CHAT_BUBBLE_MAX_PX = 200;
-/** 气泡里最多两行，超出截断加 `…`（见 `fitBubbleText`）。 */
-const CHAT_BUBBLE_MAX_LINES = 2;
-/** 气泡底圆角半径与尾巴（朝下的小三角）的宽高，世界像素。 */
 const BUBBLE_RADIUS = 4;
 const TAIL_W = 9;
 const TAIL_H = 6;
@@ -271,7 +271,7 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     .setVisible(false);
   const bubbleText = scene.add.text(0, 0, '', CHAT_TEXT_STYLE).setOrigin(0.5, 0.5).setVisible(false);
   // 换行宽度要自己给：不给就是一个字都不折（Phaser 的换行是 opt-in）
-  bubbleText.setWordWrapWidth(CHAT_BUBBLE_MAX_PX - BUBBLE_PAD * 2, true);
+  bubbleText.setWordWrapWidth(BUBBLE_TEXT_PX, true);
   const bubbleName = scene.add
     .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: MUTED_CSS })
     .setOrigin(0.5, 1)
@@ -385,7 +385,8 @@ export function setPersonChat(view: PersonView, input: ChatBubbleInput | undefin
 }
 
 /**
- * 最多两行、超出截断加 `…`。
+ * 最多两行、超出截断加 `…`。**提示用估算、绘制用实测**（分工见 `../bubble-fit.ts`）：
+ * 这里量的是文字对象的真实换行，那才是气泡里真正画出多少。
  * 行数只能问文字对象本身（Phaser 的 `maxLines` 不给省略号，理由与算法见 `rules.truncateToLines`）：
  * 量行器把候选文字写进气泡文字再数它的换行。
  */

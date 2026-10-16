@@ -117,6 +117,15 @@
     gap: var(--spacing-sm);
   }
 
+  /* 输入行上方的弱提示：草稿放不进气泡时出现（估算见 `src/client/bubble-fit.ts`，不抢眼） */
+  .chat-hint {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    letter-spacing: var(--tracking-caption);
+  }
+
   /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉） */
   .whisper-target {
     display: flex;

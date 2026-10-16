@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import type { PersonState } from '../../shared/protocol';
+import { CHAT_MAX_LEN } from '../../shared/constants';
+import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_LABELS, EMOTE_LIST } from '../emotes';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
@@ -45,6 +47,7 @@ export function ChatPanel() {
   }, []);
 
   const { selectedId, targetName, meState } = view;
+  const hint = bubbleHintOf(draft);
 
   return (
     <section className="chat-panel" aria-label="聊天">
@@ -95,6 +98,9 @@ export function ChatPanel() {
         </div>
       )}
 
+      {/* 输入行上方的弱提示：草稿放不进气泡两行时提前说一声（估算，宁可保守；不拦发送） */}
+      {hint !== undefined && <p className="chat-hint">{hint}</p>}
+
       <form
         className="chat-composer"
         onSubmit={(event) => {
@@ -110,6 +116,8 @@ export function ChatPanel() {
           placeholder="说点什么…"
           aria-label="聊天输入框"
           enterKeyHint="send"
+          // 只是免得到服务端才吃 4001，**不是**气泡的显示容量（见 `docs/design/config.md` 的 `CHAT_MAX_LEN`）
+          maxLength={CHAT_MAX_LEN}
           onChange={(event) => setDraft(event.target.value)}
         />
         <PrimaryAction type="submit">发送</PrimaryAction>
