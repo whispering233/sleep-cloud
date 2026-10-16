@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 
-import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE } from '../../shared/constants';
+import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
 import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, wallRegionOf } from '../../shared/layout';
 import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
@@ -23,7 +23,6 @@ import {
 import type { Occupant, PersonSpot, ViewInsets } from './rules';
 import {
   COLORS,
-  LINE_WIDTH,
   SPRITES_KEY,
   createBedView,
   createPersonView,
@@ -82,7 +81,7 @@ const CENTER_BAND = 0.4;
 /** 裁剪缓冲：可视窗口外各留一列/一行，拖拽到边界时边缘不闪。 */
 const CULL_MARGIN_PX = Math.max(CELL_W, CELL_H);
 /** 绘制层次：地板 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
-const DEPTH = { backdrop: -20, floor: -10, bound: -5, bed: 0, person: 100 } as const;
+const DEPTH = { floor: -10, bound: -5, bed: 0, person: 100 } as const;
 
 /** 床号 → 占用者（人）。归属与占用是两个正交维度，这里只处理占用这一侧。 */
 function occupantsOf(state: ClientState): Map<number, Occupant> {
@@ -130,9 +129,6 @@ class WorldScene extends Phaser.Scene {
   /** 地板与墙的矩形（氛围明暗要重画地板、相机夹取也用它） */
   private floorGfx?: Phaser.GameObjects.Graphics;
   private region: Rect = { x: 0, y: 0, width: 0, height: 0 };
-  /** 屏幕空间背景（铺满视口，钉在相机上）：厅外那一圈的颜色也随氛围变 */
-  private backdrop?: Phaser.GameObjects.Graphics;
-  private backdropSize = { width: 0, height: 0 };
   /** 当前地板底色（困倦度的缓动值）：与目标色一致时整段跳过重画 */
   private ambience = COLORS.floor;
   private observer: ResizeObserver | null = null;
@@ -154,6 +150,10 @@ class WorldScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 厅外那块底 = **相机背景色**：它按相机视口在屏幕空间铺满（不受 zoom 与滚屏影响），
+    // 所以不需要 Graphics 去盖那片区域（`setScrollFactor(0)` 的 Graphics 会按相机变换绘制，
+    // 在 DPR ≥ 2 时只能铺到屏幕的一部分，剩下的露出画布清屏色）。
+    this.cameras.main.setBackgroundColor(COLORS.outside);
     this.resizeToHost();
     this.ensurePool();
     this.observer = new ResizeObserver(() => this.resizeToHost());
@@ -194,27 +194,18 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 氛围明暗：全厅困倦度 → 地板底色（`primary` ⇄ `primary-dim`），按时间常数缓动。
-   * **只改地板与画布底色**，床与小人的墨色不动（线稿可读性恒定）；颜色没变就跳过重画。
+   * 氛围明暗：全厅困倦度 → **地板**底色（`primary` ⇄ `primary-dim`），按时间常数缓动；
+   * 床与小人的墨色不动（线稿可读性恒定）；颜色没变就跳过重画。
+   * 厅外那块底是相机背景色（固定 `secondary`），**不跟困倦度缓动**（它不是厅里的地板）。
    */
   private applyAmbience(drowsiness: number, dtMs: number): void {
     const next = approachColor(this.ambience, ambienceColor(COLORS.floor, COLORS.floorDim, drowsiness), dtMs);
-    const view = this.viewRect();
-    const resized = this.backdropSize.width !== view.width || this.backdropSize.height !== view.height;
-    if (next === this.ambience && !resized) return;
+    if (next === this.ambience) return;
     this.ambience = next;
-    this.backdropSize = { width: view.width, height: view.height };
-    // 厅外那一圈（桌面宽屏才看得见）：屏幕空间背景铺满视口，不随相机滑动
-    if (this.backdrop) {
-      this.backdrop.clear();
-      this.backdrop.fillStyle(next, 1);
-      this.backdrop.fillRect(0, 0, view.width, view.height);
-    }
-    if (this.floorGfx) {
-      this.floorGfx.clear();
-      this.floorGfx.fillStyle(next, 1);
-      this.floorGfx.fillRect(this.region.x, this.region.y, this.region.width, this.region.height);
-    }
+    if (!this.floorGfx) return;
+    this.floorGfx.clear();
+    this.floorGfx.fillStyle(next, 1);
+    this.floorGfx.fillRect(this.region.x, this.region.y, this.region.width, this.region.height);
   }
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
@@ -248,14 +239,15 @@ class WorldScene extends Phaser.Scene {
 
     const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
     this.region = region;
-    this.backdrop = this.add.graphics().setScrollFactor(0).setDepth(DEPTH.backdrop);
     const floor = this.add.graphics().setDepth(DEPTH.floor);
     this.floorGfx = floor;
     floor.fillStyle(this.ambience, 1);
     floor.fillRect(region.x, region.y, region.width, region.height);
     const bound = this.add.graphics().setDepth(DEPTH.bound);
-    bound.lineStyle(LINE_WIDTH, COLORS.line, 1);
-    bound.strokeRect(region.x + 0.5, region.y + 0.5, region.width - 1, region.height - 1);
+    // 墙是墙带、画在墙矩形**之外**（不侵入地板）：描边路径外扩半个墙宽，带就跨 [x0−W, x0]
+    const half = WALL_WIDTH / 2;
+    bound.lineStyle(WALL_WIDTH, COLORS.line, 1);
+    bound.strokeRect(region.x - half, region.y - half, region.width + WALL_WIDTH, region.height + WALL_WIDTH);
     this.scenery.push(floor, bound);
 
     this.applyCameraBounds();
@@ -457,12 +449,22 @@ class WorldScene extends Phaser.Scene {
   /**
    * 夹取：不越出厅的矩形；可见区比厅大时（宽档 / 横屏）把边界扩成视野大小，让厅居中。
    * **垂直按「可用视口」夹**：这样地板区的最下边缘能滚到聊天面板之上。
+   *
+   * 夹取范围按**厅含墙的外沿**算（`wallRegionOf` 四边各外扩一个 `WALL_WIDTH`）：墙带画在墙矩形
+   * 之外，按墙矩形夹的话贴边时那 3px 正好整条落在屏幕外（走到边缘看不见墙）。外扩正好一个墙厚，
+   * 于是贴边时墙带占住屏幕最外圈，而厅外 0px 进画面（墙属于厅）。
    */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
     const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
+    const outer = {
+      x: region.x - WALL_WIDTH,
+      y: region.y - WALL_WIDTH,
+      width: region.width + 2 * WALL_WIDTH,
+      height: region.height + 2 * WALL_WIDTH,
+    };
     const view = this.viewRect();
-    const bounds = cameraBounds(region, view, usableView(view, this.measureInsets()));
+    const bounds = cameraBounds(outer, view, usableView(view, this.measureInsets()));
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
   }
 
@@ -624,7 +626,7 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: host,
-    backgroundColor: COLORS.floor,
+    backgroundColor: COLORS.outside,
     // DPR 上限 2：画布像素 = CSS 像素 × DPR，`zoom` 再把 CSS 尺寸抵消回去（见 `resizeToHost`）
     scale: {
       mode: Phaser.Scale.NONE,

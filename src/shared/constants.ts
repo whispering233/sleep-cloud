@@ -56,8 +56,13 @@ export const CELL_W = AISLE + BED_W + RESERVE_W;
 /** 格高 = `BED_H + AISLE`：床 + 床脚前那条横走道（同时是行距）。 */
 export const CELL_H = BED_H + AISLE;
 
-/** 可走区从墙矩形四边**再向内缩**这么多：小人不压在墙上（贴墙走道有效宽 36px，仍容得下一个人）。 */
-export const WALL_BODY = 20;
+/**
+ * 可走区从墙矩形四边**再向内缩**这么多：小人（`girl_stand` 站立贴图墨迹 97 × 0.5 = 48.5 宽，半宽 24.25）
+ * 不压在墙上，留 1.75 余量；贴墙走道有效宽 = `AISLE` 56 − 26 = 30，仍容得下一个人。
+ * 取 26 而不是 28：贴墙那条街列的节点在 `x = −28`，而可走左界 = 墙矩形左沿 + `WALL_BODY` ——
+ * 28 会让节点正好贴在边界上（零余量）。
+ */
+export const WALL_BODY = 26;
 
 /** 墙带厚度（世界像素），画在墙矩形**之外**。 */
 export const WALL_WIDTH = 3;

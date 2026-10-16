@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AISLE, BED_H, BED_W, CELL_H } from '../../shared/constants';
+import { AISLE, BED_H, BED_W, CELL_H, WALL_BODY } from '../../shared/constants';
 import {
   HALL_LEVELS,
   frontPointOf,
@@ -172,9 +172,9 @@ describe('街网寻路', () => {
     const level = HALL_LEVELS[0] as HallLevel;
     const from = front(0);
     const probes = [
-      { x: wall.x + 22, y: from.y }, // 左侧贴墙走道
+      { x: wall.x + WALL_BODY + 2, y: from.y }, // 左侧贴墙走道
       { x: -AISLE / 2, y: BED_H / 2 }, // 左余量里、紧贴着最左列床的那一段
-      { x: AISLE / 2, y: wall.y + 22 }, // 上侧贴墙走道
+      { x: AISLE / 2, y: wall.y + WALL_BODY + 2 }, // 上侧贴墙走道
       { x: level.width + AISLE / 2, y: from.y }, // 右侧贴墙走道
       { x: from.x, y: level.height + AISLE / 2 }, // 下侧贴墙走道
     ];

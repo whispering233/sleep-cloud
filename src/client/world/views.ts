@@ -34,8 +34,6 @@ function color(name: string): number {
 const FONT_FAMILY = (theme.fontFamily.body as string[])[0];
 /** 床号与名字都是 `caption` 档，且**不随镜头变化**（没有缩放，所以世界像素就是 CSS 像素）。 */
 const LABEL_PX = 12;
-/** 线稿等宽：厅的外沿与素材自带的线宽一致（见 `docs/ui/DESIGN.md` Shapes）。 */
-export const LINE_WIDTH = 1.5;
 /** 床号离床角的距离（世界像素）。 */
 const NUMBER_INSET = 3;
 /**
@@ -72,6 +70,8 @@ export const COLORS = {
   floor: color('primary'),
   /** 氛围最暗档（全厅都睡下时）：只用于地板底色，不参与任何语义（见 ui/DESIGN.md「明暗的边界」） */
   floorDim: color('primary-dim'),
+  /** 厅外那块底（屏空间）：与界面同底，**不跟困倦度缓动**（它不是厅里的地板，见 ui/DESIGN.md 颜色） */
+  outside: color('secondary'),
   line: color('line'),
   marker: color('tertiary'),
 } as const;
