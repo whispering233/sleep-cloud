@@ -193,7 +193,7 @@ export class Hall extends DurableObject<Env> {
         // 宽限记录用掉了（或压根没在宽限里）；在床上的人重新排上「自动睡着」
         this.due.remove('grace', ready.userId);
         this.armAutoSleep(ready);
-        ws.send(JSON.stringify(await this.snapshotFor(ws, ready)));
+        this.send(ws, JSON.stringify(await this.snapshotFor(ws, ready)));
         // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）。
         // 此刻新连接已经 ready，所以人数算上他自己
         this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready), online: this.onlineCount() });
@@ -293,13 +293,13 @@ export class Hall extends DurableObject<Env> {
 
   /** 标记某种拒绝：回错误码再断开（`2003` / `2004` / `2002` —— 客户端应刷新页面）。 */
   private reject(ws: WebSocket, code: ErrorCode): void {
-    ws.send(JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
+    this.send(ws, JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
     ws.close(1000, code);
   }
 
   /** 静默类错误：只回错误码，不断开，也不提示（客户端点了墙面属于正常误触）。 */
   private sendError(ws: WebSocket, code: ErrorCode): void {
-    ws.send(JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
+    this.send(ws, JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
   }
 
   /** 上行只表达意图；每条意图都会刷新「最后输入时刻」（自动睡着由它推导）。 */
@@ -393,8 +393,8 @@ export class Hall extends DurableObject<Env> {
           text: verdict.text,
           ts: Date.now(),
         } satisfies WhisperMessage);
-        ws.send(payload);
-        if (target !== ws) target.send(payload);
+        this.send(ws, payload);
+        if (target !== ws) this.send(target, payload);
         return;
       }
       case 'emote': {
@@ -725,11 +725,26 @@ export class Hall extends DurableObject<Env> {
     this.broadcast({ t: 'pos', ts, items });
   }
 
+  /**
+   * 所有出站消息的唯一出口：连接已经关掉就丢掉这一条。
+   *
+   * 附加数据里的 `ready` **不足以**说明 socket 还能发：平台摘掉连接之前 `readyState` 就已经是 CLOSED，
+   * 这时 `send()` 会抛。任其冒出就是「一个死连接打断整次广播」——排在他后面的连接一条都收不到。
+   */
+  private send(ws: WebSocket, payload: string): void {
+    if (ws.readyState !== 1 /* OPEN */) return;
+    try {
+      ws.send(payload);
+    } catch {
+      // 刚好在检查与发送之间关掉：忽略。广播的语义是「能发的照发」，不是「发不出去就整条失败」。
+    }
+  }
+
   /** 出站消息不计费，但要克制：只在有人真的移动时才发，且一批一条。 */
   private broadcast(message: DownstreamMessage): void {
     const payload = JSON.stringify(message);
     for (const ws of this.ctx.getWebSockets()) {
-      if (readConnection(ws)?.ready) ws.send(payload);
+      if (readConnection(ws)?.ready) this.send(ws, payload);
     }
   }
 
@@ -738,7 +753,7 @@ export class Hall extends DurableObject<Env> {
     const payload = JSON.stringify(message);
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === except) continue;
-      if (readConnection(ws)?.ready) ws.send(payload);
+      if (readConnection(ws)?.ready) this.send(ws, payload);
     }
   }
 
