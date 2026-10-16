@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 
 import { ART_SCALE, BED_H, BED_W } from '../../shared/constants';
-import { displayBedNoOf } from '../../shared/layout';
+import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import tokens from '../styles/tokens.json';
 import { personAlpha, personFrame } from './rules';
@@ -75,6 +75,10 @@ export const COLORS = {
   outside: color('secondary'),
   line: color('line'),
   marker: color('tertiary'),
+  /** 房间地面：`room`/`rug` 与床板一样是**材料**，固定色，不参与困倦度缓动（见 ui/DESIGN.md「地面梯次」） */
+  room: color('room'),
+  /** 预留位（每间房留给装饰物的那块空地）暂时按地毯画 */
+  rug: color('rug'),
 } as const;
 
 const INK = color('neutral');
@@ -102,6 +106,9 @@ export interface BedPlacement {
 
 export interface BedView {
   readonly container: Phaser.GameObjects.Container;
+  /** 房间地面与预留位两块固定色贴片：容器里最前面的两个子对象（压在床贴图之下） */
+  readonly room: Phaser.GameObjects.Rectangle;
+  readonly rug: Phaser.GameObjects.Rectangle;
   readonly sprite: Phaser.GameObjects.Image;
   readonly eyes: Phaser.GameObjects.Graphics;
   readonly number: Phaser.GameObjects.Text;
@@ -117,6 +124,9 @@ export interface BedView {
 }
 
 export function createBedView(scene: Phaser.Scene): BedView {
+  // 尺寸留 0：真实的矩形与相对偏移在 `placeBed` 里按床号现算（池会被复用到别的床号与另一奇偶行）
+  const room = scene.add.rectangle(0, 0, 0, 0, COLORS.room).setOrigin(0, 0);
+  const rug = scene.add.rectangle(0, 0, 0, 0, COLORS.rug).setOrigin(0, 0);
   const sprite = scene.add.image(0, 0, SPRITES_KEY, 'bed_empty_hollow').setScale(ART_SCALE);
   const eyes = scene.add.graphics().setVisible(false);
   const marker = scene.add.graphics();
@@ -130,8 +140,8 @@ export function createBedView(scene: Phaser.Scene): BedView {
       color: MUTED_CSS,
     })
     .setOrigin(0, 1);
-  const container = scene.add.container(0, 0, [sprite, eyes, marker, number]).setVisible(false);
-  return { container, sprite, eyes, number, marker, bedNo: -1, frame: '', eyesOn: false, mine: false };
+  const container = scene.add.container(0, 0, [room, rug, sprite, eyes, marker, number]).setVisible(false);
+  return { container, room, rug, sprite, eyes, number, marker, bedNo: -1, frame: '', eyesOn: false, mine: false };
 }
 
 /** 把池里的一个视图绑到某张床：位置、床号、贴图（贴图与两个点按各自的变化守卫，逐帧调用不做多余的事）。 */
@@ -140,6 +150,13 @@ export function placeBed(view: BedView, bed: BedPlacement, look: BedLook, mine: 
   if (view.bedNo !== bed.bedNo) {
     view.bedNo = bed.bedNo;
     view.number.setText(String(displayBedNoOf(bed.bedNo)));
+    // 位置与错位一律向 layout 要：矩形是绝对坐标，容器的坐标就是 `positionOf(bedNo)`，相减得相对偏移
+    const room = roomOf(bed.bedNo);
+    const reserve = reserveOf(bed.bedNo);
+    if (room && reserve) {
+      view.room.setPosition(room.x - bed.x, room.y - bed.y).setSize(room.width, room.height);
+      view.rug.setPosition(reserve.x - bed.x, reserve.y - bed.y).setSize(reserve.width, reserve.height);
+    }
   }
   if (view.frame !== look.frame) {
     view.frame = look.frame;
