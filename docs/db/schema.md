@@ -22,7 +22,7 @@
 | `owner_user_id` | 否 | TEXT | 用户标识 | 归属。为空表示该床尚未被人认领（或认领已被释放）；**唯一索引，一个用户只能有一张床** |
 | `owner_name` | 否 | TEXT | 1~16 字符 | **最近一次上床时使用的昵称快照**，不是「同步于会话的昵称」。唯一消费者：生成快照时给**睡痕条目**提供名字 |
 | `owner_appearance` | 否 | TEXT | 枚举值 | 小人外观（第一版为固定几种） |
-| `claimed_at` | 否 | INTEGER | epoch 毫秒 | 认领时刻 |
+| `claimed_at` | 否 | INTEGER | epoch 毫秒 | 认领时刻。**两个用途**：①换床冷却的判据（`now − claimed_at < 10_000` 且目标是另一张床 → `3008`；**读取时推导**，不挂定时器，见 `../design/config.md` §2）；②「这张床归我多久了」这类展示的口子 |
 | `last_seen_at` | 否 | INTEGER | epoch 毫秒 | 最后一次出现的时刻。**连接建立与断开时各写一次**。两个用途：归属过期判定，以及**宽限 / 睡痕推导** |
 | `sleep_started_at` | 否 | INTEGER | epoch 毫秒 | 本次睡眠（躺下）的起始时刻。为空表示当前未在床上 |
 | `updated_at` | 是 | INTEGER | epoch 毫秒 | 最后一次状态变更时刻。**睡痕行上写的是宽限到期的时刻**（`last_seen_at + 宽限期`），睡痕过期由它加 `TRACE_TTL_MS` 推导 |
