@@ -15,7 +15,8 @@
 | 产品形态、空间模型、状态机、范围边界 | `docs/design/00-master-design.md` |
 | 技术栈、分包、布局纯函数、平台配额 | `docs/design/architecture.md` |
 | 运行时：唤醒恢复、三种时间机制、广播、睡痕、每日唤醒、级表升降级、出生点 | `docs/design/10-hall-runtime.md` |
-| 级表、时间与几何常量、布局契约、密钥、限制 | `docs/design/config.md` |
+| 厅的空间模型、床位与格子规格、级表与厅的边界、布局契约 | `docs/design/20-layout.md` |
+| 时间常量、限制、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、额度监控 | `docs/design/build.md` |
 | 数据模型 | `docs/db/schema.md` |
 | 接口、协议、错误码 | `docs/api/` |

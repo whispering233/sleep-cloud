@@ -67,7 +67,8 @@
 | [`docs/design/00-master-design.md`](docs/design/00-master-design.md) | 总体设计：核心循环、空间模型、状态机、时间与光照、交互、视觉、范围 |
 | [`docs/design/architecture.md`](docs/design/architecture.md) | 架构：技术栈、分包、布局纯函数、数据流、平台配额、安全边界 |
 | [`docs/design/10-hall-runtime.md`](docs/design/10-hall-runtime.md) | 大厅运行时：唤醒与恢复、三种时间机制、广播、宽限与睡痕、每日唤醒、级表升降级、出生点 |
-| [`docs/design/config.md`](docs/design/config.md) | 配置：级表、时间与几何常量、布局契约、密钥、限制 |
+| [`docs/design/20-layout.md`](docs/design/20-layout.md) | 布局：厅的空间模型、床位与格子规格、级表与厅的边界、布局契约与不变量 |
+| [`docs/design/config.md`](docs/design/config.md) | 配置：时间常量、限制、密钥、内容过滤数据、前端可见配置 |
 | [`docs/design/build.md`](docs/design/build.md) | 运行、构建、部署、额度监控 |
 | [`docs/db/schema.md`](docs/db/schema.md) | 数据模型 |
 | [`docs/api/`](docs/api/00-api-index.md) | HTTP 接口、WebSocket 协议、错误码 |

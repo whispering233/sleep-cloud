@@ -26,7 +26,7 @@
 | 起后端 + 房间服务 + SQLite | 平台的本地运行命令（`wrangler dev`）。本地即可获得完整的对象、SQLite 与 WebSocket 能力 |
 | 起前端 | 前端开发服务器（`vite`），把 API 与 WebSocket 请求代理到本地运行的后端 |
 | 双浏览器验证多人 | 同一台机器开两个浏览器配置文件（cookie 隔离），或一个正常窗口 + 一个隐私窗口 |
-| 制造边界场景 | 本地把厅容量调小（改 `meta.bed_count`，档位见 `config.md` §2 的级表），便于触发「厅满」「床位被占」 |
+| 制造边界场景 | 本地把厅容量调小（改 `meta.bed_count`，档位见 `20-layout.md` §3.1 的级表），便于触发「厅满」「床位被占」 |
 | **干净库**（出生点 / 认领 / 床号这类要看空厅的验收） | 先删掉 `.wrangler/state/v3/do/` 下的本地对象存储再起 `npm run dev`。**不删的后果**（实测）：本地库里有上次验收留下的未过期归属（`bed_no=0` 被上一次会话占着）→ 出生点直接跳到 1 号床、「躺上第一张床」这类用例做不成；另外还会重放旧厅标识留下的持久唤醒（日志里那几条「不认识的厅标识」） |
 
 **验证要点（人工）**：两个浏览器里的小人能否互相看见、走动是否平滑、躺下后另一侧是否立即看到、断网 60 秒后是否变成睡痕、重连是否回到原状态。
@@ -38,7 +38,7 @@
 | 美术素材 | `npm run art` 从 `tools/art/masters/` 的 5 张母图重新生成 `public/sprites/`（图集 + 许可）。**产物入库，不挂进 `npm run build`**（构建保持快且确定）；改素材或改映射规则后要重跑 |
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管 |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
-| 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/config.md` §7）。`public/` 只放素材 |
+| 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/20-layout.md` §4）。`public/` 只放素材 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。Phaser + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。
