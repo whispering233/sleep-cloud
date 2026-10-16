@@ -22,7 +22,7 @@ export const ERROR_MESSAGES = {
   '3004': 'already in bed',
   '3005': 'not in bed',
   '3006': 'target not walkable',
-  '3007': 'already own a bed',
+  '3008': 'bed switch cooling down',
   '4001': 'message too long',
   '4002': 'rate limited',
   '4003': 'empty message',

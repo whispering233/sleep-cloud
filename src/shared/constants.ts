@@ -33,6 +33,12 @@ export const DAILY_WAKE_UTC_HOUR = 20;
 export const BED_OWNERSHIP_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
+ * 换床冷却：距**上次认领（含换床）**不足这么久、又要认领另一张无主床 → `3008`。
+ * 从 `bed.claimed_at` 读取时推导（**不挂定时器**）；躺回自己那张床不受它影响。
+ */
+export const BED_SWITCH_COOLDOWN_MS = 10_000;
+
+/**
  * 升级阈值：**已用率 ≥ 75%** 且未触顶就长一档（见 `docs/design/10-hall-runtime.md` §8）。
  * 像 `ArrayList` 一样提前扩容，厅永远留有余量。
  */

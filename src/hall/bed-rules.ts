@@ -1,3 +1,4 @@
+import { BED_SWITCH_COOLDOWN_MS } from '../shared/constants';
 import type { ErrorCode } from '../shared/error-code';
 import type { BedRow } from './bed-store';
 
@@ -8,14 +9,16 @@ import type { BedRow } from './bed-store';
  * 2. 自己不在床上（`3004`）
  * 3. 床未被占用（`3002`——**未过期的**睡痕才算占用）
  * 4. 床属于自己或尚未被认领（`3003`——**未过期的**归属才算有主）
- * 5. 可认领的床，且我还没有床（`3007`——一人一床，不能换床）
+ * 5. 距上次认领不足 10 秒且目标是另一张无主床（`3008`——**换床冷却**，一人一床仍靠唯一索引兜底）
  *
  * 两点容易写反：
  * - **没有行 = 无主空床**（惰性行，见 `docs/db/schema.md` §2）：`bed === undefined` 不是「床号不存在」，
  *   床号是否存在只看 `bedCount`；`3001` 只由越界造成。
  * - 「过期」两个前缀由调用方在取行时按时间戳推导（`bed-store.effectiveBed`），所以这里只看制度事实。
  */
-export type LieVerdict = { ok: true; claiming: boolean } | { ok: false; code: ErrorCode };
+export type LieVerdict =
+  | { ok: true; claiming: boolean; /** 换床时要释放的旧床号（广播 `owned:false` 用） */ releasingBedNo?: number }
+  | { ok: false; code: ErrorCode };
 
 export function checkLie(input: {
   bedNo: number;
@@ -24,8 +27,9 @@ export function checkLie(input: {
   inBed: boolean;
   userId: string;
   bed?: BedRow;
-  /** 我当前拥有的、**归属未过期**的床号（由调用方走唯一索引查库给出） */
-  ownedBedNo?: number;
+  /** 我当前拥有的、**归属未过期**的那张床（由调用方走唯一索引查库给出） */
+  owned?: { bedNo: number; claimedAt: number | null };
+  now: number;
 }): LieVerdict {
   if (!Number.isInteger(input.bedNo) || input.bedNo < 0 || input.bedNo >= input.bedCount) {
     return { ok: false, code: '3001' };
@@ -38,10 +42,14 @@ export function checkLie(input: {
   if (bed && bed.ownerUserId !== null && bed.ownerUserId !== input.userId) return { ok: false, code: '3003' };
 
   const claimable = !bed || bed.ownerUserId === null;
-  // 可认领的床 + 我已经有一张床 = 一人一床（能走到这个分支就说明这张床不是我自己那张）
-  if (claimable && input.ownedBedNo !== undefined) return { ok: false, code: '3007' };
+  // 能走到这个分支就说明这张床不是我自己那张（那张不可认领），所以有主 + 可认领 = 换床
+  if (claimable && input.owned !== undefined) {
+    // `claimed_at` 为空是历史行：视为无冷却，不能用旧数据卡住人
+    const { claimedAt } = input.owned;
+    if (claimedAt !== null && input.now - claimedAt < BED_SWITCH_COOLDOWN_MS) return { ok: false, code: '3008' };
+  }
 
-  return { ok: true, claiming: claimable };
+  return claimable ? { ok: true, claiming: true, releasingBedNo: input.owned?.bedNo } : { ok: true, claiming: false };
 }
 
 /** 已经在自己床上时，客户端仍可能重复点同一张床：那是 `3002`（床被自己占着）还是 `3004`（已在床上）？ */

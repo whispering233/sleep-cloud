@@ -271,9 +271,9 @@ export class Hall extends DurableObject<Env> {
     }
 
     // 步 0：已有归属的人直接落在自己床边（不占床、不碰睡痕、不写床位行——只是站位）
-    const ownedBedNo = findOwnedBed(this.ctx.storage.sql, connection.userId, now);
-    if (ownedBedNo !== undefined) {
-      const home = frontPointOf(ownedBedNo) ?? { x: connection.x, y: connection.y };
+    const owned = findOwnedBed(this.ctx.storage.sql, connection.userId, now);
+    if (owned !== undefined) {
+      const home = frontPointOf(owned.bedNo) ?? { x: connection.x, y: connection.y };
       return { ...connection, x: home.x, y: home.y, state: 'roaming', bedNo: undefined, lastInputAt: now };
     }
 
@@ -347,8 +347,8 @@ export class Hall extends DurableObject<Env> {
         return;
       }
       case 'goHome': {
-        const ownedBedNo = findOwnedBed(this.ctx.storage.sql, fresh.userId, now);
-        const spot = ownedBedNo === undefined ? undefined : frontPointOf(ownedBedNo);
+        const owned = findOwnedBed(this.ctx.storage.sql, fresh.userId, now);
+        const spot = owned === undefined ? undefined : frontPointOf(owned.bedNo);
         // 无归属（HUD 那条本来就不显示）、或床号没有几何：静默忽略，不回错误码、不广播
         if (!spot) return;
         // 在床上先起身（保留归属，同「点地面」那条）；不在床上则原样返回
@@ -367,7 +367,8 @@ export class Hall extends DurableObject<Env> {
           inBed: fresh.state !== 'roaming',
           userId: fresh.userId,
           bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo, now) : undefined,
-          ownedBedNo: findOwnedBed(this.ctx.storage.sql, fresh.userId, now),
+          owned: findOwnedBed(this.ctx.storage.sql, fresh.userId, now),
+          now,
         });
         if (!verdict.ok) {
           this.sendError(ws, verdict.code);
@@ -505,7 +506,9 @@ export class Hall extends DurableObject<Env> {
     this.sendPositions([this.updateOf(connection.userId)]);
   }
 
-  /** 真的躺下：再次校验（走路期间床可能被别人占了），写库，然后**先发归属再发占用**。 */
+  /**
+   * 真的躺下：再次校验（走路期间床可能被别人占了），写库，然后**先释放旧床、再认领新床、最后发占用**。
+   */
   private lieDown(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
     const now = Date.now();
     const verdict = lieVerdictFor({
@@ -514,7 +517,8 @@ export class Hall extends DurableObject<Env> {
       inBed: connection.state !== 'roaming',
       userId: connection.userId,
       bed: readBed(this.ctx.storage.sql, bedNo, now),
-      ownedBedNo: findOwnedBed(this.ctx.storage.sql, connection.userId, now),
+      owned: findOwnedBed(this.ctx.storage.sql, connection.userId, now),
+      now,
     });
     if (!verdict.ok) {
       this.sendError(ws, verdict.code);
@@ -545,7 +549,9 @@ export class Hall extends DurableObject<Env> {
     this.writeConnection(ws, lying);
     this.armAutoSleep(lying);
 
-    // 顺序有讲究：先归属后占用，否则客户端会短暂渲染出「床有人、但不在归属表里」
+    // 顺序有讲究（`api/20-api-ws.md` §4.5）：先释放旧床、再认领新床，否则客户端会瞬时持有两张有主床；
+    // 归属两条都在占用（`state`）之前，否则会短暂渲染出「床有人、但不在归属表里」
+    if (verdict.releasingBedNo !== undefined) this.broadcast({ t: 'bed', bedNo: verdict.releasingBedNo, owned: false });
     if (verdict.claiming) this.broadcast({ t: 'bed', bedNo, owned: true });
     this.broadcastState(lying);
   }
@@ -1090,7 +1096,7 @@ export class Hall extends DurableObject<Env> {
       bedCount: this.bedCount(),
       online,
       me,
-      myOwnedBedNo: findOwnedBed(sql, me.userId, now) ?? null,
+      myOwnedBedNo: findOwnedBed(sql, me.userId, now)?.bedNo ?? null,
       others,
       // 走 state 索引取 trace 行，并在 SQL 里就滤掉已过期的那些（几十行量级，不是全表扫描）
       traceRows: listTraceBeds(sql, now),

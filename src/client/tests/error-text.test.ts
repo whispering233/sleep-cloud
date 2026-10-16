@@ -14,7 +14,7 @@ const docDirections = tableRows(readDoc('api/error-code.md'), '## 2. 错误码�
 
 /**
  * 「进入前请先确认」→ 文案；「静默丢弃」→ `undefined`。
- * 文案方向后面可以跟一段注记（例如 3007 的「（可恢复）」），所以只要求**以「…」开头**。
+ * 文案方向后面可以跟一段注记（例如 3008 的「（可恢复）」），所以只要求**以「…」开头**。
  */
 const quotedText = (direction: string): string | undefined => /^「(.+)」/.exec(direction)?.[1];
 

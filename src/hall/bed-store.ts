@@ -92,14 +92,21 @@ export function readBed(sql: SqlStorage, bedNo: number, now: number): BedRow | u
   return row ? effectiveBed(row, now) : undefined;
 }
 
+/** 我名下的一张床：床号 + 认领时刻（换床冷却由 `claimed_at` 推导）。 */
+export interface OwnedBed {
+  bedNo: number;
+  /** `null` = 历史行没写过这一列，视为无冷却 */
+  claimedAt: number | null;
+}
+
 /**
  * 我当前拥有的床（**有效归属**）。走唯一索引取一行；没有 = 我还没有床。
  * 谓词与 `effectivelyOwned` 逐字对应（含「已过期的睡痕不算我的床」那一条，两处必须一起改）。
  */
-export function findOwnedBed(sql: SqlStorage, userId: string, now: number): number | undefined {
-  return sql
-    .exec<{ bed_no: number }>(
-      `SELECT bed_no FROM bed WHERE owner_user_id = ?
+export function findOwnedBed(sql: SqlStorage, userId: string, now: number): OwnedBed | undefined {
+  const row = sql
+    .exec<{ bed_no: number; claimed_at: number | null }>(
+      `SELECT bed_no, claimed_at FROM bed WHERE owner_user_id = ?
         AND last_seen_at IS NOT NULL AND last_seen_at >= ?
         AND NOT (state = 'trace' AND updated_at + ? <= ?)
        ORDER BY bed_no`,
@@ -108,7 +115,8 @@ export function findOwnedBed(sql: SqlStorage, userId: string, now: number): numb
       TRACE_TTL_MS,
       now,
     )
-    .toArray()[0]?.bed_no;
+    .toArray()[0];
+  return row ? { bedNo: row.bed_no, claimedAt: row.claimed_at } : undefined;
 }
 
 /** 我的床是否正留着**未过期**的睡痕（宽限已过、人已离线）。走唯一索引取一行。 */
@@ -300,8 +308,8 @@ export interface PutInBedInput {
  */
 export function putInBed(sql: SqlStorage, input: PutInBedInput): void {
   if (input.claiming) {
-    // 一人一床靠唯一索引兜底：我名下若还留着**已过期睡痕**的行（这张床已经回到可认领池，所以 3007
-    // 不会拦我），那条行必须先让开，否则这次认领会撞唯一索引。
+    // 一人一床靠唯一索引兜底：我名下若还留着**已过期睡痕**的行（那张床已经回到可认领池，所以它不是我的
+    // 当前床），那条行必须先让开，否则这次认领会撞唯一索引。
     sql.exec(
       `UPDATE bed SET owner_user_id = NULL, owner_name = NULL, owner_appearance = NULL,
         claimed_at = NULL, sleep_started_at = NULL, state = 'empty', updated_at = ?

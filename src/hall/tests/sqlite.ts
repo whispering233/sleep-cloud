@@ -55,6 +55,8 @@ export interface BedFields {
   state: string;
   ownerUserId?: string | null;
   name?: string | null;
+  /** 认领时刻；缺省即 `NULL`（历史行，冷却据此视为无冷却） */
+  claimedAt?: number | null;
   lastSeenAt?: number | null;
   sleepStartedAt?: number | null;
   updatedAt: number;
@@ -64,12 +66,13 @@ export interface BedFields {
 export function insertBed(sql: SqlStorage, bedNo: number, fields: BedFields): void {
   sql.exec(
     `INSERT INTO bed (bed_no, state, owner_user_id, owner_name, owner_appearance,
-      last_seen_at, sleep_started_at, updated_at)
-     VALUES (?, ?, ?, ?, 'boy', ?, ?, ?)`,
+      claimed_at, last_seen_at, sleep_started_at, updated_at)
+     VALUES (?, ?, ?, ?, 'boy', ?, ?, ?, ?)`,
     bedNo,
     fields.state,
     fields.ownerUserId ?? null,
     fields.name ?? (fields.ownerUserId ? '夜猫' : null),
+    fields.claimedAt ?? null,
     fields.lastSeenAt ?? null,
     fields.sleepStartedAt ?? null,
     fields.updatedAt,
