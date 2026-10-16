@@ -10,7 +10,7 @@ import type { RateWindow } from './rate-limit';
  * 一条连接上的附加数据（存 WebSocket 的 attachment，跨休眠存活，见 `10-hall-runtime.md` §2）。
  * 位置、路径这类高频量只放这里，不落库：**醒着的人一定有活着的连接**。
  *
- * 坐标一律是**世界像素**（可能是小数）——格模型已删除（见 `docs/design/config.md` §7）。
+ * 坐标一律是**世界像素**（可能是小数）——格模型已删除（见 `docs/design/20-layout.md` §4）。
  */
 export interface ConnectionState {
   userId: string;

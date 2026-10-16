@@ -25,7 +25,7 @@ import { META_KEYS } from '../schema';
 import { freshSql, insertBed, rawRow } from './sqlite';
 
 const NOW = Date.parse('2025-07-01T12:00:00Z');
-/** 前几档容量由级表推导（`docs/design/config.md` §2），不在测试里写死。 */
+/** 前几档容量由级表推导（`docs/design/20-layout.md` §3.1），不在测试里写死。 */
 const FIRST = (HALL_LEVELS[0] as { capacity: number }).capacity;
 const SECOND = (HALL_LEVELS[1] as { capacity: number }).capacity;
 const THIRD = (HALL_LEVELS[2] as { capacity: number }).capacity;

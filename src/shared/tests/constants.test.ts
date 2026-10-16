@@ -29,12 +29,12 @@ import {
 import { readDoc, tableRows } from './doc';
 
 /** `docs/design/config.md` §1 的三行（厅标识 / 布局版本 / 床位数） */
-const docSingleHall = tableRows(readDoc('design/config.md'), '## 1. 只有一个厅', '## 2. 级表');
+const docSingleHall = tableRows(readDoc('design/config.md'), '## 1. 只有一个厅', '## 2. 时间常量');
 const docValue = (item: string): string =>
   (docSingleHall.find(([name]) => (name ?? '').replaceAll('`', '') === item)?.[1] ?? '').replaceAll('`', '');
 
-/** `docs/design/config.md` §4 几何常量表：常量名 → 文档里的值。 */
-const docGeometry = tableRows(readDoc('design/config.md'), '## 4. 几何常量', '## 5. 限制');
+/** `docs/design/20-layout.md` §2 几何常量表：常量名 → 文档里的值。 */
+const docGeometry = tableRows(readDoc('design/20-layout.md'), '## 2. 床位与格子规格', '## 3. 级表与厅的边界');
 const docConstant = (name: string): number => {
   for (const [item, value] of docGeometry) {
     // `BED_W` / `BED_H` 那一行把两个名字写在同一个单元格里
@@ -42,11 +42,17 @@ const docConstant = (name: string): number => {
     const index = names.indexOf(name);
     if (index >= 0) return Number((value ?? '').split('/')[index]?.trim());
   }
-  throw new Error(`docs/design/config.md §4 没有常量 ${name}`);
+  throw new Error(`docs/design/20-layout.md §2 没有常量 ${name}`);
 };
 
-describe('常量与 docs/design/config.md 一致', () => {
-  it('时间常量（§3）', () => {
+/** `docs/design/config.md` §3 限制表：项名 → 文档里的值。 */
+const docLimit = (name: string): number => {
+  const rows = tableRows(readDoc('design/config.md'), '## 3. 限制', '## 4. 密钥');
+  return Number((rows.find(([item]) => (item ?? '').replaceAll('`', '') === name)?.[1] ?? '').replaceAll('`', ''));
+};
+
+describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
+  it('时间常量（§2）', () => {
     expect(GRACE_MS).toBe(60_000);
     expect(AUTO_SLEEP_MS).toBe(300_000);
     expect(TICK_MS).toBe(100);
@@ -57,7 +63,7 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(EMOTE_MS).toBe(2500);
   });
 
-  it('几何常量（§4）与列距/行距逐条等于文档里的值', () => {
+  it('几何常量（`20-layout.md` §2）与列距/行距逐条等于文档里的值', () => {
     expect(ART_SCALE).toBe(docConstant('ART_SCALE'));
     expect(BED_W).toBe(docConstant('BED_W'));
     expect(BED_H).toBe(docConstant('BED_H'));
@@ -67,7 +73,6 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(CELL_H).toBe(docConstant('CELL_H'));
     expect(WALL_BODY).toBe(docConstant('WALL_BODY'));
     expect(WALL_WIDTH).toBe(docConstant('WALL_WIDTH'));
-    expect(MAX_DPR).toBe(docConstant('MAX_DPR'));
   });
 
   it('格 = 走道 + 床 + 预留位；格高 = 床高 + 床脚前走道', () => {
@@ -75,12 +80,13 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(CELL_H).toBe(BED_H + AISLE);
   });
 
-  it('限制（§5）', () => {
+  it('限制（§3）', () => {
     expect(UPSTREAM_RATE_PER_SEC).toBe(5);
     expect(NICKNAME_MAX_LEN).toBe(16);
     expect(CHAT_MAX_LEN).toBe(200);
     expect(CHAT_LOG_MAX).toBe(50);
     expect(POOL_SIZE).toBe(64);
+    expect(MAX_DPR).toBe(docLimit('MAX_DPR'));
   });
 
   it('单厅（§1）：厅标识逐字来自文档', () => {

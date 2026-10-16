@@ -16,7 +16,7 @@ import type { Point } from '../shared/layout';
  * 街网寻路（见 `docs/design/hall-runtime.md` §5.1）。
  *
  * 「街网长什么样」全在 `layout` 里定义——街行 / 街列的编号、节点坐标、某个点落在哪一条街行 /
- * 街列、一个档里有几条、离某个坐标最近的 ≤2 条（`docs/design/config.md` §7）。这里只用它做
+ * 街列、一个档里有几条、离某个坐标最近的 ≤2 条（`docs/design/20-layout.md` §4）。这里只用它做
  * 搜索：街行 × 街列的节点图（含贴墙那一圈 `STREET_BELT`）；可走性一律由 `layout.isWalkable`
  * 给出（没有场景文件、没有整片地板）。
  *

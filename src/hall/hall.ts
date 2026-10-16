@@ -67,7 +67,7 @@ type PositionUpdate = [string, number, number];
  * 大厅房间服务：**一个厅一个实例**（`idFromName(HALL_ID)`），自带一份私有 SQLite。
  * **厅的边界就是数据库的边界**，所有权威状态在同址，读写都是本地操作。
  *
- * 布局（床位坐标、可行走性、区域尺寸）由共享的纯函数现算，**不存任何地方**（见 `docs/design/config.md` §7）。
+ * 布局（床位坐标、可行走性、区域尺寸）由共享的纯函数现算，**不存任何地方**（见 `docs/design/20-layout.md` §4）。
  * 连接使用平台的 WebSocket 休眠机制：连接期间对象可以休眠，附加数据（位置、状态）随连接存活。
  */
 export class Hall extends DurableObject<Env> {

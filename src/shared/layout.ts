@@ -1,5 +1,5 @@
 /**
- * 厅的布局：几何是**程序化生成的纯函数**（契约见 `docs/design/config.md` §7）。
+ * 厅的布局：几何是**程序化生成的纯函数**（契约见 `docs/design/20-layout.md` §4）。
  * 前端与厅服务引用同一份；没有场景文件，也不许在别处散落坐标常量。
  *
  * 一座格 = 一条竖走道 + 一间房（房 = 床 + 预留位）：`cellX = col·CELL_W`，行距 = `CELL_H`。
@@ -45,7 +45,7 @@ export interface Rect {
   readonly height: number;
 }
 
-/** 级表里**唯一需要人工维护**的部分：每档的行数 `R` 与每行床数 `C`（`docs/design/config.md` §2）。 */
+/** 级表里**唯一需要人工维护**的部分：每档的行数 `R` 与每行床数 `C`（`docs/design/20-layout.md` §3.1）。 */
 const LEVEL_SHAPE: ReadonlyArray<readonly [rows: number, cols: number]> = [
   [9, 13],
   [10, 15],
@@ -91,7 +91,7 @@ const TOP_LEVEL = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;
  * - 街行 `−1` = 上贴墙那条、`0…R−1` = 每格床脚前的横走道带、`R` = 下贴墙那条。
  *
  * 贴墙那一圈本身就是一条**环形走道**，所以它也算街：一档共有 `(C+2)·(R+2)` 个节点。
- * **几何只在这里定义**：寻路只按这套编号拼图（`docs/design/config.md` §7）。
+ * **几何只在这里定义**：寻路只按这套编号拼图（`docs/design/20-layout.md` §4）。
  */
 
 /** 街网里「贴墙那一圈」的编号：街列 = 左余量、街行 = 上余量。 */
@@ -200,7 +200,7 @@ export function regionOf(index: number): HallLevel {
  *
  * 床位区锚在世界原点不动（所以左/上余量落在负坐标一侧），四侧余量都是 `AISLE`：
  * 每张床四周都有可走的地板，**贴墙那一圈本身就是一条环形走道**，
- * 而且「墙到最外圈床的距离」在每一档都相同（`docs/design/config.md` §2、§7）。
+ * 而且「墙到最外圈床的距离」在每一档都相同（`docs/design/20-layout.md` §3.2、§4）。
  */
 export function wallRegionOf(index: number): Rect {
   const level = levelOf(index);

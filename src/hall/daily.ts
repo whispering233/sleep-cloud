@@ -2,7 +2,7 @@ import { DAILY_WAKE_UTC_HOUR } from '../shared/constants';
 
 /**
  * 每日唤醒的排期（见 `docs/design/10-hall-runtime.md` §7）。**时刻固定 UTC，不涉及任何时区换算**
- * （厅时区与昼夜概念已删除，见 `docs/design/config.md` §3）。
+ * （厅时区与昼夜概念已删除，见 `docs/design/config.md` §2）。
  *
  * 每日唤醒只做两件事：**归属释放** + **缩级评估**；睡痕过期改由读取时推导，所以没有清理任务。
  */

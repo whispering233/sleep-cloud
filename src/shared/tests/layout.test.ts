@@ -58,10 +58,10 @@ function everyBed(check: (level: HallLevel, bedNo: number) => void): void {
   }
 }
 
-// ————————————————————————— 级表（`docs/design/config.md` §2） —————————————————————————
+// ————————————————————————— 级表（`docs/design/20-layout.md` §3.1） —————————————————————————
 
-describe('级表与 docs/design/config.md §2 逐档一致', () => {
-  const docLevels = tableRows(readDoc('design/config.md'), '## 2. 级表', '## 3. 时间常量');
+describe('级表与 docs/design/20-layout.md §3.1 逐档一致', () => {
+  const docLevels = tableRows(readDoc('design/20-layout.md'), '## 3. 级表与厅的边界', '### 3.2 厅的边界');
 
   it('级数、行列、容量、W×H、y:x、步长逐档对齐', () => {
     expect(HALL_LEVELS.length).toBe(docLevels.length);
@@ -510,7 +510,7 @@ function nodeWalkableAt(level: HallLevel, node: number): boolean {
   return nodeWalkable(level, i, (node - i) / cols);
 }
 
-/** 四侧的地板余量里各取一点：左/上在负坐标那一侧，右/下在贴墙那一条（`docs/design/config.md` §7 不变式 ②）。 */
+/** 四侧的地板余量里各取一点：左/上在负坐标那一侧，右/下在贴墙那一条（`docs/design/20-layout.md` §4 不变式 ②）。 */
 function marginProbes(level: HallLevel): Array<{ x: number; y: number }> {
   const wall = wallRectOf(level);
   return [

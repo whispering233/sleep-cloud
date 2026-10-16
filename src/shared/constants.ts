@@ -1,8 +1,8 @@
 /**
- * 常量表。与 `docs/design/config.md` §1 单厅、§3 时间常量、§4 几何常量、§5 限制一致。
+ * 常量表。与 `docs/design/config.md` §1 单厅、§2 时间常量、§3 限制、`docs/design/20-layout.md` §2 几何常量一致。
  *
  * 这些值是服务端的执行依据；前端直接引用同一份（编译期内联），因此**不需要下发到客户端**
- * （见 `docs/design/config.md` §9）。
+ * （见 `docs/design/config.md` §6）。
  */
 
 /**

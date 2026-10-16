@@ -4,7 +4,7 @@ import { HALL_LEVELS } from '../../shared/layout';
 import type { BedRow } from '../bed-store';
 import { checkLie, lieVerdictFor } from '../bed-rules';
 
-/** 前两档的容量由级表推导（`docs/design/config.md` §2）。 */
+/** 前两档的容量由级表推导（`docs/design/20-layout.md` §3.1）。 */
 const FIRST = (HALL_LEVELS[0] as { capacity: number }).capacity;
 const SECOND = (HALL_LEVELS[1] as { capacity: number }).capacity;
 

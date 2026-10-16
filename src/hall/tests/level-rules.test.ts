@@ -6,7 +6,7 @@ import { smallestClaimableBed } from '../bed-store';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from '../level-rules';
 import { freshSql, insertBed } from './sqlite';
 
-/** 全部容量都由级表推导（`docs/design/config.md` §2），不再在测试里写死数字。 */
+/** 全部容量都由级表推导（`docs/design/20-layout.md` §3.1），不再在测试里写死数字。 */
 const CAPACITIES = HALL_LEVELS.map((level) => level.capacity);
 const FIRST = CAPACITIES[0] as number;
 const SECOND = CAPACITIES[1] as number;
