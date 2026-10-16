@@ -60,9 +60,9 @@ const BUBBLE_PAD = 4;
  */
 const EYE_RADIUS_PX = 2;
 const EYE_HALF_SPACING_PX = 6;
-/** 走动的缩放摆动：幅度 3%、约 3Hz（`docs/ui/DESIGN.md` Shapes：不做逐帧行走动画）。 */
+/** 走动的缩放摆动：幅度 3%、约 4.5Hz（`docs/ui/DESIGN.md` Shapes：不做逐帧行走动画）。 */
 const WALK_SWAY = 0.03;
-const WALK_SWAY_HZ = 3;
+const WALK_SWAY_HZ = 4.5;
 
 /** 图集 key：`public/sprites/atlas.png` + `atlas.json`（构建期产物，见 `tools/art/build-sprites.mjs`）。 */
 export const SPRITES_KEY = 'sprites';

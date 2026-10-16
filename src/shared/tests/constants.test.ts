@@ -50,7 +50,7 @@ describe('常量与 docs/design/config.md 一致', () => {
     expect(GRACE_MS).toBe(60_000);
     expect(AUTO_SLEEP_MS).toBe(300_000);
     expect(TICK_MS).toBe(100);
-    expect(WALK_SPEED_PX_PER_S).toBe(130);
+    expect(WALK_SPEED_PX_PER_S).toBe(220);
     expect(TRACE_TTL_MS).toBe(43_200_000);
     expect(DAILY_WAKE_UTC_HOUR).toBe(20);
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);

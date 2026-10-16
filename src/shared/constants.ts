@@ -21,7 +21,7 @@ export const AUTO_SLEEP_MS = 300_000;
 export const TICK_MS = 100;
 
 /** 走动速度（世界像素/秒）。推进量按**实际经过时间**算，节拍抖动只影响平滑度。 */
-export const WALK_SPEED_PX_PER_S = 130;
+export const WALK_SPEED_PX_PER_S = 220;
 
 /** 睡痕存活时长，从「宽限到期时刻」起算。到期由读取时推导（服务端过滤 + 客户端按 `traceUntil` 淡出）。 */
 export const TRACE_TTL_MS = 43_200_000;
