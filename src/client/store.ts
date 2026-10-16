@@ -314,6 +314,12 @@ export function applyLeave(message: LeaveMessage): void {
 /** 提示条自增序号：只增不减，保证新提示的 `id` 必然不同（同一条文案也可能连着来两次）。 */
 let noticeSeq = 0;
 
+/** 出一张提示条。`id` 换了就重新挂载，CSS 动画从头播——清除靠 `animationend`，不挂定时器。 */
+export function showNotice(text: string): void {
+  noticeSeq += 1;
+  setState({ notice: { id: noticeSeq, text } });
+}
+
 /**
  * 可恢复错误的提示：**只有文案层给得出文案的码才写 `notice`**，静默类什么都不做
  * （点墙、重复躺下这类失败用户无法处理，弹提示只会让他更焦虑，见 `docs/api/error-code.md` §3）。
@@ -321,8 +327,7 @@ let noticeSeq = 0;
 export function applyError(code: string): void {
   const text = errorTextFor(code);
   if (text === undefined) return;
-  noticeSeq += 1;
-  setState({ notice: { id: noticeSeq, text } });
+  showNotice(text);
 }
 
 /**

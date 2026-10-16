@@ -139,8 +139,12 @@ export interface UpstreamPayloads {
   hello: { layoutVersion: string };
   /** 「我要去这个世界像素点」。服务端校验它在街网上；不在就回 `3006`，不吸附。 */
   walk: { x: number; y: number };
-  /** 「回我的床」= 直接把我放到**自己床脚前的走道中心**（不寻路、不推进）。在床上则先起身；无归属时静默忽略。 */
-  goHome: Record<string, never>;
+  /**
+   * 「**一跳**」= 直接把我放到某张床**脚前的走道中心**（不寻路、不推进）。
+   * **不带 `bedNo` = 我自己那张床**（没有归属时静默忽略）；带上 = 那张床的脚前——**与归属和占用无关**。
+   * 在床上则先起身（保留归属）；床号越界（`3001`）时静默忽略。
+   */
+  hop: { bedNo?: number };
   /** 「我要躺这张床」= 走过去 + 躺下的复合意图；该床可认领时同时完成认领。 */
   lie: { bedNo: number };
   rise: Record<string, never>;
@@ -160,7 +164,7 @@ export type UpstreamMessage = {
 export const UPSTREAM_TYPES = [
   'hello',
   'walk',
-  'goHome',
+  'hop',
   'lie',
   'rise',
   'sleep',

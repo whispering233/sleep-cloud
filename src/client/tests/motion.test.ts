@@ -78,7 +78,7 @@ describe('位置插值', () => {
     expect(positionAt(resumed, resumed.toTs)).toEqual({ x: 300, y: 480 });
   });
 
-  it('大跳变（> 400px，`goHome` 瞬移）塌缩窗口：`positionAt` 立刻等于新点', () => {
+  it('大跳变（> 400px，`hop` 瞬移）塌缩窗口：`positionAt` 立刻等于新点', () => {
     const before = nextMotion(undefined, 300, 480, 0);
     // 跨厅瞬移：一步从第 1 级厅的床边跳到另一处
     const jumped = nextMotion(before, 2400, 480, 100);

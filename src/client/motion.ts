@@ -46,7 +46,7 @@ export function nextMotion(previous: Motion | undefined, x: number, y: number, t
   if (previous && ts <= previous.toTs) return previous;
   if (previous) {
     if (Math.hypot(x - previous.toX, y - previous.toY) > TELEPORT_SNAP_PX) {
-      // 跳变类位置（`goHome` 瞬移）：塌缩成零跨度窗口，`positionAt` 直接给终点（落位、不拉丝）
+      // 跳变类位置（`hop` 瞬移）：塌缩成零跨度窗口，`positionAt` 直接给终点（落位、不拉丝）
       return { fromX: x, fromY: y, toX: x, toY: y, fromTs: ts, toTs: ts };
     }
     return { fromX: previous.toX, fromY: previous.toY, toX: x, toY: y, fromTs: previous.toTs, toTs: ts };

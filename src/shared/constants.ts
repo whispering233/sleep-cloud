@@ -117,7 +117,7 @@ export const CHAT_MAX_LEN = 200;
 export const POOL_SIZE = 64;
 
 /**
- * 跳变类位置（`goHome` 瞬移）的落位阈值：单次位移超过它就**直接落位、不插值**。
+ * 跳变类位置（`hop` 瞬移）的落位阈值：单次位移超过它就**直接落位、不插值**。
  * 只写给客户端（服务端把位置一步改到位时发的是普通 `pos`，它不需要知道这个值）。
  */
 export const TELEPORT_SNAP_PX = 400;

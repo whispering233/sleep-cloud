@@ -94,6 +94,52 @@
     border: 0;
   }
 
+  /* 「⇢」：展开 HUD 下沿那一行床号输入（通栏 `pointer-events: none`，这个按钮要把它收回来） */
+  .hud-jump-toggle {
+    pointer-events: auto;
+    min-width: 44px;
+    min-height: 44px;
+    /* 同 `.hud-my-bed`：撑出来的 16px 用负外边距抵掉，HUD 的高度不变 */
+    margin-block: calc(-1 * var(--spacing-sm));
+    color: inherit;
+    background-color: transparent;
+    font: inherit;
+    letter-spacing: inherit;
+    border: 0;
+  }
+
+  /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击 */
+  .hud-jump {
+    margin-block-start: calc(-1 * var(--spacing-sm));
+    padding-block-end: var(--spacing-sm);
+    padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
+      calc(env(safe-area-inset-right) + var(--spacing-md));
+    background-color: var(--color-primary);
+    pointer-events: auto;
+  }
+
+  .hud-jump-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  /* 床号输入：与聊天框同一规格（`.input-field` 已是 44px / 16px），宽度上封一个数（桌面上不该拉成一整条） */
+  .hud-jump-input {
+    flex: 0 1 auto;
+    max-width: 120px;
+  }
+
+  .hud-jump-cancel {
+    min-width: 44px;
+    min-height: 44px;
+    color: var(--color-neutral-muted);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    border: 0;
+  }
+
   .chat-panel {
     position: absolute;
     inset-block-end: 0;
@@ -227,6 +273,8 @@
   .action-primary:focus-visible,
   .emote-button:focus-visible,
   .hud-my-bed:focus-visible,
+  .hud-jump-toggle:focus-visible,
+  .hud-jump-cancel:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;

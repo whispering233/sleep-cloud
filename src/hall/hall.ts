@@ -347,16 +347,27 @@ export class Hall extends DurableObject<Env> {
         this.startWalking(ws, this.recoverPosition(ws, standing), target);
         return;
       }
-      case 'goHome': {
-        const owned = findOwnedBed(this.ctx.storage.sql, fresh.userId, now);
-        const spot = owned === undefined ? undefined : frontPointOf(owned.bedNo);
-        // 无归属（HUD 那条本来就不显示）、或床号没有几何：静默忽略，不回错误码、不广播
+      case 'hop': {
+        // 不带床号 = 我自己那张床（HUD 那条）；带床号时**只看床号，不看归属与占用**——跳到别人床脚站着是合法的
+        const bedNo =
+          message.bedNo === undefined
+            ? findOwnedBed(this.ctx.storage.sql, fresh.userId, now)?.bedNo
+            : Number(message.bedNo);
+        // 没带床号、我也没有归属：静默忽略（HUD 那一条在没有床时本来就不显示）
+        if (bedNo === undefined) return;
+        // 床号越界：静默类错误（客户端已按 `bedCount` 先拦一道并给可见提示，这条只是兜底）
+        if (!Number.isInteger(bedNo) || bedNo < 0 || bedNo >= this.bedCount()) {
+          this.sendError(ws, '3001');
+          return;
+        }
+        const spot = frontPointOf(bedNo);
+        // 床号没有几何（布局版本对不上）：静默忽略，不回错误码、不广播
         if (!spot) return;
         // 在床上先起身（保留归属，同「点地面」那条）；不在床上则原样返回
         const standing = this.standUp(ws, fresh);
         this.stopWalking(fresh.userId); // 不进移动者集合、不起节拍循环
-        const homed: ConnectionState = { ...retarget(standing, undefined), x: spot.x, y: spot.y };
-        this.writeConnection(ws, homed);
+        const hopped: ConnectionState = { ...retarget(standing, undefined), x: spot.x, y: spot.y };
+        this.writeConnection(ws, hopped);
         this.sendPositions([[fresh.userId, spot.x, spot.y]]);
         return;
       }

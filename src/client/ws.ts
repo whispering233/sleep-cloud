@@ -93,10 +93,10 @@ export function sendWalk(x: number, y: number): void {
   active.send(JSON.stringify({ t: 'walk', x, y }));
 }
 
-/** 回我的床：服务端把我一步放到自己床脚前的走道（不寻路）。无归属时服务端静默忽略。 */
-export function sendGoHome(): void {
+/** 一跳：服务端把我一步放到某张床脚前的走道（不寻路）。不带床号 = 我自己那张；没有归属时服务端静默忽略。 */
+export function sendHop(bedNo?: number): void {
   if (active?.readyState !== WebSocket.OPEN) return;
-  active.send(JSON.stringify({ t: 'goHome' }));
+  active.send(JSON.stringify(bedNo === undefined ? { t: 'hop' } : { t: 'hop', bedNo }));
 }
 
 /** 全局消息：空消息与超长都由服务端判定（`4003` / `4001`），客户端不做重复校验。 */
