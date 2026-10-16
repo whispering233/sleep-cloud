@@ -1,3 +1,5 @@
+import { TELEPORT_SNAP_PX } from '../shared/constants';
+
 /**
  * 位置插值（纯计算）。坐标是**世界像素**（`pos.items` 就是世界像素，客户端不再乘格边长）。
  *
@@ -43,6 +45,10 @@ export function nextMotion(previous: Motion | undefined, x: number, y: number, t
   // 乱序或重复的批次（正常不会出现，TCP 有序）直接忽略，保留已有窗口
   if (previous && ts <= previous.toTs) return previous;
   if (previous) {
+    if (Math.hypot(x - previous.toX, y - previous.toY) > TELEPORT_SNAP_PX) {
+      // 跳变类位置（`goHome` 瞬移）：塌缩成零跨度窗口，`positionAt` 直接给终点（落位、不拉丝）
+      return { fromX: x, fromY: y, toX: x, toY: y, fromTs: ts, toTs: ts };
+    }
     return { fromX: previous.toX, fromY: previous.toY, toX: x, toY: y, fromTs: previous.toTs, toTs: ts };
   }
   return { fromX: x, fromY: y, toX: x, toY: y, fromTs: ts, toTs: ts };

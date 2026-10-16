@@ -10,15 +10,15 @@ const wsDoc = readDoc('api/20-api-ws.md');
 function messageNames(from: string, to: string): string[] {
   return tableRows(wsDoc, from, to)
     .map(([first]) => first.replaceAll(/[`*]/g, ''))
-    .filter((name) => /^[a-z]+$/.test(name));
+    .filter((name) => /^[a-z][a-zA-Z]*$/.test(name)); // 消息名可以是 camelCase（`goHome`）
 }
 
 const docUpstream = messageNames('## 3. 上行消息', '## 4. 下行消息');
 const docDownstream = messageNames('## 4. 下行消息', '### 4.1');
 
 describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
-  it('上行消息与文档一致（8 种）', () => {
-    expect(docUpstream).toEqual(['hello', 'walk', 'lie', 'rise', 'sleep', 'chat', 'whisper', 'emote']);
+  it('上行消息与文档一致（9 种）', () => {
+    expect(docUpstream).toEqual(['hello', 'walk', 'goHome', 'lie', 'rise', 'sleep', 'chat', 'whisper', 'emote']);
     expect([...UPSTREAM_TYPES]).toEqual(docUpstream);
   });
 

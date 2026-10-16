@@ -78,6 +78,34 @@ describe('位置插值', () => {
     expect(positionAt(resumed, resumed.toTs)).toEqual({ x: 300, y: 480 });
   });
 
+  it('大跳变（> 400px，`goHome` 瞬移）塌缩窗口：`positionAt` 立刻等于新点', () => {
+    const before = nextMotion(undefined, 300, 480, 0);
+    // 跨厅瞬移：一步从第 1 级厅的床边跳到另一处
+    const jumped = nextMotion(before, 2400, 480, 100);
+
+    expect(jumped.toTs - jumped.fromTs).toBe(0); // 零跨度 → 不插值
+    expect(jumped).toMatchObject({ fromX: 2400, fromY: 480, toX: 2400, toY: 480, fromTs: 100, toTs: 100 });
+    // 窗口前、中、后都是新点：没有任何横贯大厅的中间帧
+    expect(positionAt(jumped, 0)).toEqual({ x: 2400, y: 480 });
+    expect(positionAt(jumped, 50)).toEqual({ x: 2400, y: 480 });
+    expect(positionAt(jumped, 1000)).toEqual({ x: 2400, y: 480 });
+  });
+
+  it('常规位移仍插值：一格的 173px（22px/拍）不触发落位', () => {
+    const first = nextMotion(undefined, 0, 0, 0);
+    const moved = nextMotion(first, 173, 0, 100);
+
+    expect(moved).toMatchObject({ fromX: 0, fromY: 0, toX: 173, toY: 0, fromTs: 0, toTs: 100 });
+    expect(positionAt(moved, 0)).toEqual({ x: 0, y: 0 });
+    expect(positionAt(moved, 50)).toEqual({ x: 86.5, y: 0 });
+    expect(positionAt(moved, 100)).toEqual({ x: 173, y: 0 });
+
+    // 阈值下面一档（恰 400px）也不塌缩：只有**超过**它才算跳变
+    const atThreshold = nextMotion(nextMotion(undefined, 0, 0, 0), 400, 0, 100);
+    expect(atThreshold.toTs - atThreshold.fromTs).toBe(100);
+    expect(positionAt(atThreshold, 50)).toEqual({ x: 200, y: 0 });
+  });
+
   it('滞后夹在 [100ms, 400ms]；跨度 ≤ 0 取下限', () => {
     const alone = nextMotion(undefined, 0, 0, 1000); // 刚进厅：fromTs === toTs
     expect(interpolationDelay(alone)).toBe(INTERPOLATION_DELAY_MS);

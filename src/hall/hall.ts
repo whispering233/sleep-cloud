@@ -337,6 +337,19 @@ export class Hall extends DurableObject<Env> {
         this.startWalking(ws, this.recoverPosition(ws, standing), target);
         return;
       }
+      case 'goHome': {
+        const ownedBedNo = findOwnedBed(this.ctx.storage.sql, fresh.userId, now);
+        const spot = ownedBedNo === undefined ? undefined : frontPointOf(ownedBedNo);
+        // 无归属（HUD 那条本来就不显示）、或床号没有几何：静默忽略，不回错误码、不广播
+        if (!spot) return;
+        // 在床上先起身（保留归属，同「点地面」那条）；不在床上则原样返回
+        const standing = this.standUp(ws, fresh);
+        this.stopWalking(fresh.userId); // 不进移动者集合、不起节拍循环
+        const homed: ConnectionState = { ...retarget(standing, undefined), x: spot.x, y: spot.y };
+        this.writeConnection(ws, homed);
+        this.sendPositions([[fresh.userId, spot.x, spot.y]]);
+        return;
+      }
       case 'lie': {
         const bedNo = Number(message.bedNo);
         const verdict = lieVerdictFor({

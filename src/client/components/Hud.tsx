@@ -4,6 +4,7 @@ import { hudViewOf, sameHudView } from '../hud-view';
 import type { HudView } from '../hud-view';
 import { getState, subscribe } from '../store';
 import { focusMyBed } from '../world-handle';
+import { sendGoHome } from '../ws';
 import type { BedDirection } from '../world/rules';
 
 /** 离屏方位 → 字形（`docs/ui/DESIGN.md` 的 `hud` 组件行）。 */
@@ -35,9 +36,9 @@ export function Hud() {
   return (
     <header className="hud">
       {/* 还没有床就不显示床号：没有内容的一项不占位。方位字形只在床不在可用视口里时出现
-          （世界里的暖标记已经够了）；整条可点 = 相机跳到我的床 */}
+          （世界里的暖标记已经够了）；整条可点 = **小人回自己的床 + 相机跟着到位** */}
       {view.bedNo !== undefined ? (
-        <button type="button" className="hud-my-bed" aria-label="把我的床移到中央" onClick={() => focusMyBed()}>
+        <button type="button" className="hud-my-bed" aria-label="回我的床" onClick={() => { sendGoHome(); focusMyBed(); }}>
           床号 <span className="hud-numeric">{view.bedNo}</span>
           {view.bedDirection !== undefined ? (
             <span aria-hidden="true"> {DIRECTION_ARROW[view.bedDirection]}</span>
