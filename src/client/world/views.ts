@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 
-import { ART_SCALE, BED_H, BED_W } from '../../shared/constants';
+import { ART_SCALE, BED_H, BED_W, MAX_DPR } from '../../shared/constants';
 import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 // 气泡几何与提示共用一份（那个模块是 Phaser-free 的，界面层与单测都能拿，见 `../bubble-fit.ts`）
@@ -12,7 +12,7 @@ import {
   LABEL_PX,
 } from '../bubble-fit';
 import tokens from '../styles/tokens.json';
-import { personAlpha, personFrame, truncateToLines } from './rules';
+import { MARKER_RADIUS, personAlpha, personFrame, truncateToLines } from './rules';
 import type { BedLook } from './rules';
 
 /**
@@ -40,13 +40,14 @@ function color(name: string): number {
   return Number.parseInt(token(name).slice(1), 16);
 }
 
+/**
+ * 文字贴图的栅格密度，与相机 zoom（= 画布 DPR）对齐：停在 1× 时高密度屏上会被放大采样而发虚。
+ * shortcut: dpr 在运行中变化（跨显示器拖窗）不重设，刷新即可；移动端 dpr 恒定
+ */
+const TEXT_RESOLUTION = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+
 /** 床号离床角的距离（世界像素）。 */
 const NUMBER_INSET = 3;
-/**
- * 暖灯标记的半径：1 世界像素 = 1 CSS 像素，所以 5 就是它在屏幕上的尺寸
- * （`marker-own` 有最小尺寸下限，不得消隐，否则找不到我的床）。
- */
-export const MARKER_RADIUS = 5;
 /**
  * 名字与表情相对小人原点的位置：**站着的小人原点在脚下**（贴图锚点），躺着的小人原点在床心
  * （位置就是他的床）。两套高度相差一个人高（≈56.5 世界像素），所以标签不能共用一个常量。
@@ -115,6 +116,7 @@ const BUBBLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   color: INK_CSS,
   backgroundColor: SURFACE_CSS,
   padding: { x: BUBBLE_PAD, y: BUBBLE_PAD },
+  resolution: TEXT_RESOLUTION,
 };
 
 /**
@@ -167,6 +169,7 @@ export function createBedView(scene: Phaser.Scene): BedView {
       fontFamily: FONT_FAMILY,
       fontSize: LABEL_PX,
       color: MUTED_CSS,
+      resolution: TEXT_RESOLUTION,
     })
     .setOrigin(0, 1);
   const container = scene.add.container(0, 0, [room, rug, sprite, eyes, marker, number]).setVisible(false);
@@ -273,12 +276,12 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
   // 换行宽度要自己给：不给就是一个字都不折（Phaser 的换行是 opt-in）
   bubbleText.setWordWrapWidth(BUBBLE_TEXT_PX, true);
   const bubbleName = scene.add
-    .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: MUTED_CSS })
+    .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: MUTED_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
     .setVisible(false);
   bubbleName.setWordWrapWidth(NAME_MAX_PX, true);
   const name = scene.add
-    .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS })
+    .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
     .setVisible(false);
   const emote = scene.add.text(0, EMOTE_Y, '', BUBBLE_STYLE).setOrigin(0.5, 1).setVisible(false);

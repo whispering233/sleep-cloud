@@ -40,6 +40,12 @@ export interface BedLook {
 export const TRACE_ALPHA = 0.45;
 
 /**
+ * 暖灯标记的半径：1 世界像素 = 1 CSS 像素，所以 5 就是它在屏幕上的尺寸
+ * （`marker-own` 有最小尺寸下限，不得消隐，否则找不到我的床）。
+ */
+export const MARKER_RADIUS = 5;
+
+/**
  * 气泡文字最多 `maxLines` 行、超出截断加 `…`（行数由调用方量：Phaser 量真实文字，单测给个假的）。
  * Phaser 4 的 `maxLines` **只会少画多余的行**（`GetTextSize` / `updateText` 按它截断），不自带省略号，
  * 所以省略号自己补：按字符**二分**出「补上 `…` 后仍放得下」的最长前缀（中文没有词可切，只能按字符）。

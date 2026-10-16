@@ -6,6 +6,7 @@ import type { Person } from '../../../shared/protocol';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
 import type { Motion } from '../../motion';
 import {
+  MARKER_RADIUS,
   PERSON_HIT_PX,
   TRACE_ALPHA,
   bedDirection,
@@ -26,7 +27,6 @@ import {
   usableCenterOffset,
 } from '../rules';
 import type { Occupant, PersonSpot } from '../rules';
-import { MARKER_RADIUS } from '../views';
 
 const sleeper: Person = { id: 'u_1', name: '小明', appearance: 'boy', state: 'asleep', bedNo: 7 };
 const walker: Person = { id: 'u_2', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 };
