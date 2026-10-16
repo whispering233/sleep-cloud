@@ -7,6 +7,7 @@ import {
   bedCountOf,
   bedNoAt,
   cellOf,
+  displayBedNoOf,
   frontPointOf,
   isWalkable,
   levelOf,
@@ -803,6 +804,17 @@ describe('`nearestStreetPoint`：离给定点最近的街网点', () => {
     const level = levelOf(0);
     const point = { x: level.width + AISLE / 2, y: BED_H + AISLE / 2 };
     expect(nearestStreetPoint(point, capacity)).toEqual(point);
+  });
+});
+
+// ————————————————————————— 显示床号（内部 0 起，显示 1 起） —————————————————————————
+
+describe('`displayBedNoOf`：显示床号 = 内部床号 + 1（内部编号一律 0 起）', () => {
+  it('0 → 1、第 1 级末床（116）→ 117、第 2 级第一张（117）→ 118、末档末床 → 容量', () => {
+    expect(displayBedNoOf(0)).toBe(1);
+    expect(displayBedNoOf(116)).toBe(117);
+    expect(displayBedNoOf(117)).toBe(118);
+    expect(displayBedNoOf(TOP.capacity - 1)).toBe(9558);
   });
 });
 

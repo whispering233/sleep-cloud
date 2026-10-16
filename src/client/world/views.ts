@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 
 import { ART_SCALE, BED_H, BED_W } from '../../shared/constants';
+import { displayBedNoOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import tokens from '../styles/tokens.json';
 import { personAlpha, personFrame } from './rules';
@@ -138,7 +139,7 @@ export function placeBed(view: BedView, bed: BedPlacement, look: BedLook, mine: 
   view.container.setVisible(true).setPosition(bed.x, bed.y);
   if (view.bedNo !== bed.bedNo) {
     view.bedNo = bed.bedNo;
-    view.number.setText(String(bed.bedNo));
+    view.number.setText(String(displayBedNoOf(bed.bedNo)));
   }
   if (view.frame !== look.frame) {
     view.frame = look.frame;

@@ -1,3 +1,4 @@
+import { displayBedNoOf } from '../shared/layout';
 import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 
@@ -8,7 +9,7 @@ import type { ClientState } from './store';
  * （与 `ChatPanel` 的 `viewOf` / `sameView` 同一模式，见 `AGENTS.md` 硬纪律 17）。
  */
 export interface HudView {
-  /** 我的床号（**归属**，不是占用）：还没有这张床时这一项不显示 */
+  /** 我的床号（**归属**，不是占用；**显示值**，= 内部床号 + 1）：还没有这张床时这一项不显示 */
   bedNo?: number;
   /** 我的床在可用视口里的方位；在视野内（或还没有床）为 `undefined`，那一项不补字形 */
   bedDirection?: BedDirection;
@@ -17,8 +18,9 @@ export interface HudView {
 }
 
 export function hudViewOf(state: ClientState): HudView {
+  const ownedBedNo = state.me?.ownedBedNo;
   return {
-    bedNo: state.me?.ownedBedNo,
+    bedNo: ownedBedNo === undefined ? undefined : displayBedNoOf(ownedBedNo),
     bedDirection: state.bedDirection,
     online: state.hall?.online,
   };

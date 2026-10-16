@@ -30,8 +30,14 @@ const snapshotWith = (
 });
 
 describe('HUD 派生视图', () => {
-  it('两项都从状态里取：床号（归属）、在线人数', () => {
-    expect(hudViewOf(stateWith())).toEqual({ bedNo: 42, online: 37 });
+  it('两项都从状态里取：床号（归属，**显示值**）、在线人数', () => {
+    expect(hudViewOf(stateWith())).toEqual({ bedNo: 43, online: 37 });
+  });
+
+  it('床号是显示值 = 内部床号 + 1：内部 0 显示 1，还没有床时不换算', () => {
+    const me = stateWith().me as NonNullable<ClientState['me']>;
+    expect(hudViewOf(stateWith({ me: { ...me, ownedBedNo: 0 } })).bedNo).toBe(1);
+    expect(hudViewOf(stateWith({ me: { ...me, ownedBedNo: 116 } })).bedNo).toBe(117);
   });
 
   it('还没有床（没有 ownedBedNo）时床号是 undefined，这一项不显示', () => {
@@ -45,7 +51,7 @@ describe('HUD 派生视图', () => {
     const view = hudViewOf(
       stateWith({ me: { id: 'u_me', name: '我', appearance: 'boy', state: 'asleep', bedNo: 42, ownedBedNo: 42 } }),
     );
-    expect(view.bedNo).toBe(42);
+    expect(view.bedNo).toBe(43);
   });
 
   it('快照还没到（没有厅）时在线人数是 undefined', () => {
@@ -100,6 +106,6 @@ describe('HUD 派生视图', () => {
     applySnapshot(snapshotWith({ id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430 }));
 
     applyState({ t: 'state', id: 'u_me', state: 'lying', bedNo: 42, online: 36 });
-    expect(hudViewOf(getState())).toMatchObject({ bedNo: 42, online: 36 });
+    expect(hudViewOf(getState())).toMatchObject({ bedNo: 43, online: 36 });
   });
 });
