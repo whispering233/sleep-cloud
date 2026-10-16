@@ -4,14 +4,7 @@
 > 依据：`00-master-design.md`、`architecture.md`、`10-hall-runtime.md`、`20-layout.md`、`config.md`、`build.md`、`../db/schema.md`、`../api/`、`../ui/DESIGN.md`、`../../AGENTS.md`（硬纪律）。
 > 下一批候选见 `backlog.md`。
 >
-> **三张卡都改 `src/hall/hall.ts` → 必须串行派工。** 本批设计前置已随文档提交（`10-hall-runtime.md` §5.1/§8/§9、`api/20-api-ws.md` §3/§4.7、`ui/DESIGN.md` 相机表与 HUD 行、`master` §4/§6）。
-
-- [ ] 卡 5：出生点——已有归属者落在自己床脚前
-  - **目标**：返回大厅的人不再被丢在大厅另一头（跨厅走不动：第 1 级 10.7s、末档 93s）。规则见 `10-hall-runtime.md` §9 新增的第 0 步。
-  - **改**：`src/hall/hall.ts` 的 `resumeSession`：宽限分支、未过期睡痕分支之后、`spawnPoint(now)` 之前，插入一步——`findOwnedBed(sql, userId, now)`（`bed-store` 里已有，本身就是按「未过期归属」过滤）拿到我的床号 → 出生点 = `frontPointOf(bedNo)`，`state: 'roaming'`（**不占床、不刷新睡痕**）。没有归属才走原来的 `spawnPoint`。
-  - **不做**：不动 `spawnPoint`（它服务「还没有床的人」：最小可认领床 → 升级 → `2002`）；不改 `findOwnedBed` 的语义；不改睡痕/宽限分支。
-  - **测试**：在 `src/hall/tests/` 里加 Hall 级用例（照 `broadcast.test.ts` 的 `newHall(sockets)` 模式：假 ctx + `freshSql()` + 私有方法用 cast 调）：① 库里此床归属我且 `last_seen_at` 新鲜 → 返回坐标 = `frontPointOf(该床号)`；② 我的床归属已过期（`last_seen_at` 早于 TTL）→ 落到最小可认领床（**不是**过期那张）；③ 我有未过期睡痕 → 仍回床上躺着（既有分支不变，做回归）。
-  - **独立验收（≤4 条）**：① `npm test` + `typecheck` 全绿；② 手工复验（浏览器）：本地库把当前会话认领到一张**远离**最小可认领床的床 → 重进页面 → 小人落在**自己床边**；③ 新会话（无归属）仍落在最小可认领床前；④ `CHANGELOG.md` 的 `### Changed` 补一条（不写任务卡语义）。
+> **剩下两张卡都改 `src/hall/hall.ts` → 必须串行派工。**
 
 - [ ] 卡 6：回我的床（`goHome` 瞬移 + HUD 那条做两件事 + 客户端大跳变落位）
   - **目标**：跨厅不再靠走。规则见 `10-hall-runtime.md` §5.1 新增段、`api/20-api-ws.md` §3 的 `goHome` 行与 §4.7 的跳变落位段、`ui/DESIGN.md` 相机表「瞬移落位」行与 HUD 行。

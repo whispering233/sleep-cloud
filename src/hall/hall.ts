@@ -231,6 +231,7 @@ export class Hall extends DurableObject<Env> {
    * 握手时的状态恢复与出生点（见 `docs/design/10-hall-runtime.md` §9、§13）：
    * 宽限期内 → 原位置、原路径、原床位（对外表现为无变化，因此不广播）；
    * 宽限已过、而那张床还留着**未过期**的睡痕 → 回到床上（清醒）；
+   * 已有**未过期归属**的床 → 站在自己床脚前的横走道（跨厅走不动，人先落在自己的位置，见 §9 步 0）；
    * 否则出现在「编号最小的可认领床」前方走道。整厅没有可认领的床（且已触顶）→ 不入场。
    */
   private resumeSession(connection: ConnectionState): ConnectionState | undefined {
@@ -258,6 +259,13 @@ export class Hall extends DurableObject<Env> {
       // 自己这条连接还没握手完成（收不到广播），但别人得知道睡痕醒了
       this.broadcastState(lying);
       return lying;
+    }
+
+    // 步 0：已有归属的人直接落在自己床边（不占床、不碰睡痕、不写床位行——只是站位）
+    const ownedBedNo = findOwnedBed(this.ctx.storage.sql, connection.userId, now);
+    if (ownedBedNo !== undefined) {
+      const home = frontPointOf(ownedBedNo) ?? { x: connection.x, y: connection.y };
+      return { ...connection, x: home.x, y: home.y, state: 'roaming', bedNo: undefined, lastInputAt: now };
     }
 
     const spawn = this.spawnPoint(now);
