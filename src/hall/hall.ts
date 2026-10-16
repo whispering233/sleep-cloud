@@ -30,6 +30,7 @@ import {
   restoreBedOccupancy,
   setBedOccupancy,
   smallestClaimableBed,
+  usedBedCount,
   writeBedCount,
   writeDailyWakeAt,
 } from './bed-store';
@@ -117,9 +118,17 @@ export class Hall extends DurableObject<Env> {
     return (this.bedCountCache ??= readMeta(this.ctx.storage.sql).bedCount);
   }
 
-  /** 与出生点**同一个查询**的二分：现在还有没有可认领的床（无主或归属已过期，无占用或只剩已过期睡痕）。 */
+  /**
+   * 已用床数（有主或有占用）：“还有没有可认领的床”就是「已用床数 < 本档容量」。
+   * 与出生点同一个谓词、同一次全表读（`10-hall-runtime.md` §8）。
+   */
+  private usedBeds(now: number): number {
+    return usedBedCount(this.ctx.storage.sql, now);
+  }
+
+  /** 「有没有可认领的床」＝**已用床数 < 本档容量**：无行 = 无主空床，过期归属也算无主。 */
   private hasClaimableBed(now: number): boolean {
-    return smallestClaimableBed(this.ctx.storage.sql, this.bedCount(), now) !== undefined;
+    return this.usedBeds(now) < this.bedCount();
   }
 
   /**
@@ -175,7 +184,7 @@ export class Hall extends DurableObject<Env> {
         this.reject(ws, verdict.code);
         return;
       case 'hello': {
-        // 入场前判定升级：厅满了就让新来的人先有地方躺（见 `10-hall-runtime.md` §8）
+        // 入场前判定升级：已用率到阈值就先长一档，新来的人有床可躺（`10-hall-runtime.md` §8）
         this.growIfNeeded();
         const resumed = this.resumeSession(connection);
         if (!resumed) {
@@ -284,13 +293,13 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 入场前的升级判定（见 `10-hall-runtime.md` §8）：**没有可认领的床**（与出生点同一个查询）且未触顶 →
+   * 入场前的升级判定（见 `10-hall-runtime.md` §8）：**已用率 ≥ 75%** 且未触顶 →
    * 取下一级容量写进 `meta.bed_count` 并广播 `resize`。**不写任何床位行**（新外圈全是无主空床）。
    * 返回是否真的升了一级。
    */
   private growIfNeeded(): boolean {
     const bedCount = this.bedCount();
-    const next = nextLevelCapacity(bedCount, this.hasClaimableBed(Date.now()));
+    const next = nextLevelCapacity(bedCount, this.usedBeds(Date.now()));
     if (next === undefined) return false;
 
     writeBedCount(this.ctx.storage.sql, next);
@@ -1010,7 +1019,7 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 缩级评估（见 `10-hall-runtime.md` §8）：最外那一圈床**全部无主且无占用**（含未过期睡痕）→
+   * 缩级评估（见 `10-hall-runtime.md` §8）：**已用率 < 50%** 且最外那一圈床**全部无主且无占用**（含未过期睡痕）→
    * 取下 `meta.bed_count`、广播 `resize`。**不写任何床位行**。
    * 一天只跳一档：跳档需要「这一圈真的没人要了」的判断，实时判定会在人数波动时来回跳。
    */
@@ -1022,8 +1031,8 @@ export class Hall extends DurableObject<Env> {
 
     // 外圈 = 上一档容量到当前容量之间的那些床号（`cellOf` 的编号顺序保证它们就是最后建成的那一圈）
     const lower = (HALL_LEVELS[index - 1] as (typeof HALL_LEVELS)[number]).capacity;
-    const previous = previousLevelCapacity(bedCount, outerRingBusy(sql, lower, bedCount, now));
-    if (previous === undefined) return; // 外圈还有主或有占用
+    const previous = previousLevelCapacity(bedCount, this.usedBeds(now), outerRingBusy(sql, lower, bedCount, now));
+    if (previous === undefined) return; // 外圈还有主或有占用，或已用率不低于 50%
 
     writeBedCount(sql, previous);
     this.bedCountCache = previous;

@@ -94,7 +94,7 @@ describe('该不该结算这个 20:00（`meta.daily_wake_at` 约束）', () => {
       const now = at('2025-06-11T20:30:00Z') + rebuild * 60_000;
       if (!shouldSettleDaily(now, settledAt)) continue;
       settledAt = previousDailyWakeAt(now); // `runDailyWake()` 写回边界
-      const next = previousLevelCapacity(bedCount, false); // 外圈全无主无占用
+      const next = previousLevelCapacity(bedCount, 0, false); // 外圈全无主无占用，已用 0
       if (next === undefined) continue;
       bedCount = next;
       resizes += 1;

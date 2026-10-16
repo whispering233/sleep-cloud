@@ -378,6 +378,18 @@ export function clearBed(sql: SqlStorage, bedNo: number, now: number): void {
 }
 
 /**
+ * **已用床数**（有行且 `bedBusy`：有主或有占用）：升级/降级判据的输入（`10-hall-runtime.md` §8）。
+ * 与 `smallestClaimableBed` 同一次全表读的形状——“有没有可认领的床”就是「已用床数 < 本档容量」。
+ */
+export function usedBedCount(sql: SqlStorage, now: number): number {
+  let used = 0;
+  for (const row of sql.exec<RawBedRow>(`SELECT bed_no, state, owner_user_id, owner_name, owner_appearance, last_seen_at, updated_at FROM bed`).toArray()) {
+    if (bedBusy(row, now)) used += 1;
+  }
+  return used;
+}
+
+/**
  * 编号最小的**可认领床**（出生点用，见 `10-hall-runtime.md` §9）：无行 = 无主空床，过期归属也算无主。
  * 一次读取全部床位行（几百行量级）后线性找空缺——比逐床号查一次库便宜得多。
  */
