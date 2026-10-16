@@ -2,6 +2,7 @@ import { APPEARANCES } from '../shared/protocol';
 import { UPSTREAM_TYPES } from '../shared/protocol';
 import type { Appearance, Person, UpstreamMessage, UpstreamType } from '../shared/protocol';
 import type { ErrorCode } from '../shared/error-code';
+import { isWalkable, nearestStreetPoint } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import type { RateWindow } from './rate-limit';
 
@@ -55,6 +56,24 @@ export function appearanceFor(userId: string): Appearance {
  */
 export function retarget(connection: ConnectionState, target: Point | undefined): ConnectionState {
   return { ...connection, target, arrivalAction: undefined, arrivalBedNo: undefined };
+}
+
+/**
+ * 位置恢复：把落在街网**之外**的权威位置拉回街上，否则这个人再也走不动（服务端只校验、不吸附
+ * 「意图」；这是恢复，不是对意图的吸附）。降级之后旧外圈落在墙外，就靠它拉回来。
+ */
+export function recoveredPosition(connection: ConnectionState, bedCount: number): ConnectionState {
+  if (isWalkable(connection.x, connection.y, bedCount)) return connection;
+  const recovered = nearestStreetPoint({ x: connection.x, y: connection.y }, bedCount);
+  return recovered ? { ...connection, x: recovered.x, y: recovered.y } : connection;
+}
+
+/**
+ * 降级之前对一条连接做的事（见 `docs/design/10-hall-runtime.md` §8）：把位置拉回街网，
+ * 并**清掉他正在走的那条路径**——那条路径是按旧几何算的，会把他带出墙外。落地状态是「停在街网上」。
+ */
+export function recoverForShrink(connection: ConnectionState, bedCount: number): ConnectionState {
+  return retarget(recoveredPosition(connection, bedCount), undefined);
 }
 
 /** 连接 → 协议里「一个人」的条目（在床上带床号，否则带世界像素坐标）。 */

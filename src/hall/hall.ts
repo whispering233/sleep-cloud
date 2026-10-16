@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 
 import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, HALL_ID, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
 import type { ErrorCode } from '../shared/error-code';
-import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount, nearestStreetPoint } from '../shared/layout';
+import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import type {
   DownstreamMessage,
@@ -34,7 +34,16 @@ import {
   writeDailyWakeAt,
 } from './bed-store';
 import { chatVerdictFor } from './chat';
-import { appearanceFor, deriveDisplayState, guardIncoming, IDENTITY_HEADERS, personFromConnection, retarget } from './connection';
+import {
+  appearanceFor,
+  deriveDisplayState,
+  guardIncoming,
+  IDENTITY_HEADERS,
+  personFromConnection,
+  recoverForShrink,
+  recoveredPosition,
+  retarget,
+} from './connection';
 import type { ConnectionState } from './connection';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from './daily';
 import { emoteVerdictFor } from './emote';
@@ -402,16 +411,38 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 位置恢复：降级会把区域收小，落在外圈的旧位置就变成街网之外了。
+   * 位置恢复（全厅）：降级把墙矩形收回来之后，旧外圈落在**墙外**，所以广播 `resize` **之前**
+   * 必须对每一条活着连接跑一遍（见 `docs/design/10-hall-runtime.md` §8）。两件事一起做：
+   *
+   * 1. 把位置拉回街网（`recoverForShrink`）；
+   * 2. **清掉他正在走的那条路径**（附件里的 `target` 与内存里的移动者）——那条路径按旧几何算，
+   *    留着就会把他带出墙外。
+   *
+   * 位置变了的人随同一条 `pos` 广播出去：否则客户端会一直把他画在墙外的旧位置上。
+   */
+  private recoverEveryone(): void {
+    const bedCount = this.bedCount();
+    const updates: PositionUpdate[] = [];
+    for (const ws of this.ctx.getWebSockets()) {
+      const connection = readConnection(ws);
+      if (!connection?.ready) continue;
+      this.stopWalking(connection.userId);
+      const recovered = recoverForShrink(connection, bedCount);
+      const moved = recovered.x !== connection.x || recovered.y !== connection.y;
+      // 站位没动、也没在走的人不用重写附件（附件写入是要花的钱）
+      if (moved || connection.target !== undefined) this.writeConnection(ws, recovered);
+      if (moved) updates.push([connection.userId, recovered.x, recovered.y]);
+    }
+    this.sendPositions(updates);
+  }
+
+  /**
+   * 位置恢复（单条）：降级会把区域收小，落在旧外圈的旧位置就变成街网之外了。
    * 这不是对「意图」的吸附（那是被禁止的），而是把权威位置拉回街上，否则这个人再也走不动。
    */
   private recoverPosition(ws: WebSocket, connection: ConnectionState): ConnectionState {
-    const bedCount = this.bedCount();
-    if (isWalkable(connection.x, connection.y, bedCount)) return connection;
-    const recovered = nearestStreetPoint({ x: connection.x, y: connection.y }, bedCount);
-    if (!recovered) return connection;
-    const next: ConnectionState = { ...connection, x: recovered.x, y: recovered.y };
-    this.writeConnection(ws, next);
+    const next = recoveredPosition(connection, this.bedCount());
+    if (next !== connection) this.writeConnection(ws, next);
     return next;
   }
 
@@ -960,6 +991,7 @@ export class Hall extends DurableObject<Env> {
 
     writeBedCount(sql, previous);
     this.bedCountCache = previous;
+    this.recoverEveryone(); // 墙跟着收回 → 先把旧外圈的人拉回街网，再广播
     this.broadcast({ t: 'resize', bedCount: previous });
   }
 

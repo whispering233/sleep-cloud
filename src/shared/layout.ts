@@ -2,15 +2,19 @@
  * 厅的布局：几何是**程序化生成的纯函数**（契约见 `docs/design/config.md` §7）。
  * 前端与厅服务引用同一份；没有场景文件，也不许在别处散落坐标常量。
  *
- * 床号是**建成顺序**：第 1 级（114 床）整片先按行优先编完，此后每一级只给新增的那圈
+ * 一座格 = 一条竖走道 + 一间房（房 = 床 + 预留位）：`cellX = col·CELL_W`，行距 = `CELL_H`。
+ * 床在房内按**行奇偶左右错位**，于是每张床左右各是一条走道与一块预留位（都是 56）。
+ *
+ * 床号是**建成顺序**：第 1 级整片先按行优先编完，此后每一级只给新增的那圈
  * （本级区域 − 上一级区域）按行优先继续编。于是升级只在外圈加床，**任何既有床的位置与床号
- * 都不变**；降级砍掉的正是最大的那些床号。
+ * 都不变**；降级砍掉的正是最大的那些床号——它们落在**墙外**（墙矩形只按本级算），
+ * 要把人拉回街网的那条路径见 `docs/design/10-hall-runtime.md` §8。
  */
 
-import { AISLE, BED_GAP, BED_H, BED_W, CORRIDOR_EVERY, PITCH_X, PITCH_Y } from './constants';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, WALL_BODY } from './constants';
 
 /** 布局版本号：几何是程序化生成的，一致性校验的对象是它（`docs/design/config.md` §1）。 */
-export const LAYOUT_VERSION = 'dorm-1';
+export const LAYOUT_VERSION = 'room-1';
 
 /** 一档的几何：行列数、容量与像素尺寸（左上角锚定在世界原点）。 */
 export interface HallLevel {
@@ -33,11 +37,8 @@ export interface Point {
   y: number;
 }
 
-/**
- * 地板与墙的矩形（世界像素）：**比床位区大一圈**——左/上各一条走道、右/下是下一级与本级之差。
- * 床位区仍锚在世界原点，所以左/上那一条余量落在负坐标一侧（`docs/design/config.md` §7）。
- */
-export interface WallRegion {
+/** 世界像素里的一个轴对齐矩形（床位区、地板与墙、房间、预留位都用它）。 */
+export interface Rect {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -46,31 +47,31 @@ export interface WallRegion {
 
 /** 级表里**唯一需要人工维护**的部分：每档的行数 `R` 与每行床数 `C`（`docs/design/config.md` §2）。 */
 const LEVEL_SHAPE: ReadonlyArray<readonly [rows: number, cols: number]> = [
-  [6, 19],
-  [7, 23],
-  [8, 26],
-  [9, 29],
-  [11, 36],
-  [13, 42],
-  [15, 49],
-  [18, 58],
-  [21, 68],
-  [25, 81],
-  [29, 94],
-  [34, 110],
-  [40, 129],
-  [47, 152],
-  [55, 178],
+  [9, 13],
+  [10, 15],
+  [12, 18],
+  [14, 21],
+  [17, 25],
+  [20, 29],
+  [23, 34],
+  [27, 39],
+  [32, 46],
+  [37, 54],
+  [43, 63],
+  [51, 74],
+  [59, 86],
+  [69, 101],
+  [81, 118],
 ];
 
-/** `W(C) = 61C + 4(C−1) + 56⌊C/4⌋`：床宽 + 床间距 + 每 4 床一条竖走道。 */
+/** `W(C) = CELL_W·C`：格宽 = 竖走道 56 + 床 61 + 预留位 56。 */
 function widthOfCols(cols: number): number {
-  return BED_W * cols + BED_GAP * (cols - 1) + AISLE * Math.floor(cols / CORRIDOR_EVERY);
+  return CELL_W * cols;
 }
 
-/** `H(R) = 156R`：床高 100 + 床脚前走道 56，行行如此。 */
+/** `H(R) = CELL_H·R`：格高 = 床高 100 + 床脚前横走道 56，行行如此。 */
 function heightOfRows(rows: number): number {
-  return PITCH_Y * rows;
+  return CELL_H * rows;
 }
 
 /** 行列数 → 一档的几何：`W(C)` 与 `H(R)` 是唯一的两条尺寸公式。 */
@@ -78,64 +79,87 @@ function shapeOf([rows, cols]: readonly [number, number]): HallLevel {
   return { rows, cols, capacity: rows * cols, width: widthOfCols(cols), height: heightOfRows(rows) };
 }
 
-/** 15 档级表：容量 114（6×19）~ 9790（55×178）。触顶后不再生长。 */
+/** 15 档级表：容量 117（9×13）~ 9558（81×118）。触顶后不再生长。 */
 export const HALL_LEVELS: readonly HallLevel[] = LEVEL_SHAPE.map(shapeOf);
 
 const TOP_LEVEL = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;
 
-/** 理论下一档（64×207）：**只给最后一档的地板与墙用**，不进级表、也不补床位（`docs/design/config.md` §2）。 */
-const TOP_WALL_LEVEL = shapeOf([64, 207]);
-
-/** 4 床 + 1 条竖走道的横向周期：一格块 = 260px 床位区 + 56px 走道。 */
-export const CORRIDOR_BLOCK = CORRIDOR_EVERY * PITCH_X + AISLE;
-
-/** 一格块内床位区的宽度（超过它就是竖走道）。 */
-export const CORRIDOR_START = CORRIDOR_EVERY * PITCH_X;
-
 /**
- * 街网：横走道带（**街行**，每行的床脚前）× 竖走道带（**街列**，每 `CORRIDOR_EVERY` 床一条），
- * 加上**贴墙那一圈余量**（左 = 又一街列、上 = 又一街行）。
+ * 街网：街行（横走道带）× 街列（竖走道）。编号都从 `STREET_BELT` 起：
  *
- * 街行与街列的编号都从 `STREET_BELT` 起。寻路只按这套编号拼图，几何一律从下面几个函数要
- * （`docs/design/config.md` §7）。
+ * - 街列 `−1` = 左贴墙那条走道、`0…C−1` = 每格的竖走道、`C` = 右贴墙那条；
+ * - 街行 `−1` = 上贴墙那条、`0…R−1` = 每格床脚前的横走道带、`R` = 下贴墙那条。
+ *
+ * 贴墙那一圈本身就是一条**环形走道**，所以它也算街：一档共有 `(C+2)·(R+2)` 个节点。
+ * **几何只在这里定义**：寻路只按这套编号拼图（`docs/design/config.md` §7）。
  */
 
-/** 街网里「贴墙那一圈余量」的编号：街列 = 左余量、街行 = 上余量（与 `wallRegionOf` 同一条）。 */
+/** 街网里「贴墙那一圈」的编号：街列 = 左余量、街行 = 上余量。 */
 export const STREET_BELT = -1;
 
-/** 街行 × 街列 → 街网节点的世界坐标（走道中心；`STREET_BELT` 那一条取墙内半条走道）。 */
-export function streetPointAt(band: number, block: number): Point {
-  const x = block === STREET_BELT ? -AISLE / 2 : block * CORRIDOR_BLOCK + CORRIDOR_START + AISLE / 2;
-  const y = band === STREET_BELT ? -AISLE / 2 : band * PITCH_Y + BED_H + AISLE / 2;
-  return { x, y };
+/** 街列 → 节点 `x`（走道中心；左贴墙那条取墙内半条走道）。 */
+function streetColumnX(block: number): number {
+  return block === STREET_BELT ? -AISLE / 2 : block * CELL_W + AISLE / 2;
 }
 
-/** `y` 落在哪一条街行（横走道带）里；落在床的占用行里（`y % 156 ∈ [0, 100)`）返回空。 */
-export function streetBandAt(y: number): number | undefined {
+/**
+ * 街行 → 节点 `y`（走道中心）。下侧贴墙那条的编号就是本级的行数 `rows`：它只有一条走道宽，
+ * 所以比均匀格距近一条走道（贴墙的余量是「四侧各一条走道」，不是一个整格）。
+ */
+function streetBandY(band: number, rows: number): number {
+  if (band === STREET_BELT) return -AISLE / 2;
+  return band === rows ? band * CELL_H + AISLE / 2 : band * CELL_H + BED_H + AISLE / 2;
+}
+
+/** 街行 × 街列 → 街网节点的世界坐标（走道中心）。`rows` = 本级的行数。 */
+export function streetPointAt(band: number, block: number, rows: number): Point {
+  return { x: streetColumnX(block), y: streetBandY(band, rows) };
+}
+
+/** `y` 落在哪一条街行（横走道带）里；落在床的占用行里（`y % CELL_H ∈ [0, BED_H)`）返回空。 */
+export function streetBandAt(y: number, rows: number): number | undefined {
   if (y < 0) return STREET_BELT;
-  if (y % PITCH_Y < BED_H) return undefined;
-  return Math.floor(y / PITCH_Y);
+  if (y >= rows * CELL_H) return rows; // 下侧贴墙那条走道
+  return y % CELL_H >= BED_H ? Math.floor(y / CELL_H) : undefined;
 }
 
-/** `x` 落在哪一条街列（竖走道）里；不在走道里（`x % 316 < 260`，即床与床间距那一档）返回空。 */
+/** `x` 落在哪一条街列（竖走道）里；落在房间里（`x % CELL_W ∈ [AISLE, CELL_W)`）返回空。 */
 export function streetBlockAt(x: number): number | undefined {
   if (x < 0) return STREET_BELT;
-  if (x % CORRIDOR_BLOCK < CORRIDOR_START) return undefined;
-  return Math.floor(x / CORRIDOR_BLOCK);
+  return x % CELL_W < AISLE ? Math.floor(x / CELL_W) : undefined;
 }
 
-/** 地板矩形里有几条街行（**不含**上侧那条余量：街行 `STREET_BELT` 就是它）。 */
-export function streetBandCount(wall: WallRegion): number {
-  let count = 0;
-  while (count * PITCH_Y + BED_H < wall.y + wall.height) count += 1;
-  return count;
+/** 地板矩形里有几条街行（**含**下侧贴墙那条；**不含**上侧那条——它就是 `STREET_BELT`）。 */
+export function streetBandCount(wall: Rect): number {
+  return (wall.height - 2 * AISLE) / CELL_H + 1;
 }
 
-/** 地板矩形里有几条街列（**不含**左侧那条余量：街列 `STREET_BELT` 就是它）。 */
-export function streetBlockCount(wall: WallRegion): number {
-  let count = 0;
-  while (count * CORRIDOR_BLOCK + CORRIDOR_START < wall.x + wall.width) count += 1;
-  return count;
+/** 地板矩形里有几条街列（**含**右贴墙那条；**不含**左侧那条——它就是 `STREET_BELT`）。 */
+export function streetBlockCount(wall: Rect): number {
+  return (wall.width - 2 * AISLE) / CELL_W + 1;
+}
+
+/** 单调等距下标表里，`≤ value` 的最大下标与 `≥ value` 的最小下标（各夹到两端），去重后返回。 */
+function nearIndices(value: number, origin: number, pitch: number, first: number, last: number): number[] {
+  const before = Math.min(Math.max(Math.floor((value - origin) / pitch), first), last);
+  const after = Math.min(before + 1, last);
+  return before === after ? [before] : [before, after];
+}
+
+/**
+ * 离 `y` 最近的 ≤2 条街行号（`streetBandAt` 那条街行上的候选节点）。
+ *
+ * 寻路的闭式只在两个端点上各留常数个候选：最短路在节点网格上是「首段 + 曼哈顿 + 末段」的
+ * 形状，总代价关于拐点坐标是**分段线性的凸函数** → 极小点只会落在端点坐标两侧最近的这两个
+ * 下标上（拐点取在两端之间时，两侧任意一条街都取到同一个值）。
+ */
+export function nearStreetBands(y: number, rows: number): number[] {
+  return nearIndices(y, BED_H + AISLE / 2, CELL_H, STREET_BELT, rows);
+}
+
+/** 离 `x` 最近的 ≤2 条街列号（同上）。 */
+export function nearStreetBlocks(x: number, cols: number): number[] {
+  return nearIndices(x, AISLE / 2, CELL_W, STREET_BELT, cols);
 }
 
 /** 级 → 级表下标。越界时夹到两端（超出上限返回最后一档）。 */
@@ -161,25 +185,21 @@ export function regionOf(index: number): HallLevel {
 }
 
 /**
- * 级 → **地板与墙**的矩形：取**下一级**的床位区，再向左上各留一条走道（最后一档用理论下一档 64×207）。
+ * 级 → **地板与墙**的矩形 = **本级格网 + 四侧各一条走道**（对称）。
  *
- * 为什么不是「本级床位区」：床位区的最外圈原本正好贴着边界（0px），最外侧是墙、绕不过去。
- * 留出一档之后每一侧都有走道：右/下来自级差，左/上来自负坐标那一条（`docs/design/config.md` §7）。
+ * 床位区锚在世界原点不动（所以左/上余量落在负坐标一侧），四侧余量都是 `AISLE`：
+ * 每张床四周都有可走的地板，**贴墙那一圈本身就是一条环形走道**，
+ * 而且「墙到最外圈床的距离」在每一档都相同（`docs/design/config.md` §2、§7）。
  */
-export function wallRegionOf(index: number): WallRegion {
-  const next = HALL_LEVELS[levelIndex(index) + 1] ?? TOP_WALL_LEVEL;
-  return { x: -AISLE, y: -AISLE, width: next.width + AISLE, height: next.height + AISLE };
+export function wallRegionOf(index: number): Rect {
+  const level = levelOf(index);
+  return { x: -AISLE, y: -AISLE, width: level.width + 2 * AISLE, height: level.height + 2 * AISLE };
 }
 
 /** 当前床位数 → 它在级表里的下标（床位数不是正好一档时取能装下它的最小那档）。 */
 export function levelIndexOfBedCount(bedCount: number): number {
   const found = HALL_LEVELS.findIndex((level) => level.capacity >= bedCount);
   return found === -1 ? HALL_LEVELS.length - 1 : found;
-}
-
-/** 床的左上角在厅里的 x：列距 × 列号 + 前面那些竖走道。 */
-function colX(col: number): number {
-  return col * PITCH_X + Math.floor(col / CORRIDOR_EVERY) * AISLE;
 }
 
 /** 床号 → 格子坐标。越界或非整数床号返回空。 */
@@ -220,22 +240,54 @@ function bedNoOfCell(row: number, col: number): number | undefined {
   return (previous?.capacity ?? 0) + offset;
 }
 
+/** 一间房（床 + 预留位）的左边那条竖走道的内沿。 */
+function roomX(col: number): number {
+  return col * CELL_W + AISLE;
+}
+
+/** 床在这间房里的 x：**偶行靠走道侧、奇行靠另一侧**（错位 = `RESERVE_W`）。 */
+function bedX(cell: Cell): number {
+  return roomX(cell.col) + (cell.row % 2 === 0 ? 0 : RESERVE_W);
+}
+
 /** 床号 → 床的绘制锚点（左上角，世界像素）。 */
 export function positionOf(bedNo: number): Point | undefined {
   const cell = cellOf(bedNo);
   if (!cell) return undefined;
-  return { x: colX(cell.col), y: cell.row * PITCH_Y };
+  return { x: bedX(cell), y: cell.row * CELL_H };
 }
 
 /** 床号 → 床脚前那条横走道的中心点：行走目标与出生点都用它。 */
 export function frontPointOf(bedNo: number): Point | undefined {
   const cell = cellOf(bedNo);
   if (!cell) return undefined;
-  return { x: colX(cell.col) + BED_W / 2, y: cell.row * PITCH_Y + BED_H + AISLE / 2 };
+  return { x: bedX(cell) + BED_W / 2, y: cell.row * CELL_H + BED_H + AISLE / 2 };
 }
 
 /**
- * 世界像素 → 床号（命中判定）。
+ * 床号 → **房间**矩形（床 + 预留位）。**当前没有任何地方绘制它** —— 将来的「房间地面」吃它。
+ * 高度只到床高：床脚前那条横走道是街，不属于任何一间房。
+ */
+export function roomOf(bedNo: number): Rect | undefined {
+  const cell = cellOf(bedNo);
+  if (!cell) return undefined;
+  return { x: roomX(cell.col), y: cell.row * CELL_H, width: BED_W + RESERVE_W, height: BED_H };
+}
+
+/** 床号 → **预留位**矩形（房间里除床以外的那 56px 一条），将来放装饰物。同样无人绘制。 */
+export function reserveOf(bedNo: number): Rect | undefined {
+  const cell = cellOf(bedNo);
+  if (!cell) return undefined;
+  return {
+    x: roomX(cell.col) + (cell.row % 2 === 0 ? BED_W : 0),
+    y: cell.row * CELL_H,
+    width: RESERVE_W,
+    height: BED_H,
+  };
+}
+
+/**
+ * 世界像素 → 床号（命中判定，含行奇偶错位）。
  *
  * 不传 `bedCount` 时按**整张表**判定（最高档的区域）；传了当前床位数，则越过它的床不算床
  * （降级之后旧外圈不该再被点到）。
@@ -243,14 +295,12 @@ export function frontPointOf(bedNo: number): Point | undefined {
 export function bedNoAt(x: number, y: number, bedCount?: number): number | undefined {
   if (!(x >= 0) || !(y >= 0)) return undefined;
 
-  const row = Math.floor(y / PITCH_Y);
-  if (y - row * PITCH_Y >= BED_H) return undefined; // 床脚前走道
+  const row = Math.floor(y / CELL_H);
+  if (y - row * CELL_H >= BED_H) return undefined; // 床脚前那条横走道带
 
-  const block = Math.floor(x / CORRIDOR_BLOCK);
-  const within = x - block * CORRIDOR_BLOCK;
-  if (within >= CORRIDOR_START) return undefined; // 竖走道
-  const col = block * CORRIDOR_EVERY + Math.floor(within / PITCH_X);
-  if (within - Math.floor(within / PITCH_X) * PITCH_X >= BED_W) return undefined; // 床间距
+  const col = Math.floor(x / CELL_W);
+  const within = x - bedX({ row, col });
+  if (within < 0 || within >= BED_W) return undefined; // 竖走道 / 预留位
 
   const bedNo = bedNoOfCell(row, col);
   if (bedNo === undefined) return undefined;
@@ -258,39 +308,45 @@ export function bedNoAt(x: number, y: number, bedCount?: number): number | undef
 }
 
 /**
- * 世界像素 → 能不能走。街网 = 床脚前横走道带 ∪ 竖向走道带 ∪ **边界那一条走道余量**。
+ * 世界像素 → 能不能走。街网 = **街列**（每格一条竖走道）∪ **街行**（每格一条床脚前横走道带）
+ * ∪ **贴墙那一圈环形走道**，再减掉「墙矩形向内缩 `WALL_BODY`」以外的部分。
  *
- * 走道带与床的占用矩形按构造互不相交：横走道只覆盖 `y % 156 ∈ [100, 156)`，而床占着
- * `[0, 100)`；竖走道落在两组 4 床之间，那里没有床格只有床间距。
- *
- * 边界 = `wallRegionOf`（下一级 + 左/上各一条走道）：最外圈的床四侧都有走道，**降级后旧外圈
- * 落回地板区、变成可走的余量**。左/上那一条在负坐标一侧，整条都是走道（街网在边界闭合）。
+ * **房间内部（床 + 预留位）不是街**：于是将来往预留位里放装饰物**不可能堵住街网**，
+ * 也就不需要阻挡集。降级之后旧外圈落在墙外，由 `nearestStreetPoint` 把人拉回街网（不是吸附意图）。
  *
  * 同 `bedNoAt`：不传 `bedCount` 按整张表判定。
  */
 export function isWalkable(x: number, y: number, bedCount?: number): boolean {
-  const region = wallRegionOf(bedCount === undefined ? HALL_LEVELS.length - 1 : levelIndexOfBedCount(bedCount));
-  if (!(x >= region.x) || !(y >= region.y) || x >= region.x + region.width || y >= region.y + region.height) {
-    return false;
-  }
-  // 落在某条街行或某条街列里就是街网；`x<0` / `y<0` 那两条贴墙余量整条都算（两个函数都返回 `STREET_BELT`）
-  return streetBandAt(y) !== undefined || streetBlockAt(x) !== undefined;
+  const index = bedCount === undefined ? HALL_LEVELS.length - 1 : levelIndexOfBedCount(bedCount);
+  const level = HALL_LEVELS[index] as HallLevel;
+  const region = wallRegionOf(index);
+  if (x < region.x + WALL_BODY || y < region.y + WALL_BODY) return false;
+  if (x >= region.x + region.width - WALL_BODY || y >= region.y + region.height - WALL_BODY) return false;
+  // 贴墙那一圈整条都算走道；街列 / 街行按格距取模
+  return x < 0 || y < 0 || x >= level.width || y >= level.height || x % CELL_W < AISLE || y % CELL_H >= BED_H;
 }
 
 /**
- * 离给定点最近的街网点（沿竖直方向找最近的横走道带；找不到就夹到区域里再找一次）。
+ * 离给定点最近的街网点（保留 x、只改 y：竖着找最近的那条街行）。
  *
  * 两个消费者，语义不同但几何是同一条：
  * 1. **客户端**在点地面时把目标吸附到街网（服务端只校验、不吸附，见 `docs/api/20-api-ws.md` §7）；
- * 2. 服务端在降级之后把落在区域外的旧位置拉回街上（那是恢复，不是对意图的静默吸附）。
+ * 2. 服务端在降级之后把落在墙外的旧位置拉回街上（那是恢复，不是对意图的静默吸附）。
  */
 export function nearestStreetPoint(point: Point, bedCount: number): Point | undefined {
-  // 夹取按**地板区**：否则站在（或点在）余量里的人会被拉回床位区，与「余量是可走的地板」相冲
+  // 夹取按**可走区**（墙矩形再内缩 `WALL_BODY`）：夹到墙上的话，整条竖线都不可走
   const region = wallRegionOf(levelIndexOfBedCount(bedCount));
-  const x = Math.min(Math.max(point.x, region.x), region.x + region.width - 1);
-  for (let distance = 0; distance <= PITCH_Y; distance += 1) {
-    for (const y of [point.y - distance, point.y + distance]) {
-      if (y >= region.y && y < region.y + region.height && isWalkable(x, y, bedCount)) return { x, y };
+  const left = region.x + WALL_BODY;
+  const top = region.y + WALL_BODY;
+  const right = region.x + region.width - WALL_BODY;
+  const bottom = region.y + region.height - WALL_BODY;
+  const x = Math.min(Math.max(point.x, left), right - 1);
+  const y = Math.min(Math.max(point.y, top), bottom - 1);
+  // 街行每 `CELL_H` 一条，且贴墙那两条一定在，所以 `CELL_H` 之内必有落点
+  for (let distance = 0; distance <= CELL_H; distance += 1) {
+    for (const candidate of [y - distance, y + distance]) {
+      if (candidate < top || candidate >= bottom) continue;
+      if (isWalkable(x, candidate, bedCount)) return { x, y: candidate };
     }
   }
   return undefined;

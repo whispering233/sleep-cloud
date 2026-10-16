@@ -65,7 +65,7 @@
 | nickname | 是 | string | 0~16 字符 | 未设置时为空串 |
 | ageConfirmed | 是 | boolean | — | 是否已完成 18 岁自述 |
 | needsNickname | 是 | boolean | — | 是否需要先设昵称才能进入 |
-| layoutVersion | 是 | string | 如 `dorm-1` | 布局版本号；与前端编译期常量不一致时应提示刷新 |
+| layoutVersion | 是 | string | 如 `room-1` | 布局版本号；与前端编译期常量不一致时应提示刷新 |
 
 | code | 场景 |
 | :--- | :--- |
@@ -82,7 +82,7 @@
         "nickname": "小明",
         "ageConfirmed": true,
         "needsNickname": false,
-        "layoutVersion": "dorm-1"
+        "layoutVersion": "room-1"
     }
 }
 ```

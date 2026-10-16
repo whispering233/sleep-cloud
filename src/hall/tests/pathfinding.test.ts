@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { AISLE, BED_H, BED_W, PITCH_Y } from '../../shared/constants';
+import { AISLE, BED_H, BED_W, CELL_H } from '../../shared/constants';
 import {
-  CORRIDOR_BLOCK,
-  CORRIDOR_START,
   HALL_LEVELS,
   frontPointOf,
   isWalkable,
   levelIndexOfBedCount,
   positionOf,
+  reserveOf,
+  streetPointAt,
   wallRegionOf,
 } from '../../shared/layout';
-import type { HallLevel, Point } from '../../shared/layout';
+import type { HallLevel, Point, Rect } from '../../shared/layout';
 import { findPath } from '../pathfinding';
 
-const CAPACITY = HALL_LEVELS.length > 0 ? (HALL_LEVELS[0] as { capacity: number }).capacity : 114;
+const CAPACITY = (HALL_LEVELS[0] as HallLevel).capacity;
 const TOP = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;
 
 const front = (bedNo: number): Point => frontPointOf(bedNo) as Point;
 
-/** 街网节点（横走道带 × 竖走道块）的世界坐标；用公共常量推导，不依赖 `pathfinding.ts` 的内部函数。 */
-const streetNode = (band: number, block: number): Point => ({
-  x: block === -1 ? -AISLE / 2 : block * CORRIDOR_BLOCK + CORRIDOR_START + AISLE / 2,
-  y: band === -1 ? -AISLE / 2 : band * PITCH_Y + BED_H + AISLE / 2,
-});
+/**
+ * 街网节点（横走道带 × 竖走道块）的世界坐标；用公共几何函数推导，不依赖 `pathfinding.ts` 的内部函数。
+ * `streetPointAt` 自己的黄金值在 `src/shared/tests/layout.test.ts` 里钉住。
+ */
+const streetNode = (band: number, block: number, rows: number): Point => streetPointAt(band, block, rows);
 
 /** 折线总长（含起点到第一个途经点、最后一个途经点到终点两段）。 */
 function pathLength(from: Point, path: Point[]): number {
@@ -41,7 +41,7 @@ function pathLength(from: Point, path: Point[]): number {
  *
  * **行切换只能发生在竖走道上**（横走道带上只有 x 落在竖走道里才连得上别的行），所以同列相邻
  * 两行的正确走法是「横到最近竖走道 → 竖走 → 横回来」——朴素的 `|Δx| + |Δy|` 在这个网格上
- * 本来就不可达（实测同列相邻两行的 路径长/L1 = 1.75 ~ 2.64）。
+ * 本来就不可达（实测同列相邻两行的 路径长/L1 = 1.8 ~ 2.6）。
  *
  * `s` = 在起点那条**床占位行**（不是横走道带：带里处处可走、看不出竖走道在哪）上用
  * `isWalkable` 向左右扫出的**最近可走竖走道区间的边缘**（只用公共 API）。
@@ -49,7 +49,7 @@ function pathLength(from: Point, path: Point[]): number {
  */
 function streetLowerBound(from: Point, to: Point, bedCount: number): number {
   const region = wallRegionOf(levelIndexOfBedCount(bedCount));
-  const scanY = from.y + PITCH_Y / 2;
+  const scanY = from.y + CELL_H / 2;
   let edge = from.x;
   for (let distance = 0; distance <= region.width; distance += 1) {
     const left = from.x - distance;
@@ -96,7 +96,7 @@ describe('街网寻路', () => {
 
   it('竖走道里上下移动 → 也是一条直线段', () => {
     const from = { x: front(4).x - BED_W, y: front(0).y }; // 竖走道里（床 4 左侧的走道）
-    const to = { x: from.x, y: from.y + PITCH_Y * 2 };
+    const to = { x: from.x, y: from.y + CELL_H * 2 };
     expect(isWalkable(from.x, from.y, CAPACITY)).toBe(true);
     expect(isWalkable(to.x, to.y, CAPACITY)).toBe(true);
     expect(findPath(from, to, CAPACITY)).toEqual([to]);
@@ -147,9 +147,10 @@ describe('街网寻路', () => {
     expect(findPath(from, { x: from.x, y: wallRegionOf(0).y - 1 }, CAPACITY)).toBeNull(); // 上侧墙外
     const top = { x: TOP.width - 1, y: front(0).y };
     expect(findPath(from, top, CAPACITY)).toBeNull(); // 越过当前级的右边界
-    // 床与床之间的 4px 缝：不在街网上
-    const gap = { x: (positionOf(3) as Point).x + BED_W + 2, y: (positionOf(3) as Point).y + BED_H / 2 };
-    expect(findPath(from, gap, CAPACITY)).toBeNull();
+    // 房间里的预留位（床 + 预留位都不可走）
+    const reserve = reserveOf(3) as Rect;
+    const reserveCenter = { x: reserve.x + reserve.width / 2, y: reserve.y + reserve.height / 2 };
+    expect(findPath(from, reserveCenter, CAPACITY)).toBeNull();
   });
 
   it('起点不在街网上（降级后落在外圈的旧位置）→ null', () => {
@@ -157,25 +158,25 @@ describe('街网寻路', () => {
     expect(findPath(outside, front(0), CAPACITY)).toBeNull();
   });
 
-  it('降级后旧外圈的那张床不再是床（区域即真相），它前面那条走道则是可走的地板', () => {
+  it('降级后旧外圈的那张床不再是床，它的位置落在墙外（要靠恢复拉回街网）', () => {
     const outerFront = front(CAPACITY); // 第 2 级才有的床
     const outerCenter = positionOf(CAPACITY) as Point;
     const bedPoint = { x: outerCenter.x + BED_W / 2, y: outerCenter.y + BED_H / 2 };
     expect(findPath(front(0), bedPoint, CAPACITY)).toBeNull(); // 床心不在街网上
-    expect(findPath(front(0), outerFront, CAPACITY)).not.toBeNull(); // 床脚前的走道落回地板区
-    expect(findPath(front(0), outerFront, TOP.capacity)).not.toBeNull();
+    expect(findPath(front(0), outerFront, CAPACITY)).toBeNull(); // 旧外圈落在墙外
+    expect(findPath(front(0), outerFront, TOP.capacity)).not.toBeNull(); // 按整张表判定时它是街
   });
 
-  it('四侧的边界余量都走得到（左/上那条在负坐标一侧）', () => {
+  it('四侧的贴墙走道都走得到（左/上那条在负坐标一侧）', () => {
     const wall = wallRegionOf(0);
     const level = HALL_LEVELS[0] as HallLevel;
     const from = front(0);
     const probes = [
-      { x: wall.x, y: from.y }, // 左侧墙边
-      { x: wall.x + AISLE / 2, y: BED_H / 2 }, // 左余量里、紧贴着最左列床的那一段
-      { x: AISLE / 2, y: wall.y }, // 上侧墙边
-      { x: level.width + 100, y: from.y }, // 右侧余量
-      { x: from.x, y: level.height + BED_H + AISLE / 2 }, // 下侧余量
+      { x: wall.x + 22, y: from.y }, // 左侧贴墙走道
+      { x: -AISLE / 2, y: BED_H / 2 }, // 左余量里、紧贴着最左列床的那一段
+      { x: AISLE / 2, y: wall.y + 22 }, // 上侧贴墙走道
+      { x: level.width + AISLE / 2, y: from.y }, // 右侧贴墙走道
+      { x: from.x, y: level.height + AISLE / 2 }, // 下侧贴墙走道
     ];
     for (const point of probes) {
       expect(isWalkable(point.x, point.y, CAPACITY), `(${point.x}, ${point.y}) 不可走`).toBe(true);
@@ -196,8 +197,9 @@ describe('街网寻路', () => {
   });
 
   it('回归：同一床列相邻两行不再「绕左边缘」（旧纯跳数 BFS 会横穿到左边界再折回）', () => {
-    const from = front(94); // 第 4 行 · 第 18 列
-    const to = front(113); // 第 5 行 · 同一列（相邻两行）
+    const col = 6;
+    const from = front(col); // 第 0 行 · 第 6 列
+    const to = front(col + (HALL_LEVELS[0] as HallLevel).cols); // 第 1 行 · 同一列（相邻两行）
     const path = findPath(from, to, CAPACITY);
     expect(path).not.toBeNull();
 
@@ -211,7 +213,7 @@ describe('街网寻路', () => {
   it('抽样床对：路径总长 ≤ 绕行下界 × 1.6，且折线每一步都在街网上', () => {
     for (const level of HALL_LEVELS) {
       const capacity = level.capacity;
-      // 起点取**中列**的床：床 0 在最左列（x ≈ 30，左余量 x = −28），从它出发「绕左边缘」
+      // 起点取**中列**的床：床 0 在最左列（x ≈ 86，左余量 x = −28），从它出发「绕左边缘」
       // 反而不是绕路，旧实现的兜圈抽不出来；中列才看得见。
       const fromBedNo = Math.floor(level.cols / 2);
       const from = front(fromBedNo);
@@ -228,24 +230,21 @@ describe('街网寻路', () => {
     }
   });
 
-  it('护城河：任意两节点的路径总长 === 坐标曼哈顿距离，且折线全程落在街网上（街网是完备且均匀的网格）', () => {
-    // 这条假设一变红，就说明有人把街网改成了非完备 / 非均匀网格（闭式最短路的前提没了）。
+  it('护城河：任意两节点的路径总长 === 坐标曼哈顿距离，且折线全程落在街网上（街网是完备的网格）', () => {
+    // 这条假设一变红，就说明有人把街网改成了非完备网格（闭式最短路的前提没了）。
     // 断言分两半：
     // ① 「总长 === 曼哈顿距离」只挡得住「闭式不再构造那条折线」（例如退回跳数 BFS）；
-    //    它对非均匀格距是**恒真**的——闭式直接按坐标差构造折线，L1 又是下界，所以照样绿。
     // ② 「折线全程落在街网上」才是「完备」的等价断言：某条横走道不再横贯整厅、某个 带×块
     //    不再是节点时，`findPath` 仍会返回一条长度 === 曼哈顿距离的折线，但它会**穿过床** → 红。
-    // ── ② 守的是**将来的几何退化**（非均匀格距 / 网格不再完备），不是这次的跳数 BFS bug，
-    //    因此它不要求在旧实现下也红。
+    // 节点编号：街行 −1…R、街列 −1…C（贴墙那一圈也是一带 / 一块）→ 共 (C+2)·(R+2) 个。
     for (const level of HALL_LEVELS) {
-      const region = wallRegionOf(levelIndexOfBedCount(level.capacity));
       const bands: number[] = [];
-      for (let band = -1; band * PITCH_Y + BED_H < region.y + region.height; band += 1) bands.push(band);
+      for (let band = -1; band <= level.rows; band += 1) bands.push(band);
       const blocks: number[] = [];
-      for (let block = -1; block * CORRIDOR_BLOCK + CORRIDOR_START < region.x + region.width; block += 1) blocks.push(block);
+      for (let block = -1; block <= level.cols; block += 1) blocks.push(block);
 
       const pick = (list: number[]): number[] => [list[0], list[Math.floor(list.length / 2)], list[list.length - 1]] as number[];
-      const nodes = pick(bands).flatMap((band) => pick(blocks).map((block) => streetNode(band, block)));
+      const nodes = pick(bands).flatMap((band) => pick(blocks).map((block) => streetNode(band, block, level.rows)));
 
       for (const from of nodes) {
         for (const to of nodes) {

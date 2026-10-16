@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 
-import { BED_H, BED_W, MAX_DPR, PITCH_X, PITCH_Y, POOL_SIZE } from '../../shared/constants';
+import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE } from '../../shared/constants';
 import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, wallRegionOf } from '../../shared/layout';
-import type { Point, WallRegion } from '../../shared/layout';
+import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
@@ -80,7 +80,7 @@ const CAMERA_FOLLOW_PX_PER_S = 500;
 /** 屏幕中央区（占屏幕的比例）：自己在这一块里走动不值得动镜头，正好是相机的死区。 */
 const CENTER_BAND = 0.4;
 /** 裁剪缓冲：可视窗口外各留一列/一行，拖拽到边界时边缘不闪。 */
-const CULL_MARGIN_PX = Math.max(PITCH_X, PITCH_Y);
+const CULL_MARGIN_PX = Math.max(CELL_W, CELL_H);
 /** 绘制层次：地板 < 床位 < 小人（床位与小人之间再按 y 排序解决遮挡）。 */
 const DEPTH = { backdrop: -20, floor: -10, bound: -5, bed: 0, person: 100 } as const;
 
@@ -129,7 +129,7 @@ class WorldScene extends Phaser.Scene {
   private wasConnected = false;
   /** 地板与墙的矩形（氛围明暗要重画地板、相机夹取也用它） */
   private floorGfx?: Phaser.GameObjects.Graphics;
-  private region: WallRegion = { x: 0, y: 0, width: 0, height: 0 };
+  private region: Rect = { x: 0, y: 0, width: 0, height: 0 };
   /** 屏幕空间背景（铺满视口，钉在相机上）：厅外那一圈的颜色也随氛围变 */
   private backdrop?: Phaser.GameObjects.Graphics;
   private backdropSize = { width: 0, height: 0 };

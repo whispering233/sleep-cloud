@@ -44,20 +44,23 @@ export const BED_W = 61;
 /** 床高（世界像素）。素材墨迹 201 × 0.5 = 100.5 取整，丢的 0.5px 不可见。 */
 export const BED_H = 100;
 
-/** 床与床之间的视觉间距：床不贴在一起。 */
-export const BED_GAP = 4;
-
 /** 走道宽度 = 人高（113 × 0.5 ≈ 56.5）：走道里站得下一个人，也不会压到床。 */
 export const AISLE = 56;
 
-/** 每几床一条竖向走道。更密则厅碎，更疏则走动绕远。 */
-export const CORRIDOR_EVERY = 4;
+/** 每间房留给装饰物的**预留位**宽度（= 一条走道宽）。它是「无边界个人房间」的那块空地，且**不可走**。 */
+export const RESERVE_W = 56;
 
-/** 列距 = 床宽 + 床间距。 */
-export const PITCH_X = BED_W + BED_GAP;
+/** 格宽 = `AISLE + BED_W + RESERVE_W`：一座格 = 一条竖走道 + 一间房（房 = 床 + 预留位）。 */
+export const CELL_W = AISLE + BED_W + RESERVE_W;
 
-/** 行距 = 床高 + 床脚前走道。 */
-export const PITCH_Y = BED_H + AISLE;
+/** 格高 = `BED_H + AISLE`：床 + 床脚前那条横走道（同时是行距）。 */
+export const CELL_H = BED_H + AISLE;
+
+/** 可走区从墙矩形四边**再向内缩**这么多：小人不压在墙上（贴墙走道有效宽 36px，仍容得下一个人）。 */
+export const WALL_BODY = 20;
+
+/** 墙带厚度（世界像素），画在墙矩形**之外**。 */
+export const WALL_WIDTH = 3;
 
 /** 画布设备像素比上限：再高只是多花填充率，肉眼看不出。 */
 export const MAX_DPR = 2;

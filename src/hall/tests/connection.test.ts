@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { APPEARANCES } from '../../shared/protocol';
-import { appearanceFor, deriveDisplayState, guardIncoming, parseUpstream, personFromConnection, retarget } from '../connection';
+import { HALL_LEVELS, frontPointOf, isWalkable } from '../../shared/layout';
+import {
+  appearanceFor,
+  deriveDisplayState,
+  guardIncoming,
+  parseUpstream,
+  personFromConnection,
+  recoverForShrink,
+  retarget,
+} from '../connection';
 import type { ConnectionState } from '../connection';
+import type { Point } from '../../shared/layout';
 
 const LAYOUT_VERSION = 'dorm-1';
 
@@ -59,6 +69,37 @@ describe('新意图覆盖路径', () => {
   it('位置与状态本身不动（只换目标与到达后动作）', () => {
     const retargeted = retarget(headingToBed, { x: 20, y: 20 });
     expect(retargeted).toMatchObject({ userId: 'u_1', name: '小明', appearance: 'boy', x: 130.5, y: 128, state: 'roaming' });
+  });
+});
+
+describe('降级前的位置恢复', () => {
+  const levelOne = (HALL_LEVELS[0] as { capacity: number }).capacity;
+  const levelTwo = (HALL_LEVELS[1] as { capacity: number }).capacity;
+
+  it('降级后旧外圈的位置被拉回可走的街网（新墙之外 → 街上）', () => {
+    // 第 2 级才有的第一张床，它床脚前那条走道在第 1 级就是「新墙之外」
+    const stranded = frontPointOf(levelOne) as Point;
+    expect(isWalkable(stranded.x, stranded.y, levelTwo)).toBe(true);
+    expect(isWalkable(stranded.x, stranded.y, levelOne)).toBe(false);
+
+    const recovered = recoverForShrink(connection({ x: stranded.x, y: stranded.y }), levelOne);
+    expect(isWalkable(recovered.x, recovered.y, levelOne)).toBe(true);
+    expect(recovered.x).not.toBe(stranded.x);
+  });
+
+  it('正在走的那条路径被清掉（`target` 与到达后动作），否则他会沿着旧路径走出墙外', () => {
+    const walking = connection({ target: { x: 9999, y: 9999 }, arrivalAction: 'lie', arrivalBedNo: 5 });
+    const recovered = recoverForShrink(walking, levelOne);
+    expect(recovered.target).toBeUndefined();
+    expect(recovered.arrivalAction).toBeUndefined();
+    expect(recovered.arrivalBedNo).toBeUndefined();
+  });
+
+  it('已经在街网上的人位置不动，但路径同样被清掉（落地状态是「停在街网上」）', () => {
+    const standing = connection({ target: { x: 200, y: 128 } });
+    const recovered = recoverForShrink(standing, levelOne);
+    expect({ x: recovered.x, y: recovered.y }).toEqual({ x: standing.x, y: standing.y });
+    expect(recovered.target).toBeUndefined();
   });
 });
 

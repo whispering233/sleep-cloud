@@ -6,8 +6,13 @@ import { smallestClaimableBed } from '../bed-store';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from '../level-rules';
 import { freshSql, insertBed } from './sqlite';
 
+/** 全部容量都由级表推导（`docs/design/config.md` §2），不再在测试里写死数字。 */
 const CAPACITIES = HALL_LEVELS.map((level) => level.capacity);
+const FIRST = CAPACITIES[0] as number;
+const SECOND = CAPACITIES[1] as number;
+const THIRD = CAPACITIES[2] as number;
 const TOP = CAPACITIES[CAPACITIES.length - 1] as number;
+const BEFORE_TOP = CAPACITIES[CAPACITIES.length - 2] as number;
 const NOW = Date.parse('2025-07-01T12:00:00Z');
 
 /** 「有没有可认领的床」＝**与出生点同一个查询**（`smallestClaimableBed`，`10-hall-runtime.md` §9）。 */
@@ -28,28 +33,28 @@ function claimAll(sql: SqlStorage, bedCount: number, expiredBedNo?: number): voi
 }
 
 describe('升级判据（入场前判定）：没有可认领的床', () => {
-  it('114 张床全被认领 → 没有可认领的床 → 取下一档容量', () => {
+  it('第 1 级全被认领 → 没有可认领的床 → 取下一档容量', () => {
     const sql = freshSql();
-    claimAll(sql, 114);
-    expect(hasClaimableBed(sql, 114)).toBe(false);
-    expect(nextLevelCapacity(114, hasClaimableBed(sql, 114))).toBe(161);
+    claimAll(sql, FIRST);
+    expect(hasClaimableBed(sql, FIRST)).toBe(false);
+    expect(nextLevelCapacity(FIRST, hasClaimableBed(sql, FIRST))).toBe(SECOND);
   });
 
   it('还有空床 → 不升', () => {
     const sql = freshSql();
-    claimAll(sql, 113);
-    expect(nextLevelCapacity(114, hasClaimableBed(sql, 114))).toBeUndefined();
+    claimAll(sql, FIRST - 1);
+    expect(nextLevelCapacity(FIRST, hasClaimableBed(sql, FIRST))).toBeUndefined();
   });
 
   it('其中一张的归属已过期（30 天没回来、行还没被释放）→ 仍可认领：不升', () => {
     const sql = freshSql();
-    claimAll(sql, 114, 113);
-    expect(smallestClaimableBed(sql, 114, NOW)).toBe(113);
-    expect(nextLevelCapacity(114, hasClaimableBed(sql, 114))).toBeUndefined();
+    claimAll(sql, FIRST, FIRST - 1);
+    expect(smallestClaimableBed(sql, FIRST, NOW)).toBe(FIRST - 1);
+    expect(nextLevelCapacity(FIRST, hasClaimableBed(sql, FIRST))).toBeUndefined();
   });
 
-  it('触顶（已经是最后一档 9790）→ undefined，由厅满判定回 2002', () => {
-    expect(TOP).toBe(9790);
+  it('触顶（已经是最后一档）→ undefined，由厅满判定回 2002', () => {
+    expect(TOP).toBe(9558);
     expect(nextLevelCapacity(TOP, false)).toBeUndefined();
   });
 
@@ -75,28 +80,28 @@ describe('厅满判据（2002）：触顶且没有可认领的床', () => {
 
   it('没触顶就不算满：还有地方可长（该走升级那条路）', () => {
     const sql = freshSql();
-    claimAll(sql, 114);
-    expect(isHallFull(114, hasClaimableBed(sql, 114))).toBe(false);
+    claimAll(sql, FIRST);
+    expect(isHallFull(FIRST, hasClaimableBed(sql, FIRST))).toBe(false);
   });
 });
 
 describe('缩级判据（每日唤醒评估）', () => {
   it('外圈全无主且无占用 → 上一档容量', () => {
-    expect(previousLevelCapacity(161, false)).toBe(114);
-    expect(previousLevelCapacity(208, false)).toBe(161);
-    expect(previousLevelCapacity(9790, false)).toBe(7144);
+    expect(previousLevelCapacity(SECOND, false)).toBe(FIRST);
+    expect(previousLevelCapacity(THIRD, false)).toBe(SECOND);
+    expect(previousLevelCapacity(TOP, false)).toBe(BEFORE_TOP);
   });
 
   it('外圈有人（哪怕 29 天没回来、哪怕只留下一张未过期睡痕）→ 保留，不缩级', () => {
-    expect(previousLevelCapacity(161, true)).toBeUndefined();
-    expect(previousLevelCapacity(9790, true)).toBeUndefined();
+    expect(previousLevelCapacity(SECOND, true)).toBeUndefined();
+    expect(previousLevelCapacity(TOP, true)).toBeUndefined();
   });
 
-  it('已经是最小档（114）→ 不缩', () => {
-    expect(previousLevelCapacity(114, false)).toBeUndefined();
+  it('已经是最小档 → 不缩', () => {
+    expect(previousLevelCapacity(FIRST, false)).toBeUndefined();
   });
 
-  it('一天只跳一档：208 缩到 161，而不是直接缩到底', () => {
-    expect(previousLevelCapacity(208, false)).toBe(161);
+  it('一天只跳一档：不是直接缩到底', () => {
+    expect(previousLevelCapacity(THIRD, false)).toBe(SECOND);
   });
 });

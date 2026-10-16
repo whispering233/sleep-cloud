@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { HALL_LEVELS } from '../../shared/layout';
 import type { BedRow } from '../bed-store';
 import { checkLie, lieVerdictFor } from '../bed-rules';
+
+/** 前两档的容量由级表推导（`docs/design/config.md` §2）。 */
+const FIRST = (HALL_LEVELS[0] as { capacity: number }).capacity;
+const SECOND = (HALL_LEVELS[1] as { capacity: number }).capacity;
 
 const bed = (overrides: Partial<BedRow> = {}): BedRow => ({
   bedNo: 7,
@@ -14,7 +19,7 @@ const bed = (overrides: Partial<BedRow> = {}): BedRow => ({
 
 const input = (overrides: Partial<Parameters<typeof checkLie>[0]> = {}) => ({
   bedNo: 7,
-  bedCount: 114,
+  bedCount: FIRST,
   inBed: false,
   userId: 'u_me',
   bed: bed(),
@@ -32,15 +37,15 @@ describe('躺下的五重校验', () => {
 
   it('床号越界（≥ 当前 bedCount）→ 3001；降级后旧外圈的床号也算越界', () => {
     expect(checkLie(input({ bedNo: -1 }))).toEqual({ ok: false, code: '3001' });
-    expect(checkLie(input({ bedNo: 114 }))).toEqual({ ok: false, code: '3001' }); // 第 2 级才有的床
-    expect(checkLie(input({ bedNo: 161, bedCount: 161 }))).toEqual({ ok: false, code: '3001' });
-    expect(checkLie(input({ bedNo: 160, bedCount: 161 }))).toEqual({ ok: true, claiming: true });
+    expect(checkLie(input({ bedNo: FIRST }))).toEqual({ ok: false, code: '3001' }); // 第 2 级才有的床
+    expect(checkLie(input({ bedNo: SECOND, bedCount: SECOND }))).toEqual({ ok: false, code: '3001' });
+    expect(checkLie(input({ bedNo: SECOND - 1, bedCount: SECOND }))).toEqual({ ok: true, claiming: true });
     expect(checkLie(input({ bedNo: 1.5 }))).toEqual({ ok: false, code: '3001' });
   });
 
   it('没有行 = 无主空床（惰性行）：允许躺下并认领，不是 3001', () => {
     expect(checkLie(input({ bed: undefined }))).toEqual({ ok: true, claiming: true });
-    expect(checkLie(input({ bed: undefined, bedNo: 113 }))).toEqual({ ok: true, claiming: true });
+    expect(checkLie(input({ bed: undefined, bedNo: FIRST - 1 }))).toEqual({ ok: true, claiming: true });
   });
 
   it('已经躺在床上 → 3004', () => {

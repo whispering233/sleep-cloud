@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { BED_H, BED_W, PITCH_X, PITCH_Y } from '../../../shared/constants';
-import { levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W } from '../../../shared/constants';
+import { HALL_LEVELS, levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
 import type { Person } from '../../../shared/protocol';
-import { PITCH_X as PX } from '../../../shared/constants';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
 import type { Motion } from '../../motion';
 import {
@@ -256,7 +255,7 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
   });
 
   it('夹取让地板区的最下边缘滚到面板之上（这正是「最底一行永远到不了」的修复）', () => {
-    const region = wallRegionOf(levelIndexOfBedCount(114));
+    const region = wallRegionOf(levelIndexOfBedCount((HALL_LEVELS[0] as { capacity: number }).capacity));
     const usable = usableView(view, insets);
     const bounds = cameraBounds(region, view, usable);
     // Phaser 夹的是整视口那个世界视窗矩形：滚到最下时它的下沿 = y + height − 视口高
@@ -299,7 +298,7 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
   });
 
   it('insets 为 0（入场层期间）：夹取与整视口时完全相同', () => {
-    const region = wallRegionOf(levelIndexOfBedCount(114));
+    const region = wallRegionOf(levelIndexOfBedCount((HALL_LEVELS[0] as { capacity: number }).capacity));
     const usable = usableView(view, { top: 0, bottom: 0 });
     const bounds = cameraBounds(region, view, usable);
     expect(bounds.width).toBe(Math.max(region.width, view.width));
@@ -316,10 +315,10 @@ describe('暖灯标记', () => {
 });
 
 describe('世界几何的其他常量来自共享层（不在这里重复拼写）', () => {
-  it('床与行走的步长就是共享常量', () => {
+  it('床与格距就是共享常量', () => {
     expect(BED_W).toBe(61);
     expect(BED_H).toBe(100);
-    expect(PITCH_X).toBe(PX);
-    expect(PITCH_Y).toBe(BED_H + 56);
+    expect(CELL_W).toBe(AISLE + BED_W + RESERVE_W);
+    expect(CELL_H).toBe(BED_H + AISLE);
   });
 });

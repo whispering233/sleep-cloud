@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DAILY_WAKE_UTC_HOUR, TRACE_TTL_MS } from '../../shared/constants';
+import { HALL_LEVELS } from '../../shared/layout';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from '../daily';
 import { previousLevelCapacity } from '../level-rules';
 
@@ -82,9 +83,11 @@ describe('该不该结算这个 20:00（`meta.daily_wake_at` 约束）', () => {
     expect(settledAt).toBe(at('2025-06-11T20:00:00Z'));
   });
 
-  it('忙厅里对象反复重建也只缩一档：不会 208 → 161 → 114', () => {
+  it('忙厅里对象反复重建也只缩一档：不会一次连缩两档', () => {
     // 每个「重建」＝一个新实例：堆是空的，边界只能从 `meta.daily_wake_at` 读回来
-    let bedCount = 208;
+    const third = (HALL_LEVELS[2] as { capacity: number }).capacity;
+    const second = (HALL_LEVELS[1] as { capacity: number }).capacity;
+    let bedCount = third;
     let settledAt: number | undefined;
     let resizes = 0;
     for (let rebuild = 0; rebuild < 5; rebuild += 1) {
@@ -97,6 +100,6 @@ describe('该不该结算这个 20:00（`meta.daily_wake_at` 约束）', () => {
       resizes += 1;
     }
     expect(resizes).toBe(1);
-    expect(bedCount).toBe(161);
+    expect(bedCount).toBe(second);
   });
 });
