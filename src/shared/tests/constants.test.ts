@@ -11,7 +11,6 @@ import {
   CELL_W,
   CHAT_MAX_LEN,
   CHAT_BUBBLE_MS,
-  CHAT_LOG_MAX,
   DAILY_WAKE_UTC_HOUR,
   EMOTE_MS,
   GRACE_MS,
@@ -88,7 +87,6 @@ describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
     expect(UPSTREAM_RATE_PER_SEC).toBe(5);
     expect(NICKNAME_MAX_LEN).toBe(16);
     expect(CHAT_MAX_LEN).toBe(200);
-    expect(CHAT_LOG_MAX).toBe(50);
     expect(POOL_SIZE).toBe(64);
     expect(MAX_DPR).toBe(docLimit('MAX_DPR'));
   });

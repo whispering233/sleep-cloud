@@ -111,32 +111,6 @@
     border-start-end-radius: var(--radius-md);
   }
 
-  /* 消息日志：滚动区，而不是把面板越掑越高（视野中央留给大厅） */
-  .chat-log {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    /* 窄屏固定封顶约 4 条：消息塞满也不许记录区把世界挤出屏幕（数值依据见 docs/ui/DESIGN.md 的 Layout & Spacing） */
-    max-height: 108px;
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    list-style: none;
-  }
-
-  .chat-message-own {
-    color: var(--color-neutral);
-  }
-
-  .chat-message-other {
-    color: var(--color-neutral-muted);
-  }
-
-  .chat-message-name {
-    font-weight: var(--font-weight-label);
-  }
-
   .chat-composer {
     display: flex;
     align-items: center;
@@ -195,11 +169,6 @@
     gap: var(--spacing-sm);
   }
 
-  /* 私聊行的「私聊 ·」标记：只给标记降调，行本身的配色仍由 own / other 决定 */
-  .chat-message-kind {
-    color: var(--color-neutral-muted);
-  }
-
   /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽 */
   @media (min-width: 640px) {
     .chat-panel {
@@ -209,11 +178,6 @@
       margin-inline: auto;
       border-block-end: 1px solid var(--color-claimed);
       border-radius: var(--radius-md);
-    }
-
-    /* 中/宽档屏幕高，记录区改按视口比例放宽 */
-    .chat-log {
-      max-height: 30vh;
     }
   }
 

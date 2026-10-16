@@ -7,13 +7,6 @@
 > 依赖：**10 → 11 → 12**，且 **10 → 13**。四张卡都改客户端/管线文件 → 一律串行派工。
 > 设计前置已随本批文档提交（`DESIGN.md` 的气泡素材/变体表/槽位/面板瘦身/形象选择/断表修复、`master` §4·§6·§7、`api/20-api-ws` §4·§5、`config` §2·§3、`schema`、`backlog`）。
 
-- [ ] 卡 12：删底部聊天记录（面板只剩控件行）
-  - **目标**：面板不再有消息列表；聊天只在世界里。面板 = 私聊目标行 + 表情行 + 床上动作行 + 输入行。
-  - **改**：① `src/client/components/ChatPanel.tsx`：删 `<ol class="chat-log">`、`view.messages`、滚动到底的 effect、`lineClass`；② `src/client/store.ts`：删 `messages` 字段与残留（`ChatLine` 若已随卡 11 改成 bubbles 就只删引用）；③ `src/shared/constants.ts` 删 `CHAT_LOG_MAX`（`constants.test.ts` 同步）；④ `src/client/styles/app.css`：删 `.chat-log` / `.chat-message-own` / `.chat-message-other` 等**已无人使用**的样式（别动其它）；⑤ `DESIGN.md` 已在设计前置改完，本卡不改文档。
-  - **不做**：不改输入行与表情行的布局、不改错误提示层、不引入新组件。
-  - **独立验收（≤5 条）**：① 页面 DOM 里没有消息列表节点；② 面板总高比改动前**变小**，最底一行床仍能走到、点得到、床号可见（**可用视口变化后的相机复验**，手机视口 393×852）；③ 输入行/表情行/私聊目标行/床上动作行都仍工作；④ `npm test` + `typecheck` + `lint:design` 全绿；⑤ `grep -rn "CHAT_LOG_MAX\|chat-log\|ChatLine" src/` 只剩零命中或注释。
-  - **CHANGELOG**：`### Changed` 一条。
-
 - [ ] 卡 13：入场层选形象
   - **目标**：入场层多一个二选一（`boy` / `girl`），没选的人行为不变（按 `user_id` 派生）。
   - **改**：① `src/worker/session.ts`：`Session` 加 `appearance?: Appearance`（解析/序列化与 nickname 同形）；② `src/worker/app.ts`：新增 `POST /api/appearance`（校验取值在 `APPEARANCES` 内，非法 → `1004` 风格的可见错误？用现有码：非法值走 `4001`/新码 → **取最小方案：非法值直接忽略并回原会话**）、`/api/ws` 升级时把形象放进身份 header；③ `src/shared/http-api.ts`：`SessionView` 加 `appearance`；④ `src/hall/hall.ts` 的 `fetch`：读该 header，**缺失/非法时回落到 `appearanceFor(userId)`**；⑤ `src/client/api.ts` 加 `setAppearance`；⑥ `src/client/components/EntryOverlay.tsx`：加两个可点选项（用图集 `boy_stand` / `girl_stand` 预览，坐标走 `public/sprites/frames.css`——**卡 10 的产物**），选中态可见；⑦ 样式引用 tokens，不写内联/单行 className 堆叠。

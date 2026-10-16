@@ -19,7 +19,7 @@ export function WorldCanvas() {
     let world: WorldHandle | undefined;
     let cancelled = false;
     // 界面实占的两块：顶部 HUD 与底部聊天面板。只把元素指出来，高度由世界层去读
-    // （面板会随消息条数与选中行变高变矮，所以每帧取值，不在这里缓存）
+    // （面板会随私聊目标行 / 床上动作行的有无变高变矮，所以每帧取值，不在这里缓存）
     const shell = host.closest('.app-shell');
     const insetsOf = () => ({
       top: shell?.querySelector<HTMLElement>('.hud') ?? null,
