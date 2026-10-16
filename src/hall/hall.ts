@@ -13,7 +13,7 @@ import type {
   WhisperMessage,
 } from '../shared/protocol';
 import type { Env } from '../worker/env';
-import { lieVerdictFor } from './bed-rules';
+import { checkLie } from './bed-rules';
 import {
   clearBed,
   findOwnedBed,
@@ -361,20 +361,26 @@ export class Hall extends DurableObject<Env> {
       }
       case 'lie': {
         const bedNo = Number(message.bedNo);
-        const verdict = lieVerdictFor({
+        const inBed = fresh.state !== 'roaming';
+        const verdict = checkLie({
           bedNo,
           bedCount: this.bedCount(),
-          inBed: fresh.state !== 'roaming',
+          inBed,
+          // 在床上时「我正躺着的那张」：点它什么都不做（`3004`），点别的床是换床
+          currentBedNo: inBed ? fresh.bedNo : undefined,
           userId: fresh.userId,
           bed: Number.isInteger(bedNo) ? readBed(this.ctx.storage.sql, bedNo, now) : undefined,
           owned: findOwnedBed(this.ctx.storage.sql, fresh.userId, now),
           now,
         });
         if (!verdict.ok) {
+          // 判定不通过时**绝不站起来**：不为一个会失败的动作产生副作用
           this.sendError(ws, verdict.code);
           return;
         }
-        this.approachBed(ws, fresh, bedNo);
+        // 在床上点别的床 = 起身 + 走过去 + 躺下（同「点地面」那条，一条命令完成三件事）
+        const standing = this.standUp(ws, fresh);
+        this.approachBed(ws, standing, bedNo);
         return;
       }
       case 'rise':
@@ -511,10 +517,11 @@ export class Hall extends DurableObject<Env> {
    */
   private lieDown(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
     const now = Date.now();
-    const verdict = lieVerdictFor({
+    const verdict = checkLie({
       bedNo,
       bedCount: this.bedCount(),
       inBed: connection.state !== 'roaming',
+      currentBedNo: connection.state !== 'roaming' ? connection.bedNo : undefined,
       userId: connection.userId,
       bed: readBed(this.ctx.storage.sql, bedNo, now),
       owned: findOwnedBed(this.ctx.storage.sql, connection.userId, now),

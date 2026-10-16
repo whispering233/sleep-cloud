@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BED_SWITCH_COOLDOWN_MS } from '../../shared/constants';
 import { HALL_LEVELS } from '../../shared/layout';
 import type { BedRow } from '../bed-store';
-import { checkLie, lieVerdictFor } from '../bed-rules';
+import { checkLie } from '../bed-rules';
 
 /** 前两档的容量由级表推导（`docs/design/20-layout.md` §3.1）。 */
 const FIRST = (HALL_LEVELS[0] as { capacity: number }).capacity;
@@ -54,10 +54,6 @@ describe('躺下的五重校验', () => {
     expect(checkLie(input({ bed: undefined, bedNo: FIRST - 1 }))).toEqual({ ok: true, claiming: true });
   });
 
-  it('已经躺在床上 → 3004', () => {
-    expect(checkLie(input({ inBed: true }))).toEqual({ ok: false, code: '3004' });
-  });
-
   it('床被占用（有人或**未过期的**睡痕）→ 3002', () => {
     expect(checkLie(input({ bed: bed({ state: 'lying', ownerUserId: 'u_me' }) }))).toEqual({ ok: false, code: '3002' });
     expect(checkLie(input({ bed: bed({ state: 'asleep', ownerUserId: 'u_me' }) }))).toEqual({ ok: false, code: '3002' });
@@ -85,7 +81,7 @@ describe('躺下的五重校验', () => {
       releasingBedNo: 7,
     });
     // 寻路到达后再校验的那条路径走同一个函数
-    expect(lieVerdictFor(input({ bed: bed({ bedNo: 3 }), owned: owned(7, NOW - 60_000) }))).toEqual({
+    expect(checkLie(input({ bed: bed({ bedNo: 3 }), owned: owned(7, NOW - 60_000) }))).toEqual({
       ok: true,
       claiming: true,
       releasingBedNo: 7,
@@ -128,9 +124,49 @@ describe('躺下的五重校验', () => {
   });
 
   it('优先级：已在床上先报 3004，而不是去挑床的毛病', () => {
-    expect(lieVerdictFor(input({ inBed: true, bed: bed({ state: 'lying', ownerUserId: 'u_other' }) }))).toEqual({
+    expect(checkLie(input({ inBed: true, currentBedNo: 7, bed: bed({ state: 'lying', ownerUserId: 'u_me' }) }))).toEqual({
       ok: false,
       code: '3004',
     });
+  });
+});
+
+describe('在床上点别的床（复合意图：自动起身 → 走过去 → 躺下）', () => {
+  /** 我正躺在 7 号床：`inBed` 与 `currentBedNo` 由同一条连接给出（见 `hall.ts` 的 `case 'lie'`）。 */
+  const lying = (overrides: Partial<Parameters<typeof checkLie>[0]> = {}) =>
+    input({ inBed: true, currentBedNo: 7, owned: owned(7, NOW - 60_000), ...overrides });
+
+  it('① 在床上 + 另一张无主床 → 允许（换床），不是 3004', () => {
+    expect(checkLie(lying({ bedNo: 3, bed: bed({ bedNo: 3 }) }))).toEqual({
+      ok: true,
+      claiming: true,
+      releasingBedNo: 7,
+    });
+    // 无行同样是无主空床（惰性行）
+    expect(checkLie(lying({ bedNo: 3, bed: undefined }))).toEqual({ ok: true, claiming: true, releasingBedNo: 7 });
+  });
+
+  it('② 在床上 + 自己正躺着的那张 → 3004（静默，什么都不做）', () => {
+    expect(checkLie(lying({ bed: bed({ state: 'lying', ownerUserId: 'u_me' }) }))).toEqual({ ok: false, code: '3004' });
+  });
+
+  it('③ 在床上 + 别人的床 → 3003（不是 3004）', () => {
+    expect(checkLie(lying({ bedNo: 3, bed: bed({ bedNo: 3, ownerUserId: 'u_other', ownerName: '别人' }) }))).toEqual({
+      ok: false,
+      code: '3003',
+    });
+  });
+
+  it('④ 在床上 + 占用中的床 → 3002', () => {
+    expect(checkLie(lying({ bedNo: 3, bed: bed({ bedNo: 3, state: 'lying', ownerUserId: 'u_other' }) }))).toEqual({
+      ok: false,
+      code: '3002',
+    });
+  });
+
+  it('⑤ 在床上 + 另一张无主床但冷却中 → 3008（可恢复）', () => {
+    expect(
+      checkLie(lying({ bedNo: 3, bed: bed({ bedNo: 3 }), owned: owned(7, NOW - 9_999) })),
+    ).toEqual({ ok: false, code: '3008' });
   });
 });
