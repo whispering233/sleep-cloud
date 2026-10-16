@@ -14,7 +14,7 @@ import {
 import type { ConnectionState } from '../connection';
 import type { Point } from '../../shared/layout';
 
-const LAYOUT_VERSION = 'dorm-1';
+const LAYOUT_VERSION = 'room-1';
 
 function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
   return {
@@ -105,7 +105,7 @@ describe('降级前的位置恢复', () => {
 
 describe('上行报文解析', () => {
   it('认识合法消息', () => {
-    expect(parseUpstream('{"t":"hello","layoutVersion":"dorm-1"}')).toMatchObject({ t: 'hello' });
+    expect(parseUpstream('{"t":"hello","layoutVersion":"room-1"}')).toMatchObject({ t: 'hello' });
     expect(parseUpstream('{"t":"walk","x":3.5,"y":4.25}')).toMatchObject({ t: 'walk' });
   });
 

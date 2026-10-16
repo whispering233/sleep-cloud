@@ -186,7 +186,7 @@ export const DOWNSTREAM_TYPES = [
 /**
  * 归属位图编解码（见 `docs/api/20-api-ws.md` §4.2）：第 `bedNo` 位为 1 表示该床有主。
  *
- * 为什么不是床号数组：床位数会长到 9790，数组约 50 KB JSON，位图 `ceil(9790/8) = 1224` 字节
+ * 为什么不是床号数组：床位数会长到 9558，数组约 50 KB JSON，位图 `ceil(9558/8) = 1195` 字节
  * （base64 后约 1.6 KB）。字节数由 `bedCount` 定，`bedNo ≥ bedCount` 的位无意义。
  */
 export function encodeOwnedBeds(bedNos: Iterable<number>, bedCount: number): string {

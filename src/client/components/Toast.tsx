@@ -7,7 +7,7 @@ import type { Notice } from '../store';
  * 可恢复错误的提示条（`docs/ui/DESIGN.md` 的 `toast-recoverable`）。
  *
  * 只显示 `notice`：文案层已经筛过静默类错误，这里不再判码。
- * **自清靠 CSS 动画的 `animationend`，不挂 `setTimeout`**——内存定时器会让页面无法休眠（见 `AGENTS.md` 硬纪律 5）。
+ * **自清靠 CSS 动画的 `animationend`，不挂 `setTimeout`**——内存定时器会让页面无法休眠（见 `AGENTS.md` 硬纪律 6）。
  */
 export function Toast() {
   const [notice, setNotice] = useState<Notice | undefined>(() => getState().notice);

@@ -215,7 +215,7 @@ class WorldScene extends Phaser.Scene {
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
 
-  /** 床号 → 位置只在床位数变化时重算一次（最高档 9790 张，一次几毫秒；不逐帧算）。 */
+  /** 床号 → 位置只在床位数变化时重算一次（最高档 9558 张，一次几毫秒；不逐帧算）。 */
   private buildBedIndex(bedCount: number): void {
     const rows = new Map<number, BedRow>();
     for (let bedNo = 0; bedNo < bedCount; bedNo += 1) {

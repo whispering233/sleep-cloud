@@ -63,23 +63,26 @@ describe('枚举取值与 docs/api/20-api-ws.md §3.1 一致', () => {
 
 describe('归属位图（docs/api/20-api-ws.md §4.2）', () => {
   it('第 bedNo 位为 1；字节数 = ceil(bedCount/8)', () => {
-    const encoded = encodeOwnedBeds([0, 7, 8], 114);
-    expect(atob(encoded)).toHaveLength(Math.ceil(114 / 8));
-    expect(decodeOwnedBeds(encoded, 114)).toEqual([0, 7, 8]);
+    const first = (HALL_LEVELS[0] as { capacity: number }).capacity;
+    const encoded = encodeOwnedBeds([0, 7, 8], first);
+    expect(atob(encoded)).toHaveLength(Math.ceil(first / 8));
+    expect(decodeOwnedBeds(encoded, first)).toEqual([0, 7, 8]);
   });
 
-  it('跨字节与最高档的边界都对（114 的最后一床是 113；9790 的最后一床是 9789）', () => {
+  it('跨字节与容量顶端的边界都对（第 1 档的最后一床是 first−1；末档的最后一床是 top−1）', () => {
+    const first = (HALL_LEVELS[0] as { capacity: number }).capacity;
     const top = (HALL_LEVELS[HALL_LEVELS.length - 1] as { capacity: number }).capacity;
-    expect(decodeOwnedBeds(encodeOwnedBeds([112, 113], 114), 114)).toEqual([112, 113]);
+    expect(decodeOwnedBeds(encodeOwnedBeds([first - 2, first - 1], first), first)).toEqual([first - 2, first - 1]);
     expect(decodeOwnedBeds(encodeOwnedBeds([top - 1], top), top)).toEqual([top - 1]);
     // 位图只编码到 bedCount−1：超出的位一律丢掉
     expect(decodeOwnedBeds(encodeOwnedBeds([top], top), top)).toEqual([]);
-    expect(decodeOwnedBeds(encodeOwnedBeds([200], 114), 114)).toEqual([]);
+    expect(decodeOwnedBeds(encodeOwnedBeds([200], first), first)).toEqual([]);
   });
 
   it('空集合也编成固定长度：升级新增的位天然都是 0，不需要服务端补', () => {
-    const encoded = encodeOwnedBeds([], 9790);
-    expect(atob(encoded)).toHaveLength(1224);
-    expect(decodeOwnedBeds(encoded, 9790)).toEqual([]);
+    const top = (HALL_LEVELS[HALL_LEVELS.length - 1] as { capacity: number }).capacity;
+    const encoded = encodeOwnedBeds([], top);
+    expect(atob(encoded)).toHaveLength(Math.ceil(top / 8));
+    expect(decodeOwnedBeds(encoded, top)).toEqual([]);
   });
 });

@@ -5,7 +5,7 @@ import type { ClientState } from './store';
  * HUD 的**派生视图**（纯函数，可单测）。
  *
  * 只吃这几个字段：位置节拍每 100 ms 通知一次 store，用不上的变化不该触发渲染
- * （与 `ChatPanel` 的 `viewOf` / `sameView` 同一模式，见 `AGENTS.md` 硬纪律 14）。
+ * （与 `ChatPanel` 的 `viewOf` / `sameView` 同一模式，见 `AGENTS.md` 硬纪律 17）。
  */
 export interface HudView {
   /** 我的床号（**归属**，不是占用）：还没有这张床时这一项不显示 */

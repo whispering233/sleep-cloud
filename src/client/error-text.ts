@@ -10,7 +10,7 @@ export const ERROR_FALLBACK_TEXT = '出了点问题，稍后再试';
  * **不复用服务端的 `msg`**：`msg` 面向开发者（见 `docs/api/error-code.md` §1），
  * 这里的文案逐条取自该文档错误码表的「用户可见文案方向」列，由单测比对文档强制保证。
  *
- * `undefined` = 静默：用户对这些失败无能为力，而错误反馈本身会变成放大器（见 `AGENTS.md` 硬纪律 11）。
+ * `undefined` = 静默：用户对这些失败无能为力，而错误反馈本身会变成放大器（见 `AGENTS.md` 硬纪律 13）。
  * 类型写成 `Record<Exclude<ErrorCode, '0'>, …>` 是为了让「漏了一个码」在编译期就报错。
  */
 export const ERROR_TEXT: Record<Exclude<ErrorCode, '0'>, string | undefined> = {

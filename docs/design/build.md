@@ -26,7 +26,7 @@
 | 起后端 + 房间服务 + SQLite | 平台的本地运行命令（`wrangler dev`）。本地即可获得完整的对象、SQLite 与 WebSocket 能力 |
 | 起前端 | 前端开发服务器（`vite`），把 API 与 WebSocket 请求代理到本地运行的后端 |
 | 双浏览器验证多人 | 同一台机器开两个浏览器配置文件（cookie 隔离），或一个正常窗口 + 一个隐私窗口 |
-| 制造边界场景 | 本地把厅容量调小（见 `config.md` §7），便于触发「厅满」「床位被占」 |
+| 制造边界场景 | 本地把厅容量调小（改 `meta.bed_count`，档位见 `config.md` §2 的级表），便于触发「厅满」「床位被占」 |
 
 **验证要点（人工）**：两个浏览器里的小人能否互相看见、走动是否平滑、躺下后另一侧是否立即看到、断网 60 秒后是否变成睡痕、重连是否回到原状态。
 
@@ -63,6 +63,20 @@
 **典型症状：忘了注入 `SESSION_SECRET`**
 `/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
 `Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
+
+### 4.3 发版（Release）
+
+一次发版 = 版本号 + CHANGELOG + 提交 + 部署 + 打标签 + 推送，**顺序固定**：
+
+| 步骤 | 动作 |
+| :--- | :--- |
+| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
+| 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design` |
+| 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
+| 4 | `npm run deploy` + §4 的冒烟检查（`GET /api/health`、打开页面、走一遍完整循环） |
+| 5 | **冒烟通过后**才 `git tag vX.Y.Z` → `git push origin vX.Y.Z` |
+
+**为什么标签排在最后**：标签是公开且难撤的产物。部署失败或冒烟不过时还没有标签，仓库里不会留下一个「标了发布但没上线」的版本；推送 `main` 则可以早做（远端是事实来源）。`release.yml` 用推送的标签建 GitHub Release，正文取自 `CHANGELOG.md` 里对应的那一段 —— 所以那一段的版本号必须与标签逐字对应。
 
 ### 4.2 生产入口必须是自定义域名
 
