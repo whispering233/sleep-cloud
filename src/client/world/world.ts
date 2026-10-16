@@ -42,7 +42,7 @@ import type { BedView, PersonView } from './views';
  * 三条边界：
  * 1. 世界走画布、界面走 DOM——这里不画任何文字界面，名字是贴在床上的小标签，不是 UI；
  * 2. 画布不参与 React 的渲染循环——状态直接读 store，重画由 Phaser 的 game loop 驱动；
- * 3. **没有缩放**——世界与屏幕是一个固定比例（1 世界像素 = 1 CSS 像素，画布按 DPR ≤2 放大）。
+ * 3. **没有缩放**——世界与屏幕是一个固定比例（1 世界像素 = 1 CSS 像素，画布按 DPR ≤`MAX_DPR` 放大）。
  *
  * 几何全部来自 `src/shared/layout.ts`（与厅服务同一份纯函数）：床位坐标、区域尺寸、命中判定。
  * 床位数（`hall.bedCount`）是运行时事实，**每个 `bedNoAt` / `isWalkable` 调用点都显式带上它**。
@@ -675,7 +675,7 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     type: Phaser.AUTO,
     parent: host,
     backgroundColor: COLORS.outside,
-    // DPR 上限 2：画布像素 = CSS 像素 × DPR，`zoom` 再把 CSS 尺寸抵消回去（见 `resizeToHost`）
+    // DPR 上限见 `MAX_DPR`：画布像素 = CSS 像素 × DPR，`zoom` 再把 CSS 尺寸抵消回去（见 `resizeToHost`）
     scale: {
       mode: Phaser.Scale.NONE,
       zoom: 1 / dpr,

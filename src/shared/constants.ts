@@ -98,8 +98,12 @@ export const WALL_WIDTH = 3;
  */
 export const OUTSIDE_MARGIN = AISLE;
 
-/** 画布设备像素比上限：再高只是多花填充率，肉眼看不出。 */
-export const MAX_DPR = 2;
+/**
+ * 画布设备像素比上限。基准设备（iPhone 16）是 DPR 3：上限取 2 时画布只有 CSS×2 个像素，
+ * 浏览器再放大 1.5× 铺满屏幕，线稿与文字一起发虚；取 3 才与设备像素 1:1。
+ * 代价是填充率 ×2.25（相对 2），真机帧率见 `docs/design/build.md` §7 B5。
+ */
+export const MAX_DPR = 3;
 
 /** 每连接上行限流（条/秒），超出丢弃。 */
 export const UPSTREAM_RATE_PER_SEC = 5;
