@@ -7,13 +7,6 @@
 > 依赖：**10 → 11 → 12**，且 **10 → 13**。四张卡都改客户端/管线文件 → 一律串行派工。
 > 设计前置已随本批文档提交（`DESIGN.md` 的气泡素材/变体表/槽位/面板瘦身/形象选择/断表修复、`master` §4·§6·§7、`api/20-api-ws` §4·§5、`config` §2·§3、`schema`、`backlog`）。
 
-- [ ] 卡 10：素材管线——气泡底与尾巴 + `frames.css`
-  - **目标**：把上游两张气泡素材接进管线，并给入场层的形象预览产出图集坐标（CSS）。
-  - **改**：① `tools/art/masters/` 新增 `ChatBackground.png`、`ChatBackgroundTail.png`（从 `~/projects/WheatCloudSleep/Art/` 拷，**不改图**）；② `tools/art/build-sprites.mjs` 的 `VARIANTS` 加两条：`chat_bubble`（`ChatBackground`，ink `neutral-muted`、fill `secondary`）、`chat_bubble_tail`（`ChatBackgroundTail`，同色）；**锚点 = 中心**（上游 `spr_chatbackground.yy` 的 origin 是 32,32；两张同原点、尾巴自然垂在下方）；③ `masters/LICENSE` 与脚本里生成的 `LICENSE-wheatcloudsleep.txt` 都补上这两个文件名（脚本有 required 字符串校验）；④ 新增产出 `public/sprites/frames.css`：每帧一条 `.sprite-<name> { width; height; background-image: url(...); background-position: -x -y }`，**坐标只来自管线**（不许在别处手抄图集坐标）。
-  - **不做**：不改 `ART_SCALE`、不动既有 8 张帧的颜色映射、不动图集宽度策略（256）除非装不下。
-  - **验收（≤5 条）**：① `npm run art` 成功，`atlas.json` 有 **11 帧**且两张气泡帧的 `frame.w/h` = 墨迹 bbox（应为 36×30 与 20×27）；② `frames.css` 的帧数与 `atlas.json` 一致、每帧都有 width/height/position；③ `LICENSE-wheatcloudsleep.txt` 里出现四个文件名（两张气泡 + 原有床/人母图）；④ `npm test` 全绿（`atlas.test.ts` 若有帧数/颜色断言要跟着改）；⑤ `npm run lint:design` 仍 0/0。
-  - **CHANGELOG**：`### Added` 一条。
-
 - [ ] 卡 11：聊天气泡（世界内）
   - **目标**：聊天与私聊在世界里以气泡出现（8 秒、覆盖、宽度上限、私聊前缀），**不再有本地消息流**。规则见 `DESIGN.md` 的 `chat-bubble` 行与槽位说明。
   - **改**：① `src/shared/constants.ts` 加 `CHAT_BUBBLE_MS = 8_000`（`constants.test.ts` 加断言）；② `src/client/store.ts`：`messages` / `ChatLine` 形态改成 `bubbles: Map<发送者id, { text, kind: 'chat' | 'whisper', expiresAt }>`，`applyChat` / `applyWhisper` 写入并**覆盖同人前一条**、重置 `expiresAt`；`applySnapshot` / `applyLeave` 清掉（人走气泡走）；③ `src/client/world/views.ts`：加气泡视图（`chat_bubble` + `chat_bubble_tail` 两个 Image **同原点**、一个 Text），画法照上游：**底图按文字宽度横向拉伸、尾巴固定尺寸**；宽度上限 `CHAT_BUBBLE_MAX_PX = 200`（客户端常量，放 `views.ts` 与其它气泡常量同处）、最多两行、超出加 `…`；**槽位唯一**：聊天 > 表情 > 名字；④ `src/client/world/world.ts`：每帧把未过期气泡挂到对应人身上（`expiresAt` vs 现在，**不挂定时器**）。

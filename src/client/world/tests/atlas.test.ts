@@ -60,9 +60,28 @@ describe('图集与客户端的接口', () => {
     }
   });
 
-  it('锚点就是约定的那两个：床 = 墨迹左上角、小人 = 墨迹底边中心', () => {
+  it('锚点就是约定的那三个：床 = 墨迹左上角、小人 = 墨迹底边中心、气泡 = 中心', () => {
+    const anchorOf = (name: string) => {
+      if (name.startsWith('bed_')) return { x: 0, y: 0 };
+      return name.startsWith('chat_bubble') ? { x: 0.5, y: 0.5 } : { x: 0.5, y: 1 };
+    };
     for (const [name, frame] of Object.entries(atlas.frames)) {
-      expect(frame.anchor, name).toEqual(name.startsWith('bed_') ? { x: 0, y: 0 } : { x: 0.5, y: 1 });
+      expect(frame.anchor, name).toEqual(anchorOf(name));
+    }
+  });
+
+  it('frames.css 每帧一条规则，坐标与图集同源（入场层的形象预览按它取图）', () => {
+    const css = readFileSync(join(process.cwd(), 'public', 'sprites', 'frames.css'), 'utf8');
+    const rules = [
+      ...css.matchAll(
+        /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\.\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
+      ),
+    ];
+    expect(rules.length).toBe(Object.keys(atlas.frames).length);
+    for (const [, name, w, h, x, y] of rules) {
+      const frame = atlas.frames[name ?? ''];
+      if (!frame) throw new Error(`frames.css 里的 ${name} 不在图集里`);
+      expect(frame.frame, name).toEqual({ x: Number(x), y: Number(y), w: Number(w), h: Number(h) });
     }
   });
 

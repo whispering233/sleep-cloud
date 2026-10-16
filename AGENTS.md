@@ -102,7 +102,7 @@
 # 干净克隆后先跑一次：typecheck 与 test 都依赖生成物 src/client/styles/tokens.*
 npm run tokens
 
-# 美术素材管线（5 张母图 → 8 张贴图 → 图集；产物入库，不挂进 build）
+# 美术素材管线（7 张母图 → 10 张贴图 → 图集 + frames.css；产物入库，不挂进 build）
 npm run art
 
 # 完整站点（后端 + 房间服务 + SQLite + 静态资源，http://localhost:8787）
@@ -122,7 +122,7 @@ npm run deploy
 npm run lint:design
 npm run tokens
 
-# 构建期素材管线：母图 → 8 张贴图 → public/sprites/atlas.png + atlas.json（产物入库，不挂进 build）
+# 构建期素材管线：母图 → 10 张贴图 → public/sprites/atlas.png + atlas.json + frames.css（产物入库，不挂进 build）
 npm run art
 ```
 

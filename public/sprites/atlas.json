@@ -199,6 +199,54 @@
         "x": 0.5,
         "y": 1
       }
+    },
+    "chat_bubble": {
+      "frame": {
+        "x": 167,
+        "y": 607,
+        "w": 36,
+        "h": 30
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 36,
+        "h": 30
+      },
+      "sourceSize": {
+        "w": 36,
+        "h": 30
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "chat_bubble_tail": {
+      "frame": {
+        "x": 204,
+        "y": 607,
+        "w": 23,
+        "h": 27
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 23,
+        "h": 27
+      },
+      "sourceSize": {
+        "w": 23,
+        "h": 27
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
     }
   },
   "meta": {
@@ -256,6 +304,24 @@
         "y": 68,
         "w": 97,
         "h": 113
+      }
+    },
+    "ChatBackground": {
+      "file": "masters/ChatBackground.png",
+      "ink": {
+        "x": 14,
+        "y": 17,
+        "w": 36,
+        "h": 30
+      }
+    },
+    "ChatBackgroundTail": {
+      "file": "masters/ChatBackgroundTail.png",
+      "ink": {
+        "x": 19,
+        "y": 26,
+        "w": 23,
+        "h": 27
       }
     }
   }
