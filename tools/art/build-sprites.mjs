@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * 构建期素材管线：`WheatCloudSleep` 的 7 张母图 → 10 张贴图 → 一张图集 + 一份 CSS。
+ * 构建期素材管线：`WheatCloudSleep` 的 5 张母图 → 8 张贴图 → 一张图集 + 一份 CSS。
  *
  * 三条规则来自 `docs/ui/DESIGN.md`「构建期要产出的变体」：
  * 1. **两色渐变映射**：按亮度在黑线端点与白填充端点之间插值（母图是 2 色 + 抗锯齿灰，
  *    只替换两个色值会让边缘烂成锯齿），白填充映射为 `paper` 或**透明**（空芯）；
  * 2. **裁到墨迹 bbox**（bbox 由脚本算，不硬编码），并输出锚点：
- *    床 = 墨迹左上角对齐格左上角，小人 = 墨迹底边中心对齐站立点，气泡 = 中心；
+ *    床 = 墨迹左上角对齐格左上角，小人 = 墨迹底边中心对齐站立点；
+ *    （聊天气泡不走素材：圆角矩形 + 三角在客户端程序化画，见 DESIGN.md「气泡不走素材」）
  * 3. 顺带产出 `public/sprites/frames.css`：每帧一条 `background-position`，给入场层的形象
  *    预览当图片用——图集坐标只能有这一份，别处不许手抄；
  * 4. 产物是**提交物**（`public/sprites/`），`npm run art` 重新生成；**不挂进 `npm run build`**。
@@ -30,7 +31,7 @@ const ATLAS_WIDTH = 256;
 const GAP = 1;
 
 /**
- * 10 张贴图（`docs/ui/DESIGN.md`「构建期要产出的变体」）：
+ * 8 张贴图（`docs/ui/DESIGN.md`「构建期要产出的变体」）：
  * `fill: null` = 白填充映射为透明（空芯，地板直接透出来）；`anchor` = 覆盖下面按帧名推的默认锚点。
  */
 const VARIANTS = [
@@ -42,9 +43,6 @@ const VARIANTS = [
   { name: 'bed_girl_trace', master: 'bedGirl', ink: 'trace', fill: 'paper' },
   { name: 'boy_stand', master: 'Boy', ink: 'neutral', fill: 'paper' },
   { name: 'girl_stand', master: 'Girl', ink: 'neutral', fill: 'paper' },
-  // 气泡底与尾巴同原点（上游 origin 是 32,32）：底图按文字宽度横向拉伸、尾巴自然垂在下方
-  { name: 'chat_bubble', master: 'ChatBackground', ink: 'neutral-muted', fill: 'secondary', anchor: { x: 0.5, y: 0.5 } },
-  { name: 'chat_bubble_tail', master: 'ChatBackgroundTail', ink: 'neutral-muted', fill: 'secondary', anchor: { x: 0.5, y: 0.5 } },
 ];
 
 /** 锚点：床贴图的墨迹左上角 = 格子左上角；小人贴图的墨迹底边中心 = 站立点。 */
@@ -328,8 +326,7 @@ function pack(sizes) {
 // ————————————————————————— 主流程 —————————————————————————
 
 function anchorLabel(anchor) {
-  if (anchor.x === 0) return '锚点 左上角';
-  return anchor.y === 1 ? '锚点 底边中心' : '锚点 中心';
+  return anchor.x === 0 ? '锚点 左上角' : '锚点 底边中心';
 }
 
 function main() {
@@ -395,7 +392,7 @@ function main() {
             // 帧就是裁到墨迹 bbox 的这一块，没有再裁一层；坐标空间 = 帧左上角（= 锚点所在处）
             spriteSourceSize: { x: 0, y: 0, w: frame.w, h: frame.h },
             sourceSize: { w: frame.w, h: frame.h },
-            // Phaser 按它设原点：床 = 墨迹左上角，小人 = 墨迹底边中心，气泡 = 中心
+            // Phaser 按它设原点：床 = 墨迹左上角，小人 = 墨迹底边中心
             anchor: frame.anchor,
             ...(frame.face ? { face: frame.face } : {}),
           },
@@ -443,9 +440,8 @@ function main() {
   writeFileSync(
     LICENSE_OUT,
     [
-      '素材来源与用途：本目录下的 atlas.png / atlas.json / frames.css 由 WheatCloudSleep 的 7 张母图',
-      '（Art/Legacy/Boy.png、Girl.png、bedEmpty.png、bedBoy.png、bedGirl.png 与 Art/ChatBackground.png、',
-      'ChatBackgroundTail.png；均原样存于 tools/art/masters/）构建而成，',
+      '素材来源与用途：本目录下的 atlas.png / atlas.json / frames.css 由 WheatCloudSleep 的 5 张母图',
+      '（Art/Legacy/Boy.png、Girl.png、bedEmpty.png、bedBoy.png、bedGirl.png；均原样存于 tools/art/masters/）构建而成，',
       '用于 sleep-cloud 世界层的床位与小人渲染。以下为上游许可原文（未改动）。',
       '',
       license,

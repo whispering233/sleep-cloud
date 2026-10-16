@@ -381,6 +381,24 @@ describe('气泡文字的截断（最多两行，超出加 …）', () => {
   });
 });
 
+describe('名字行的截断（只有一行，超出加 …）', () => {
+  /** 同一套假的量行器：一行 10 个字符。 */
+  const linesOf = (text: string): number => Math.max(1, Math.ceil(text.length / 10));
+
+  it('放得下就原样返回，不动一个字', () => {
+    expect(truncateToLines('小明', 1, linesOf)).toBe('小明');
+    expect(truncateToLines('a'.repeat(10), 1, linesOf)).toBe('a'.repeat(10));
+  });
+
+  it('放不下就截到「补上 … 后仍只有一行」的最长前缀', () => {
+    const cut = truncateToLines('a'.repeat(25), 1, linesOf);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(linesOf(cut)).toBe(1);
+    // 再多留一个字就是两行：说明截的正是边界
+    expect(linesOf(`${cut.slice(0, -1)}a…`)).toBe(2);
+  });
+});
+
 describe('世界几何的其他常量来自共享层（不在这里重复拼写）', () => {
   it('床与格距就是共享常量', () => {
     expect(BED_W).toBe(61);

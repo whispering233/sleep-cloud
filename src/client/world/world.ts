@@ -350,10 +350,10 @@ class WorldScene extends Phaser.Scene {
       const bubble = state.bubbles.get(person.id);
       const chat = bubble && bubble.expiresAt > now ? bubble : undefined;
       // 头顶只有一个槽位：**聊天 > 表情 > 选中名字**。床上那条常显的裸标签在床下方，不跟着让位。
-      // 名字在渲染时从 `people` 现取，**别人的消息带名字前缀，自己的不带**（自己知道是自己）。
+      // 名字在渲染时从 `people` 现取，**别人的消息单独占一行名字，自己的不画**（自己知道是自己）。
       setPersonChat(
         personView,
-        chat === undefined ? undefined : { text: mine ? chat.text : `${person.name}：${chat.text}`, kind: chat.kind },
+        chat === undefined ? undefined : { text: chat.text, kind: chat.kind, name: mine ? undefined : person.name },
       );
       setPersonName(
         personView,

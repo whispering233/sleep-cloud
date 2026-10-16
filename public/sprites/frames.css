@@ -7,5 +7,3 @@
 .sprite-bed_girl_trace { width: 122px; height: 201px; background-image: url('./atlas.png'); background-position: -124px -405px; }
 .sprite-boy_stand { width: 67px; height: 113px; background-image: url('./atlas.png'); background-position: -1px -607px; }
 .sprite-girl_stand { width: 97px; height: 113px; background-image: url('./atlas.png'); background-position: -69px -607px; }
-.sprite-chat_bubble { width: 36px; height: 30px; background-image: url('./atlas.png'); background-position: -167px -607px; }
-.sprite-chat_bubble_tail { width: 23px; height: 27px; background-image: url('./atlas.png'); background-position: -204px -607px; }

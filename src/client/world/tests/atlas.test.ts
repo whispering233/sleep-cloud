@@ -60,11 +60,8 @@ describe('图集与客户端的接口', () => {
     }
   });
 
-  it('锚点就是约定的那三个：床 = 墨迹左上角、小人 = 墨迹底边中心、气泡 = 中心', () => {
-    const anchorOf = (name: string) => {
-      if (name.startsWith('bed_')) return { x: 0, y: 0 };
-      return name.startsWith('chat_bubble') ? { x: 0.5, y: 0.5 } : { x: 0.5, y: 1 };
-    };
+  it('锚点就是约定的那两个：床 = 墨迹左上角、小人 = 墨迹底边中心', () => {
+    const anchorOf = (name: string) => (name.startsWith('bed_') ? { x: 0, y: 0 } : { x: 0.5, y: 1 });
     for (const [name, frame] of Object.entries(atlas.frames)) {
       expect(frame.anchor, name).toEqual(anchorOf(name));
     }

@@ -105,4 +105,4 @@ npm run lint:design   # 基线：0 error / 0 warning
 
 [MIT](LICENSE)
 
-**美术素材**：`public/sprites/` 下的图集与贴图由 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 的 7 张母图（床与小人在 `Art/Legacy/`，聊天气泡底与尾巴在 `Art/`）构建而成，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
+**美术素材**：`public/sprites/` 下的图集与贴图由 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 的 5 张母图（床与小人，在 `Art/Legacy/`）构建而成，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
