@@ -29,12 +29,29 @@ const NOW = Date.parse('2025-07-01T12:00:00Z');
 const FIRST = (HALL_LEVELS[0] as { capacity: number }).capacity;
 const SECOND = (HALL_LEVELS[1] as { capacity: number }).capacity;
 const THIRD = (HALL_LEVELS[2] as { capacity: number }).capacity;
+const LAST = (HALL_LEVELS[HALL_LEVELS.length - 1] as { capacity: number }).capacity;
 const claim = (bedNo: number, userId: string, name = '夜猫') =>
   ({ bedNo, userId, name, appearance: 'boy', now: NOW, claiming: true }) as const;
 
 /** 床位行数（只用于断言：产品代码里已经没有「有主床数」这个量了）。 */
 const bedRowCount = (sql: SqlStorage): number =>
   sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM bed').one().n;
+
+/** 库里存着的 `meta.bed_count`（断言「写回了」，与 `readMeta` 的返回值分开看）。 */
+const storedBedCount = (sql: SqlStorage): number =>
+  sql.exec<{ value: number }>('SELECT value FROM meta WHERE key = ?', META_KEYS.bedCount).one().value;
+
+/** 写入计数：包一层 `exec` 数出所有非 `SELECT` 语句（断言「读到合法值时一次库都不写」）。 */
+function countingSql(sql: SqlStorage): { sql: SqlStorage; writes: () => number } {
+  let writes = 0;
+  const counting = {
+    exec: (query: string, ...bindings: SqlStorageValue[]) => {
+      if (!/^\s*(select|with)\b/i.test(query)) writes += 1;
+      return sql.exec(query, ...bindings);
+    },
+  } as unknown as SqlStorage;
+  return { sql: counting, writes: () => writes };
+}
 
 describe('惰性行：没有行 = 无主空床', () => {
   it('新厅一行床位行都没有，出生点直接是床号 0', () => {
@@ -95,6 +112,45 @@ describe('meta：bed_count / daily_wake_at', () => {
   it('一行都没有的厅推导成第 1 级', () => {
     const sql = freshSql();
     expect(readMeta(sql)).toEqual({ bedCount: FIRST, dailyWakeAt: undefined });
+  });
+
+  it('已在级表里的值原样返回，且不写库', () => {
+    const sql = freshSql();
+    writeBedCount(sql, THIRD);
+    const counted = countingSql(sql);
+
+    expect(readMeta(counted.sql).bedCount).toBe(THIRD);
+    expect(counted.writes()).toBe(0);
+    writeBedCount(counted.sql, FIRST); // 夹具自检：写入真会被数到
+    expect(counted.writes()).toBe(1);
+  });
+
+  it('级表残留（114 / 208）→ 归一到能装下它的最小那一档并写回', () => {
+    const sql = freshSql();
+    writeBedCount(sql, 114);
+    expect(readMeta(sql).bedCount).toBe(FIRST); // 9×13 = 117
+    expect(storedBedCount(sql)).toBe(FIRST);
+
+    writeBedCount(sql, 208);
+    expect(readMeta(sql).bedCount).toBe(THIRD); // 12×18 = 216
+    expect(storedBedCount(sql)).toBe(THIRD);
+  });
+
+  it('残留值比既有床小时仍取不小于 MAX(bed_no) + 1 的那一档（既有床不失去几何）', () => {
+    const sql = freshSql();
+    insertBed(sql, SECOND, { state: 'lying', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW });
+    writeBedCount(sql, 114);
+
+    // 床号 150 装不进第 1 档（117），也不在第 2 档（150 只到 149）→ 必须升到第 3 档
+    expect(readMeta(sql).bedCount).toBe(THIRD);
+    expect(storedBedCount(sql)).toBe(THIRD);
+  });
+
+  it('高于末档（9790）→ 夹到末档并写回（多出来的床位行成为不可见、不可用的残留）', () => {
+    const sql = freshSql();
+    writeBedCount(sql, 9790);
+    expect(readMeta(sql).bedCount).toBe(LAST); // 81×118 = 9558
+    expect(storedBedCount(sql)).toBe(LAST);
   });
 
   it('daily_wake_at 缺失 = 从未结算；写回后读得回来（每日唤醒用它实现「一天最多降一级」）', () => {

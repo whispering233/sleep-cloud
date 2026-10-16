@@ -1,5 +1,5 @@
 import { BED_OWNERSHIP_TTL_MS, TRACE_TTL_MS } from '../shared/constants';
-import { HALL_LEVELS } from '../shared/layout';
+import { HALL_LEVELS, levelIndexOfBedCount } from '../shared/layout';
 import type { HallLevel } from '../shared/layout';
 import type { Appearance } from '../shared/protocol';
 import type { OccupiedBedRow } from './grace';
@@ -225,12 +225,19 @@ export interface Meta {
   dailyWakeAt: number | undefined;
 }
 
-/** 床位数重算：`MAX(bed_no)` 反查能装下它的最小那一档；一行都没有就是第 1 级。 */
-function recomputeBedCount(sql: SqlStorage): number {
-  const max = sql.exec<{ max_bed: number | null }>('SELECT MAX(bed_no) AS max_bed FROM bed').one().max_bed;
-  if (max === null) return HALL_LEVELS[0].capacity;
-  const level = HALL_LEVELS.find((candidate: HallLevel) => candidate.capacity > max) ?? HALL_LEVELS[HALL_LEVELS.length - 1];
-  return level.capacity;
+/** 级表里能装下 `bedCount` 张床的最小那一档的容量；高于末档夹到末档。**反查档只此一处**。 */
+function levelCapacityFor(bedCount: number): number {
+  return (HALL_LEVELS[levelIndexOfBedCount(bedCount)] as HallLevel).capacity;
+}
+
+/** `MAX(bed_no)`：一行都没有返回 `-1`（没有床号 ≥ 0 的行）。 */
+function maxBedNo(sql: SqlStorage): number {
+  return sql.exec<{ max_bed: number | null }>('SELECT MAX(bed_no) AS max_bed FROM bed').one().max_bed ?? -1;
+}
+
+/** `bed_count` 正好是级表里的一档（在表里就原样用，**不写库**）。 */
+function isHallLevelCapacity(bedCount: number): boolean {
+  return HALL_LEVELS.some((level) => level.capacity === bedCount);
 }
 
 function writeMeta(sql: SqlStorage, key: string, value: number): void {
@@ -242,8 +249,13 @@ function writeMeta(sql: SqlStorage, key: string, value: number): void {
 }
 
 /**
- * 读 `meta`（每个 key 一行，一次读完）。`bed_count` **缺失时按需推导一次并写回**（`MAX(bed_no)` 反推所属的档）：
- * 对象被驱逐后第一次用到时走这条路径。`daily_wake_at` 缺失不算异常——它是「从未结算」。
+ * 读 `meta`（每个 key 一行，一次读完）。
+ *
+ * `bed_count` 必须**正好是级表里的一档**，否则归一并写回（`10-hall-runtime.md` §3）：在表里 → 原样用、
+ * 不写库；**不在表里**（级表改过之后的残留，如旧表的 114）→ 取能装下它的最小那一档，且**不小于
+ * `MAX(bed_no) + 1`**（既有床不因此失去几何）；高于末档 → 夹到末档，多出来的床位行会变成
+ * **不可见、不可用**的残留（pre-launch 的取舍，真要收拾得走降级那条路径）；**缺失** → 由 `MAX(bed_no)`
+ * 反推，一行都没有就是第 1 级。`daily_wake_at` 缺失不算异常——它是「从未结算」。
  */
 export function readMeta(sql: SqlStorage): Meta {
   const stored = new Map<string, number>();
@@ -252,9 +264,12 @@ export function readMeta(sql: SqlStorage): Meta {
   }
   const dailyWakeAt = stored.get(META_KEYS.dailyWakeAt);
   const storedBedCount = stored.get(META_KEYS.bedCount);
-  if (storedBedCount !== undefined) return { bedCount: storedBedCount, dailyWakeAt };
+  if (storedBedCount !== undefined && isHallLevelCapacity(storedBedCount)) {
+    return { bedCount: storedBedCount, dailyWakeAt };
+  }
 
-  const bedCount = recomputeBedCount(sql);
+  // 缺失时没有下限：能装下 1 张床的那一档就是第 1 档
+  const bedCount = levelCapacityFor(Math.max(storedBedCount ?? 1, maxBedNo(sql) + 1));
   writeBedCount(sql, bedCount);
   return { bedCount, dailyWakeAt };
 }
