@@ -70,6 +70,14 @@ describe('HUD 派生视图', () => {
     }
   });
 
+  it('方位字形变了才算变化：离屏时补字形，回到视野内（undefined）再收掉', () => {
+    const offScreen = hudViewOf(stateWith({ bedDirection: 'nw' }));
+    expect(offScreen.bedDirection).toBe('nw');
+    expect(sameHudView(offScreen, hudViewOf(stateWith({ bedDirection: 'nw' })))).toBe(true);
+    expect(sameHudView(offScreen, hudViewOf(stateWith({ bedDirection: 's' })))).toBe(false);
+    expect(sameHudView(offScreen, hudViewOf(stateWith()))).toBe(false);
+  });
+
   it('改名不换视图：HUD 不显示昵称，昵称变化不该触发重渲染', () => {
     const base = hudViewOf(stateWith());
     const renamed = hudViewOf(

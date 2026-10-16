@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { sendLie, sendWalk } from '../ws';
 import { clearSelection, selectPerson } from '../store';
+import { setWorldHandle } from '../world-handle';
 import type { WorldHandle } from '../world/world';
 
 /**
@@ -39,7 +40,10 @@ export function WorldCanvas() {
           insetsOf,
         );
         if (cancelled) handle.destroy();
-        else world = handle;
+        else {
+          world = handle;
+          setWorldHandle(handle);
+        }
       } catch {
         // 画布起不来不该把界面拖垮
       }
@@ -47,6 +51,7 @@ export function WorldCanvas() {
 
     return () => {
       cancelled = true;
+      setWorldHandle(undefined);
       world?.destroy();
     };
   }, []);

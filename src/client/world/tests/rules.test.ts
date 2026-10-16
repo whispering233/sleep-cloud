@@ -8,6 +8,7 @@ import type { Motion } from '../../motion';
 import {
   PERSON_HIT_PX,
   TRACE_ALPHA,
+  bedDirection,
   bedLook,
   cameraBounds,
   cameraStep,
@@ -305,6 +306,53 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
     expect(bounds.height).toBe(region.height);
     expect(bounds.x).toBeCloseTo(region.x);
     expect(bounds.y).toBeCloseTo(region.y);
+  });
+});
+
+describe('我的床的方位（离屏时的 8 方位字形）', () => {
+  // 393×852 竖屏：顶部 HUD 60px、底部聊天面板 129px（与「可用视口」那一组同一组数）
+  const view = { x: 0, y: 0, width: 393, height: 852 };
+  const insets = { top: 60, bottom: 129 };
+  const usable = usableView(view, insets); // { x: 0, y: 60, width: 393, height: 663 }
+  const center = { x: usable.x + usable.width / 2, y: usable.y + usable.height / 2 };
+
+  it('八个方位各一例（方位从**可用视口**中心算）', () => {
+    expect(bedDirection(usable, { x: center.x, y: 0 })).toBe('n');
+    expect(bedDirection(usable, { x: 600, y: 0 })).toBe('ne');
+    expect(bedDirection(usable, { x: 600, y: center.y })).toBe('e');
+    expect(bedDirection(usable, { x: 600, y: 900 })).toBe('se');
+    expect(bedDirection(usable, { x: center.x, y: 900 })).toBe('s');
+    expect(bedDirection(usable, { x: -200, y: 900 })).toBe('sw');
+    expect(bedDirection(usable, { x: -200, y: center.y })).toBe('w');
+    expect(bedDirection(usable, { x: 0, y: 0 })).toBe('nw');
+  });
+
+  it('床在可用视口里返回 undefined（含正好压在边缘上）', () => {
+    expect(bedDirection(usable, center)).toBeUndefined();
+    expect(bedDirection(usable, { x: usable.x, y: usable.y })).toBeUndefined();
+    expect(bedDirection(usable, { x: usable.x + usable.width, y: usable.y + usable.height })).toBeUndefined();
+  });
+
+  it('刚出边就算离屏：右边缘外是 e、下边缘外是 s', () => {
+    expect(bedDirection(usable, { x: usable.x + usable.width + 0.5, y: center.y })).toBe('e');
+    expect(bedDirection(usable, { x: center.x, y: usable.y + usable.height + 0.5 })).toBe('s');
+  });
+
+  it('床压在聊天面板后面：在整视口里、不在可用视口里 → 判成 s（这正是要用可用视口的原因）', () => {
+    const behindPanel = { x: center.x, y: 800 };
+    expect(bedDirection(usable, behindPanel)).toBe('s');
+    expect(bedDirection(view, behindPanel)).toBeUndefined();
+  });
+
+  it('扇区分界在 22.5°：分界上下各取一点，落在 e 与 ne 两侧', () => {
+    expect(bedDirection(usable, { x: center.x + 1000, y: center.y - 400 })).toBe('e'); // −21.8°
+    expect(bedDirection(usable, { x: center.x + 1000, y: center.y - 430 })).toBe('ne'); // −23.3°
+  });
+
+  it('可用视口为空时退回整视口（`usableView` 的既有退化）：床在 HUD 后面不算离屏', () => {
+    const collapsed = usableView(view, { top: 60, bottom: 852 });
+    expect(collapsed).toEqual(view);
+    expect(bedDirection(collapsed, { x: center.x, y: 30 })).toBeUndefined();
   });
 });
 

@@ -80,6 +80,20 @@
     letter-spacing: var(--tracking-numeric);
   }
 
+  /* 床号那一条：整条可点 = 相机跳到我的床（顶部其余区域仍不吃点击，见 `.hud-stack`） */
+  .hud-my-bed {
+    /* 通栏 `pointer-events: none`，这个按钮要把它收回来 */
+    pointer-events: auto;
+    padding-block: var(--spacing-sm);
+    /* 撑出来的 16px 用负外边距抵掉：HUD 的高度不变，点击区正好铺满通栏这一条 */
+    margin-block: calc(-1 * var(--spacing-sm));
+    color: inherit;
+    background-color: transparent;
+    font: inherit;
+    letter-spacing: inherit;
+    border: 0;
+  }
+
   .chat-panel {
     position: absolute;
     inset-block-end: 0;
@@ -239,6 +253,7 @@
   .input-field:focus-visible,
   .action-primary:focus-visible,
   .emote-button:focus-visible,
+  .hud-my-bed:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;

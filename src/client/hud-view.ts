@@ -1,3 +1,4 @@
+import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 
 /**
@@ -9,6 +10,8 @@ import type { ClientState } from './store';
 export interface HudView {
   /** 我的床号（**归属**，不是占用）：还没有这张床时这一项不显示 */
   bedNo?: number;
+  /** 我的床在可用视口里的方位；在视野内（或还没有床）为 `undefined`，那一项不补字形 */
+  bedDirection?: BedDirection;
   /** 服务端算的在线人数；快照还没到时不知道 */
   online?: number;
 }
@@ -16,11 +19,12 @@ export interface HudView {
 export function hudViewOf(state: ClientState): HudView {
   return {
     bedNo: state.me?.ownedBedNo,
+    bedDirection: state.bedDirection,
     online: state.hall?.online,
   };
 }
 
 /** 字段逐个比较：只有它们真的变了才换掉视图对象（对象身份用于 React 的 `useState`）。 */
 export function sameHudView(a: HudView, b: HudView): boolean {
-  return a.bedNo === b.bedNo && a.online === b.online;
+  return a.bedNo === b.bedNo && a.bedDirection === b.bedDirection && a.online === b.online;
 }

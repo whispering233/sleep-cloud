@@ -6,9 +6,10 @@ import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState } from '../store';
+import { getState, setBedDirection } from '../store';
 import type { ClientState } from '../store';
 import {
+  bedDirection,
   bedLook,
   cameraBounds,
   followStep,
@@ -59,6 +60,8 @@ export interface WorldHandlers {
 
 export interface WorldHandle {
   destroy(): void;
+  /** 相机跳到我的床（HUD 的床号条）；还没有床时按进厅对准的退路（`focusPoint`）。 */
+  focusMyBed(): void;
 }
 
 /**
@@ -190,6 +193,8 @@ class WorldScene extends Phaser.Scene {
     const selfPoint = this.selfPoint(state, serverNow);
     this.syncPeople(state, serverNow, selfPoint);
     this.follow(state, serverNow, delta, selfPoint);
+    // 方位在相机这一帧动完之后算：拖拽/回中当帧就把字形换成对的
+    this.syncBedDirection(state);
     this.applyAmbience(state.drowsiness, delta);
   }
 
@@ -371,6 +376,20 @@ class WorldScene extends Phaser.Scene {
     this.insetsObserver.disconnect();
     for (const element of [next.top, next.bottom]) if (element) this.insetsObserver.observe(element);
     this.applyCameraBounds();
+  }
+
+  /**
+   * 我的床在**可用视口**里的方位 → store（`undefined` = 在视野内）。
+   * 算在这里而不是 React 里：这是逐帧的活，进框架的渲染循环会把几百个小人拖死（`AGENTS.md` 硬纪律）。
+   * 写 store 前先比一次**当前值**（`state` 是这一帧开头的快照，这个字段只有世界层写）：同值不通知，
+   * HUD 才不会因为位置节拍重渲染。
+   */
+  private syncBedDirection(state: ClientState): void {
+    const bedNo = state.me?.ownedBedNo;
+    const point = bedNo === undefined ? undefined : this.bedPoint(bedNo);
+    const direction = point ? bedDirection(usableView(this.viewRect(), this.insets), point) : undefined;
+    if (direction === state.bedDirection) return;
+    setBedDirection(direction);
   }
 
   /**
@@ -618,11 +637,20 @@ class WorldScene extends Phaser.Scene {
     }
     return this.selfPoint(state, Date.now() + state.clockOffsetMs);
   }
+
+  /** HUD 的床号条：一次性的相机跳转，对准我的床（还没有床时的退路与进厅对准同一条，见 `focusPoint`）。 */
+  focusMyBed(): void {
+    // 几何还没建好（场景还在 boot / 快照没到）：相机与夹取都还没准备好，这一跳没有意义
+    if (this.loadedBedCount === undefined) return;
+    const focus = this.focusPoint(getState());
+    if (focus) this.centerOnUsable(focus);
+  }
 }
 
 export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
   const rect = host.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+  const scene = new WorldScene(host, handlers, insetsOf);
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: host,
@@ -636,12 +664,15 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     // 手势交给相机（单指拖拽平移），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
-    scene: [new WorldScene(host, handlers, insetsOf)],
+    scene: [scene],
   });
 
   return {
     destroy(): void {
       game.destroy(true);
+    },
+    focusMyBed(): void {
+      scene.focusMyBed();
     },
   };
 }

@@ -188,6 +188,27 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
   };
 }
 
+/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */
+export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+/** 45° 一个扇区，从「东」起按屏幕顺时针排（`atan2` 的正方向在屏幕上朝下 = 南）。 */
+const COMPASS: readonly BedDirection[] = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
+
+/**
+ * 我的床在**可用视口**的哪个方位；已经落在视口里时返回 `undefined`（不需要方向字形）。
+ *
+ * 吃的是 `usableView` 的结果而不是整视口：床压在聊天面板后面时它在屏幕上「看得见」，
+ * 却不在**可用**区里——不提示方位用户就找不到它（见 `docs/ui/DESIGN.md`「世界相机」）。
+ * 视口外的方位按「视口中心 → 床点」的连线取 45° 扇区；扇区边界归到 +角度那一侧（屏幕顺时针）。
+ */
+export function bedDirection(view: Rect, point: { x: number; y: number }): BedDirection | undefined {
+  if (point.x >= view.x && point.x <= view.x + view.width && point.y >= view.y && point.y <= view.y + view.height) {
+    return undefined;
+  }
+  const angle = Math.atan2(point.y - (view.y + view.height / 2), point.x - (view.x + view.width / 2));
+  return COMPASS[Math.round(angle / (Math.PI / 4)) & 7];
+}
+
 /**
  * 一个人此刻画在哪（世界像素）：漫游中按插值（滞后取**这个窗口自己的跨度**），其余状态用给定的落位点。
  *

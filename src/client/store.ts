@@ -20,6 +20,7 @@ import { decodeOwnedBeds } from '../shared/protocol';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
+import type { BedDirection } from './world/rules';
 import { drowsinessOf } from './ambience';
 
 /** 一行消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
@@ -73,6 +74,11 @@ export interface ClientState {
   notice?: Notice;
   /** **全局唯一的选中对象**：同时决定名字气泡与私聊目标（见 `docs/ui/DESIGN.md`） */
   selectedId?: string;
+  /**
+   * 我的床在**可用视口**里的方位（`undefined` = 在视野内 / 还没有床）：HUD 靠它补方向字形。
+   * 由**世界层每帧算、只在变化时写**——逐帧写会让位置节拍变成 React 的重渲染。
+   */
+  bedDirection?: BedDirection;
   /** 人物 id → 表情。过期只靠渲染时比较 `expiresAt`，**不挂定时器** */
   emotes: Map<string, { emoteId: EmoteId; expiresAt: number }>;
 }
@@ -123,6 +129,7 @@ export function applySnapshot(message: SnapshotMessage): void {
     // 重连以新快照为准、不做增量补偿 → 旧的消息流不保留
     messages: [],
     selectedId: undefined,
+    bedDirection: undefined,
     emotes: new Map(),
   });
 }
@@ -174,6 +181,15 @@ export function selectPerson(id: string): void {
 /** 取消选中：点地面、点 ×、目标离开都走这里。 */
 export function clearSelection(): void {
   setState({ selectedId: undefined });
+}
+
+/**
+ * 我的床的方位（世界层每帧算一次）：**同值不写**。位置节拍每 100 ms 来一次，
+ * 每次写都会通知所有订阅者——HUD 的「不因位置节拍重渲染」就靠这道守卫。
+ */
+export function setBedDirection(direction: BedDirection | undefined): void {
+  if (state.bedDirection === direction) return;
+  setState({ bedDirection: direction });
 }
 
 /**

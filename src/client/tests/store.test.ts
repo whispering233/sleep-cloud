@@ -19,7 +19,9 @@ import {
   clearSelection,
   getState,
   selectPerson,
+  setBedDirection,
   setState,
+  subscribe,
 } from '../store';
 
 const BED_COUNT = 114;
@@ -280,6 +282,30 @@ describe('选中态', () => {
     selectPerson('u_other');
     applySnapshot(snapshot());
     expect(getState().selectedId).toBeUndefined();
+  });
+});
+
+describe('我的床的方位（HUD 的方向字形）', () => {
+  it('同值不写：世界层每帧都算一次方位，守卫挡住位置节拍变成每帧一次渲染', () => {
+    let notices = 0;
+    const unsubscribe = subscribe(() => {
+      notices += 1;
+    });
+
+    setBedDirection('nw');
+    expect(getState().bedDirection).toBe('nw');
+    setBedDirection('nw');
+    expect(notices).toBe(1);
+
+    setBedDirection(undefined); // 床回到视野内
+    expect(notices).toBe(2);
+    unsubscribe();
+  });
+
+  it('快照重来以新快照为准：方位清掉，下一帧世界层按新镜头重算', () => {
+    setBedDirection('s');
+    applySnapshot(snapshot());
+    expect(getState().bedDirection).toBeUndefined();
   });
 });
 
