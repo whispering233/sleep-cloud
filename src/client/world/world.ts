@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 
 import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
-import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, wallRegionOf } from '../../shared/layout';
+import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
@@ -466,22 +466,16 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 夹取：不越出厅的矩形；可见区比厅大时（宽档 / 横屏）把边界扩成视野大小，让厅居中。
+   * 夹取：不越出**取景范围**（`scrollRegionOf` = 地板区 + 墙带 + 墙外一圈）；可见区比它大时
+   * （宽档 / 横屏）把边界扩成视野大小，让厅居中。
    * **垂直按「可用视口」夹**：这样地板区的最下边缘能滚到聊天面板之上。
    *
-   * 夹取范围按**厅含墙的外沿**算（`wallRegionOf` 四边各外扩一个 `WALL_WIDTH`）：墙带画在墙矩形
-   * 之外，按墙矩形夹的话贴边时那 3px 正好整条落在屏幕外（走到边缘看不见墙）。外扩正好一个墙厚，
-   * 于是贴边时墙带占住屏幕最外圈，而厅外 0px 进画面（墙属于厅）。
+   * 推到边缘时看见「**墙外的一圈底 + 墙带 + 地板**」：只夹到地板区，墙带整条落在屏幕外；
+   * 只夹到墙带外沿，墙又永远贴着屏幕最外圈、只像一条细线。
    */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
-    const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
-    const outer = {
-      x: region.x - WALL_WIDTH,
-      y: region.y - WALL_WIDTH,
-      width: region.width + 2 * WALL_WIDTH,
-      height: region.height + 2 * WALL_WIDTH,
-    };
+    const outer = scrollRegionOf(levelIndexOfBedCount(this.loadedBedCount));
     const view = this.viewRect();
     const bounds = cameraBounds(outer, view, usableView(view, this.measureInsets()));
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);

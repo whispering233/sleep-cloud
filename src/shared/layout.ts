@@ -11,7 +11,7 @@
  * 要把人拉回街网的那条路径见 `docs/design/10-hall-runtime.md` §8。
  */
 
-import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, WALL_BODY } from './constants';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, OUTSIDE_MARGIN, RESERVE_W, WALL_BODY, WALL_WIDTH } from './constants';
 
 /** 布局版本号：几何是程序化生成的，一致性校验的对象是它（`docs/design/config.md` §1）。 */
 export const LAYOUT_VERSION = 'room-1';
@@ -194,6 +194,24 @@ export function regionOf(index: number): HallLevel {
 export function wallRegionOf(index: number): Rect {
   const level = levelOf(index);
   return { x: -AISLE, y: -AISLE, width: level.width + 2 * AISLE, height: level.height + 2 * AISLE };
+}
+
+/**
+ * 级 → **取景范围**（相机可滚到的矩形）= 地板区 + 墙带 + 墙外一圈 `OUTSIDE_MARGIN`。
+ *
+ * 它**比厅大**：多出来的那一圈是墙外的底（`secondary`），用来让「墙」读成一个实体边界 ——
+ * 只夹到地板区，墙带会整条落在屏幕外；只夹到墙带外沿，墙又永远贴着屏幕最外圈、只像一条细线。
+ * 那一圈**不铺地板、不可走**（可走范围仍是 `wallRegionOf` 内缩 `WALL_BODY`）。
+ */
+export function scrollRegionOf(index: number): Rect {
+  const region = wallRegionOf(index);
+  const margin = WALL_WIDTH + OUTSIDE_MARGIN;
+  return {
+    x: region.x - margin,
+    y: region.y - margin,
+    width: region.width + 2 * margin,
+    height: region.height + 2 * margin,
+  };
 }
 
 /** 当前床位数 → 它在级表里的下标（床位数不是正好一档时取能装下它的最小那档）。 */

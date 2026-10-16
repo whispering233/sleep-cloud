@@ -67,6 +67,13 @@ export const WALL_BODY = 26;
 /** 墙带厚度（世界像素），画在墙矩形**之外**。 */
 export const WALL_WIDTH = 3;
 
+/**
+ * 墙外那一圈：相机可以滚到墙外一条走道，于是手机上推到边缘也能看见墙外的底与那条墙带
+ * （否则墙永远贴着屏幕最外圈，看起来只是一条细线）。
+ * 它**不属于厅**：不铺地板、不可走（可走范围仍是 `wallRegionOf` 内缩 `WALL_BODY`）。
+ */
+export const OUTSIDE_MARGIN = AISLE;
+
 /** 画布设备像素比上限：再高只是多花填充率，肉眼看不出。 */
 export const MAX_DPR = 2;
 

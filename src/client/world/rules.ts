@@ -156,8 +156,9 @@ export function usableView(view: Rect, insets: ViewInsets): Rect {
 }
 
 /**
- * 相机夹取的范围（交给 Phaser 的 `setBounds`）：让**可用视口**贴着厅的矩形滚动。
- * 厅的矩形是 `wallRegionOf`：左/上那一条余量在负坐标一侧，所以 bounds 也跟着带上原点。
+ * 相机夹取的范围（交给 Phaser 的 `setBounds`）：让**可用视口**贴着给定的矩形滚动。
+ * 调用方传的是**取景范围**（`scrollRegionOf` = 地板区 + 墙带 + 墙外一圈，见 `config.md` §2/§7）：
+ * 推到边缘时能看见墙外的底与墙带，而不是只有一条贴着屏幕最外圈的细线。
  *
  * Phaser 夹的是整视口那个世界视窗矩形，所以要在 bounds 上把「被界面盖住的那一段」让出来：
  * y 上移 `insets.top`、height 加回顶 + 底（推法：视窗下沿最大 = `y + height − 视口高`，

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, WALL_BODY } from '../constants';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, OUTSIDE_MARGIN, RESERVE_W, WALL_BODY, WALL_WIDTH } from '../constants';
 import {
   HALL_LEVELS,
   LAYOUT_VERSION,
@@ -15,6 +15,7 @@ import {
   regionOf,
   reserveOf,
   roomOf,
+  scrollRegionOf,
   streetBandAt,
   wallRegionOf,
   type Cell,
@@ -175,6 +176,60 @@ describe('不变式 ②：墙四侧各距格网 56px，且四侧互相相等', (
         if (!isWalkable(point.x, point.y, level.capacity)) {
           bad.push(`第 ${index + 1} 级余量里的点 (${point.x}, ${point.y}) 不可走`);
         }
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+});
+
+// ————————————————————————— 不变式 ④：取景范围（地板区 + 墙带 + 墙外一圈） —————————————————————————
+
+describe('取景范围：地板区 + 墙带 + 墙外一圈（比厅大，多出来的那圈不可走）', () => {
+  it('逐档：四边各外扩 WALL_WIDTH + OUTSIDE_MARGIN，且取景范围比地板区大', () => {
+    const bad: string[] = [];
+    HALL_LEVELS.forEach((level, index) => {
+      const wall = wallRegionOf(index);
+      const scroll = scrollRegionOf(index);
+      const margin = WALL_WIDTH + OUTSIDE_MARGIN;
+      const note = (detail: string): void => void bad.push(`第 ${index + 1} 级：${detail}`);
+
+      if (scroll.x !== wall.x - margin || scroll.y !== wall.y - margin) note('左/上不是「地板区 + 墙带 + 墙外一圈」');
+      if (scroll.width !== wall.width + 2 * margin || scroll.height !== wall.height + 2 * margin) {
+        note('宽高不是「地板区 + 墙带 + 墙外一圈」');
+      }
+      if (scroll.width <= wall.width || scroll.height <= wall.height) note('取景范围没比地板区大');
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('第一档与末档的黄金值（文档 §2）；越界的级号夹到两端', () => {
+    expect(scrollRegionOf(0)).toEqual({ x: -115, y: -115, width: 2479, height: 1634 });
+    expect(scrollRegionOf(HALL_LEVELS.length - 1)).toEqual({ x: -115, y: -115, width: 20644, height: 12866 });
+    expect(scrollRegionOf(HALL_LEVELS.length)).toEqual(scrollRegionOf(HALL_LEVELS.length - 1));
+    expect(scrollRegionOf(-1)).toEqual(scrollRegionOf(0));
+  });
+
+  it('不变式 ④「可走范围 = 地板区」：取景范围的四角与四边中点那一圈都不可走', () => {
+    const bad: string[] = [];
+    HALL_LEVELS.forEach((level, index) => {
+      const wall = wallRegionOf(index);
+      const scroll = scrollRegionOf(index);
+      const half = OUTSIDE_MARGIN / 2;
+      const midX = wall.x + wall.width / 2;
+      const midY = wall.y + wall.height / 2;
+      const probes = [
+        ['左上角', scroll.x, scroll.y],
+        ['右上角', scroll.x + scroll.width, scroll.y],
+        ['左下角', scroll.x, scroll.y + scroll.height],
+        ['右下角', scroll.x + scroll.width, scroll.y + scroll.height],
+        ['左边中点', wall.x - half, midY],
+        ['右边中点', wall.x + wall.width + half, midY],
+        ['上边中点', midX, wall.y - half],
+        ['下边中点', midX, wall.y + wall.height + half],
+      ] as Array<[string, number, number]>;
+
+      for (const [side, x, y] of probes) {
+        if (isWalkable(x, y, level.capacity)) bad.push(`第 ${index + 1} 级${side} (${x}, ${y}) 在墙外却是可走的`);
       }
     });
     expect(bad).toEqual([]);
