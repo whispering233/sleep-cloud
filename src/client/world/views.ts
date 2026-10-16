@@ -4,7 +4,7 @@ import { ART_SCALE, BED_H, BED_W } from '../../shared/constants';
 import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import tokens from '../styles/tokens.json';
-import { personAlpha, personFrame } from './rules';
+import { personAlpha, personFrame, truncateToLines } from './rules';
 import type { BedLook } from './rules';
 
 /**
@@ -55,6 +55,17 @@ const FOOT_MARKER_Y = 3;
 /** 气泡内边距。 */
 const BUBBLE_PAD = 4;
 /**
+ * 聊天气泡的**宽度上限**（世界像素）与图集缩放。
+ * 缩放到 0.75 而不是 `ART_SCALE`（0.5）：底图 36×30 母图像素 × 0.75 ≈ 27×22.5，
+ * 正好装下 12px 的一行字与上下 4px 内边距（床与人才用 `ART_SCALE`）。
+ */
+const CHAT_BUBBLE_MAX_PX = 200;
+const CHAT_BUBBLE_SCALE = 0.75;
+/** 底图里最多两行，超出截断加 `…`（见 `fitBubbleText`）。 */
+const CHAT_BUBBLE_MAX_LINES = 2;
+/** 私聊气泡的前缀：**收发两边都加**（自己那条也加，用来区分它没广播出去）。 */
+const WHISPER_PREFIX = '悄悄话 · ';
+/**
  * 「睁眼躺姿」叠的两个点：半径与半间距（世界像素）。
  * 锚点来自帧元数据（见 `drawEyes`）；两点间距取 `bedBoy` 上量的 12.5 母图像素（≈6 世界像素）。
  */
@@ -95,6 +106,15 @@ const BUBBLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   color: INK_CSS,
   backgroundColor: SURFACE_CSS,
   padding: { x: BUBBLE_PAD, y: BUBBLE_PAD },
+};
+
+/**
+ * 聊天气泡里的文字：底色由气泡底图提供，所以文字只要墨色与内边距（内边距跟着底图拉伸）。
+ * 文字不透明底也换掉：`Text` 的 `backgroundColor` 要给个透明色才相当于没有。
+ */
+const CHAT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
+  ...BUBBLE_STYLE,
+  backgroundColor: NO_BACKGROUND,
 };
 
 /** 一张床在世界里的矩形（左上角锚点，与服务端 `layout.positionOf` 同一个坐标）。 */
@@ -207,8 +227,15 @@ export interface PersonView {
   readonly footMarker: Phaser.GameObjects.Graphics;
   readonly name: Phaser.GameObjects.Text;
   readonly emote: Phaser.GameObjects.Text;
+  readonly bubbleTail: Phaser.GameObjects.Image;
+  readonly bubbleBody: Phaser.GameObjects.Image;
+  readonly bubbleText: Phaser.GameObjects.Text;
   /** 上一次画法签名（外观、显示态、我的标记）：不变就跳过换贴图 */
   paint: string;
+  /** 上一次画的气泡（槽位底线 + 种类 + 文字）：不变就跳过整段重排（重排要重新量文字） */
+  chat: string;
+  /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字、表情一起换 */
+  chatBaseY: number;
 }
 
 export function createPersonView(scene: Phaser.Scene): PersonView {
@@ -217,13 +244,19 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
   footMarker.fillStyle(COLORS.marker, 1);
   footMarker.fillCircle(0, FOOT_MARKER_Y, MARKER_RADIUS);
   footMarker.setVisible(false);
+  // 气泡压在人物贴图**之下**（图集锚点是中心，两张图同原点）：尾巴落在头上不会遮住脸
+  const bubbleTail = scene.add.image(0, 0, SPRITES_KEY, 'chat_bubble_tail').setScale(CHAT_BUBBLE_SCALE).setVisible(false);
+  const bubbleBody = scene.add.image(0, 0, SPRITES_KEY, 'chat_bubble').setScale(CHAT_BUBBLE_SCALE).setVisible(false);
+  const bubbleText = scene.add.text(0, 0, '', CHAT_TEXT_STYLE).setOrigin(0.5, 0.5).setVisible(false);
+  // 换行宽度要自己给：不给就是一个字都不折（Phaser 的换行是 opt-in）
+  bubbleText.setWordWrapWidth(CHAT_BUBBLE_MAX_PX - BUBBLE_PAD * 2, true);
   const name = scene.add
     .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS })
     .setOrigin(0.5, 1)
     .setVisible(false);
   const emote = scene.add.text(0, EMOTE_Y, '', BUBBLE_STYLE).setOrigin(0.5, 1).setVisible(false);
-  const container = scene.add.container(0, 0, [sprite, footMarker, name, emote]);
-  return { container, sprite, footMarker, name, emote, paint: '' };
+  const container = scene.add.container(0, 0, [bubbleTail, bubbleBody, bubbleText, sprite, footMarker, name, emote]);
+  return { container, sprite, footMarker, name, emote, bubbleTail, bubbleBody, bubbleText, paint: '', chat: '', chatBaseY: EMOTE_Y };
 }
 
 /**
@@ -246,6 +279,8 @@ export function paintPerson(
     view.footMarker.setVisible(mine && roaming);
     view.name.setY(roaming ? STAND_NAME_Y : NAME_Y);
     view.emote.setY(roaming ? STAND_EMOTE_Y : EMOTE_Y);
+    // 气泡与表情共用同一条槽位底线（站着的小人原点在脚下，躺着的人在床心）
+    view.chatBaseY = roaming ? STAND_EMOTE_Y : EMOTE_Y;
   }
   const sway = roaming && moving ? 1 + WALK_SWAY * Math.sin((nowMs / 1000) * Math.PI * 2 * WALK_SWAY_HZ) : 1;
   view.sprite.setScale(ART_SCALE * sway);
@@ -264,4 +299,50 @@ export function setPersonName(view: PersonView, text: string, dim: boolean, bubb
 /** 表情气泡：比名字再高一点；过期由调用方比较 `expiresAt` 后传空串（**不挂定时器**）。 */
 export function setPersonEmote(view: PersonView, text: string): void {
   view.emote.setText(text).setVisible(text !== '');
+}
+
+/** `setPersonChat` 的入参：文字（别人带名字前缀、自己不带）与它是全局消息还是私聊。 */
+export interface ChatBubbleInput {
+  text: string;
+  kind: 'chat' | 'whisper';
+}
+
+/**
+ * 头顶那一个槽位里的聊天气泡（**槽位优先级 聊天 > 表情 > 名字** 由调用方保证，这一支只管自己画不画）。
+ *
+ * 画法照上游 `DrawChat`：**底图按文字宽度横向拉伸、尾巴固定尺寸**（水平居中、垂直贴底图下沿）。
+ * **必要扩展**：上游只撑 x（它只画一行）；我们允许两行，所以**高度也要按行数撑开**——
+ * 底图上下两个方向都用 `setDisplaySize`，而不是只改宽度。
+ */
+export function setPersonChat(view: PersonView, input: ChatBubbleInput | undefined): void {
+  // 槽位底线在签名里：人物从站着变成躺在床上时，同一段文字也要换个高度重排
+  const signature = input === undefined ? '' : `${view.chatBaseY}|${input.kind}|${input.text}`;
+  if (signature === view.chat) return;
+  view.chat = signature;
+  const visible = input !== undefined;
+  view.bubbleBody.setVisible(visible);
+  view.bubbleTail.setVisible(visible);
+  view.bubbleText.setVisible(visible);
+  if (!input) return;
+
+  fitBubbleText(view.bubbleText, input.kind === 'whisper' ? `${WHISPER_PREFIX}${input.text}` : input.text);
+  // 文字自带内边距，所以底图尺寸直接就是文字外框；高度跟着行数长，不是固定的一行高
+  const { width, height } = view.bubbleText;
+  const baseY = view.chatBaseY;
+  view.bubbleBody.setDisplaySize(width, height).setPosition(0, baseY - height / 2);
+  view.bubbleText.setPosition(0, baseY - height / 2);
+  view.bubbleTail.setPosition(0, baseY);
+}
+
+/**
+ * 最多两行、超出截断加 `…`。
+ * 行数只能问文字对象本身（Phaser 的 `maxLines` 不给省略号，理由与算法见 `rules.truncateToLines`）：
+ * 量行器把候选文字写进气泡文字再数它的换行。
+ */
+function fitBubbleText(bubbleText: Phaser.GameObjects.Text, text: string): void {
+  const linesOf = (candidate: string): number => {
+    bubbleText.setText(candidate);
+    return bubbleText.getWrappedText().length;
+  };
+  bubbleText.setText(truncateToLines(text, CHAT_BUBBLE_MAX_LINES, linesOf));
 }

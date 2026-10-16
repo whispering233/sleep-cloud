@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { LAYOUT_VERSION } from '../../shared/layout';
 import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
-import { CHAT_LOG_MAX, EMOTE_MS } from '../../shared/constants';
+import { CHAT_BUBBLE_MS, EMOTE_MS } from '../../shared/constants';
 import {
   applyBed,
   applyChat,
@@ -215,33 +215,44 @@ describe('客户端状态归约', () => {
   });
 });
 
-describe('客户端聊天消息', () => {
-  it('追加时固化名字：发送者随后离开，那一行的名字不变', () => {
-    applySnapshot(snapshot());
+describe('客户端聊天气泡', () => {
+  it('写入显示到期的时刻：约等于现在 + CHAT_BUBBLE_MS', () => {
+    const before = Date.now();
     applyChat({ t: 'chat', id: 'u_other', text: '我也睡不着', ts: 1_000_200 });
-    expect(getState().messages[0]).toMatchObject({ name: '阿夜', text: '我也睡不着', own: false, kind: 'chat' });
-
-    applyLeave({ t: 'leave', id: 'u_other', online: 2 });
-    expect(getState().people.has('u_other')).toBe(false);
-    expect(getState().messages[0]?.name).toBe('阿夜');
+    const bubble = getState().bubbles.get('u_other');
+    expect(bubble).toMatchObject({ text: '我也睡不着', kind: 'chat' });
+    expect(Math.abs((bubble?.expiresAt ?? 0) - (before + CHAT_BUBBLE_MS))).toBeLessThanOrEqual(100);
   });
 
-  it('自己的消息 own 为真，名字取自 me', () => {
+  it('store 里只有「谁说了什么、到什么时候」：名字与是否自己都留给渲染时现取', () => {
     applySnapshot(snapshot());
     applyChat({ t: 'chat', id: 'u_me', text: '有人吗', ts: 1_000_200 });
-    expect(getState().messages[0]).toMatchObject({ name: '我', own: true });
+    expect(Object.keys(getState().bubbles.get('u_me') ?? {}).sort()).toEqual(['expiresAt', 'kind', 'text']);
   });
 
-  it('超过上限只保留最后 N 条，最旧的被丢掉', () => {
+  it('同一个人后来的消息覆盖前一条并重置计时（不排队、不堆叠）', () => {
     applySnapshot(snapshot());
-    for (let n = 0; n < CHAT_LOG_MAX + 3; n += 1) {
-      applyChat({ t: 'chat', id: 'u_other', text: `第 ${n} 条`, ts: 1_000_200 + n });
-    }
+    applyChat({ t: 'chat', id: 'u_other', text: '第一条', ts: 1_000_200 });
+    const first = getState().bubbles.get('u_other')?.expiresAt ?? 0;
+    applyChat({ t: 'chat', id: 'u_other', text: '第二条', ts: 1_000_300 });
 
-    const messages = getState().messages;
-    expect(messages).toHaveLength(CHAT_LOG_MAX);
-    expect(messages[0]?.text).toBe('第 3 条');
-    expect(messages[messages.length - 1]?.text).toBe(`第 ${CHAT_LOG_MAX + 2} 条`);
+    expect(getState().bubbles.size).toBe(1);
+    expect(getState().bubbles.get('u_other')?.text).toBe('第二条');
+    expect(getState().bubbles.get('u_other')?.expiresAt).toBeGreaterThanOrEqual(first);
+  });
+
+  it('人离开大厅 → 他的气泡立刻消失（气泡长在人身上）', () => {
+    applySnapshot(snapshot());
+    applyChat({ t: 'chat', id: 'u_other', text: '我也睡不着', ts: 1_000_200 });
+
+    applyLeave({ t: 'leave', id: 'u_other', online: 2 });
+    expect(getState().bubbles.has('u_other')).toBe(false);
+  });
+
+  it('快照重来清空气泡（重连以新快照为准）', () => {
+    applyChat({ t: 'chat', id: 'u_other', text: '我也睡不着', ts: 1_000_200 });
+    applySnapshot(snapshot());
+    expect(getState().bubbles.size).toBe(0);
   });
 });
 
@@ -338,38 +349,26 @@ describe('客户端错误提示', () => {
   });
 });
 
-describe('客户端私聊', () => {
-  it('追加时固化名字：发送者随后离开，那一行的名字不变', () => {
+describe('客户端私聊气泡', () => {
+  it('气泡挂在发送者头上，kind 为 whisper', () => {
     applySnapshot(snapshot());
     applyWhisper({ t: 'whisper', fromId: 'u_other', toId: 'u_me', text: '睡了吗', ts: 1_000_300 });
-    expect(getState().messages[0]).toMatchObject({
-      id: 'u_other',
-      name: '阿夜',
-      text: '睡了吗',
-      own: false,
-      kind: 'whisper',
-    });
-
-    applyLeave({ t: 'leave', id: 'u_other', online: 2 });
-    expect(getState().messages[0]?.name).toBe('阿夜');
+    expect(getState().bubbles.get('u_other')).toMatchObject({ text: '睡了吗', kind: 'whisper' });
   });
 
-  it('收到的与发出的都进同一条消息流：自己的 own 为真、名字取 me', () => {
+  it('自己发出的私聊也挂在自己头上（同一份 payload 收发双方各收一条）', () => {
     applySnapshot(snapshot());
     applyWhisper({ t: 'whisper', fromId: 'u_me', toId: 'u_other', text: '我睡不着', ts: 1_000_300 });
-    expect(getState().messages[0]).toMatchObject({ id: 'u_me', name: '我', own: true, kind: 'whisper' });
+    expect(getState().bubbles.get('u_me')).toMatchObject({ text: '我睡不着', kind: 'whisper' });
   });
 
-  it('与全局消息共用同一条流，并按同一上限截断', () => {
+  it('私聊覆盖这个人前一条全局消息：头顶只有一个气泡', () => {
     applySnapshot(snapshot());
     applyChat({ t: 'chat', id: 'u_other', text: '大家好', ts: 1_000_200 });
     applyWhisper({ t: 'whisper', fromId: 'u_other', toId: 'u_me', text: '只给你', ts: 1_000_300 });
-    expect(getState().messages.map((line) => line.kind)).toEqual(['chat', 'whisper']);
 
-    for (let n = 0; n < CHAT_LOG_MAX; n += 1) {
-      applyWhisper({ t: 'whisper', fromId: 'u_other', toId: 'u_me', text: `私聊 ${n}`, ts: 1_000_400 + n });
-    }
-    expect(getState().messages).toHaveLength(CHAT_LOG_MAX);
+    expect(getState().bubbles.size).toBe(1);
+    expect(getState().bubbles.get('u_other')).toMatchObject({ text: '只给你', kind: 'whisper' });
   });
 });
 

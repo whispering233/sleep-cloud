@@ -15,7 +15,7 @@ import type {
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_LOG_MAX, EMOTE_MS } from '../shared/constants';
+import { CHAT_BUBBLE_MS, EMOTE_MS } from '../shared/constants';
 import { decodeOwnedBeds } from '../shared/protocol';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
@@ -23,15 +23,16 @@ import type { Motion } from './motion';
 import type { BedDirection } from './world/rules';
 import { drowsinessOf } from './ambience';
 
-/** 一行消息：**名字与是否自己都在追加那一刻定下来**，渲染时不再回查 `people`。 */
-export interface ChatLine {
-  id: string;
-  name: string;
+/**
+ * 头顶那一个气泡：**只记「说了什么、到什么时候」**。
+ * 名字、以及「这条是不是自己说的」，都在渲染时从 `people` / `me` 现取——气泡长在人身上，
+ * 人走了气泡跟着走（见 `docs/ui/DESIGN.md` 的 `chat-bubble` 行），所以这里不快照人名。
+ */
+export interface ChatBubble {
   text: string;
-  ts: number;
-  own: boolean;
-  /** 全局消息还是私聊（只影响显示：私聊行加前缀与类名） */
   kind: 'chat' | 'whisper';
+  /** 到期时刻（本地时钟）。过期由渲染侧比较推导，**不挂定时器** */
+  expiresAt: number;
 }
 
 /** 一条错误提示：文案已按错误码翻译好，提示条只负责显示它。 */
@@ -65,8 +66,8 @@ export interface ClientState {
    * 空厅为 0（最亮档）。
    */
   drowsiness: number;
-  /** 最近收到的消息（只用于显示；服务端不存历史） */
-  messages: ChatLine[];
+  /** 每个人头顶那一个气泡（发送者 id → 气泡）：同人后来的消息**覆盖**前一条，一条也不排队 */
+  bubbles: Map<string, ChatBubble>;
   /**
    * 可恢复错误的提示条（静默类错误不写这里）。`id` 自增是为了让提示条重新挂载、
    * CSS 动画从头播——动画结束由 `animationend` 清掉，不挂定时器。
@@ -89,7 +90,7 @@ const emptyState = (): ClientState => ({
   people: new Map(),
   motion: new Map(),
   clockOffsetMs: 0,
-  messages: [],
+  bubbles: new Map(),
   emotes: new Map(),
   drowsiness: 0,
 });
@@ -126,8 +127,8 @@ export function applySnapshot(message: SnapshotMessage): void {
     motion: new Map(),
     // 客户端据此换算服务端时间轴：插值一律按服务端时间戳算
     clockOffsetMs: message.serverTs - Date.now(),
-    // 重连以新快照为准、不做增量补偿 → 旧的消息流不保留
-    messages: [],
+    // 重连以新快照为准、不做增量补偿 → 旧的气泡不保留
+    bubbles: new Map(),
     selectedId: undefined,
     bedDirection: undefined,
     emotes: new Map(),
@@ -135,32 +136,29 @@ export function applySnapshot(message: SnapshotMessage): void {
 }
 
 /**
- * 全局消息：**追加那一刻就把发送者名字固化到这一行**。
- * 渲染时不能回头查 `people`——对方离开后那行名字会变空（见 `docs/ui/DESIGN.md`）。
+ * 全局消息：**覆盖**发送者头顶那一条并重置计时（不排队、不堆叠）。
+ * 名字与「是不是自己说的」都不写进来：渲染时现取（见 `ChatBubble`）。
  */
 export function applyChat(message: ChatMessage): void {
-  const own = state.me?.id === message.id;
-  const name = (own ? state.me?.name : state.people.get(message.id)?.name) ?? '某人';
-  const line: ChatLine = { id: message.id, name, text: message.text, ts: message.ts, own, kind: 'chat' };
-  setState({ messages: [...state.messages, line].slice(-CHAT_LOG_MAX) });
+  setBubble(message.id, message.text, 'chat');
 }
 
 /**
- * 私聊：发送者与接收者收到同一份 payload，收件人靠「发送者是不是我」区分（见 `docs/api/20-api-ws.md` §4.8）。
- * 名字同样在追加那一刻固化：`own` 时我必然就是发送者（`me.id === fromId`），所以行内 id 一律是发送者。
+ * 私聊：发送者与接收者收到同一份 payload（哪一侧收的由渲染时按 `me.id` 判断，
+ * 见 `docs/api/20-api-ws.md` §4.8），气泡一律挂在**发送者**头上。
  */
 export function applyWhisper(message: WhisperMessage): void {
-  const own = state.me?.id === message.fromId;
-  const name = (own ? state.me?.name : state.people.get(message.fromId)?.name) ?? '某人';
-  const line: ChatLine = {
-    id: message.fromId,
-    name,
-    text: message.text,
-    ts: message.ts,
-    own,
-    kind: 'whisper',
-  };
-  setState({ messages: [...state.messages, line].slice(-CHAT_LOG_MAX) });
+  setBubble(message.fromId, message.text, 'whisper');
+}
+
+/**
+ * 写一个气泡：与表情同一条约定——只写「到什么时候为止」，同一个人后来的覆盖前一条。
+ * 过期由渲染侧比较 `expiresAt` 推导，**不挂 `setTimeout`/`setInterval`**（内存定时器会让页面无法休眠）。
+ */
+function setBubble(id: string, text: string, kind: ChatBubble['kind']): void {
+  const bubbles = new Map(state.bubbles);
+  bubbles.set(id, { text, kind, expiresAt: Date.now() + CHAT_BUBBLE_MS });
+  setState({ bubbles });
 }
 
 /**
@@ -298,6 +296,12 @@ export function applyLeave(message: LeaveMessage): void {
   const patch: Partial<ClientState> = { people, motion, ...onlinePatch(message.online) };
   // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）
   if (state.selectedId === message.id) patch.selectedId = undefined;
+  // 走了就不该再留着他的气泡：同一个 id 在 CHAT_BUBBLE_MS 内重连会带着旧气泡复现
+  if (state.bubbles.has(message.id)) {
+    const bubbles = new Map(state.bubbles);
+    bubbles.delete(message.id);
+    patch.bubbles = bubbles;
+  }
   // 走了就不该再留着他的表情：同一个 id 在 EMOTE_MS 内重连会带着旧气泡复现
   if (state.emotes.has(message.id)) {
     const emotes = new Map(state.emotes);

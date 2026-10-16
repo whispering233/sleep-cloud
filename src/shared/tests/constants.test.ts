@@ -10,6 +10,7 @@ import {
   CELL_H,
   CELL_W,
   CHAT_MAX_LEN,
+  CHAT_BUBBLE_MS,
   CHAT_LOG_MAX,
   DAILY_WAKE_UTC_HOUR,
   EMOTE_MS,
@@ -63,6 +64,7 @@ describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
     expect(BED_SWITCH_COOLDOWN_MS).toBe(10_000);
     expect(EMOTE_MS).toBe(2500);
+    expect(CHAT_BUBBLE_MS).toBe(8_000);
   });
 
   it('几何常量（`20-layout.md` §2）与列距/行距逐条等于文档里的值', () => {

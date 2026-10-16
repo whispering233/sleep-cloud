@@ -53,6 +53,12 @@ export const SHRINK_USED_RATIO = 0.5;
 /** 表情在世界内的显示时长。**只用于客户端渲染时推导过期**，服务端不记状态。 */
 export const EMOTE_MS = 2500;
 
+/**
+ * 聊天气泡在世界里的寿命。同人后来的消息**覆盖**前一条并重置它；过期按「到期时刻 vs 现在」推导
+ * （**不挂定时器**），服务端不记状态（见 `docs/design/config.md` §2）。
+ */
+export const CHAT_BUBBLE_MS = 8_000;
+
 /** 素材像素 → 世界像素的固定比。**没有缩放**，1 世界像素 = 1 CSS 像素。 */
 export const ART_SCALE = 0.5;
 

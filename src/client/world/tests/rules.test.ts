@@ -21,6 +21,7 @@ import {
   personPoint,
   shouldDrawName,
   tapTargetFor,
+  truncateToLines,
   usableView,
   usableCenterOffset,
 } from '../rules';
@@ -359,6 +360,24 @@ describe('我的床的方位（离屏时的 8 方位字形）', () => {
 describe('暖灯标记', () => {
   it('标记半径是常量：1 世界像素 = 1 CSS 像素，且不小于屏幕上的下限', () => {
     expect(MARKER_RADIUS).toBe(5);
+  });
+});
+
+describe('气泡文字的截断（最多两行，超出加 …）', () => {
+  /** 假的量行器：一行 10 个字符。与 Phaser 无关，只验证二分与省略号本身。 */
+  const linesOf = (text: string): number => Math.max(1, Math.ceil(text.length / 10));
+
+  it('放得下就原样返回，不动一个字', () => {
+    expect(truncateToLines('醒着呢', 2, linesOf)).toBe('醒着呢');
+    expect(truncateToLines('a'.repeat(20), 2, linesOf)).toBe('a'.repeat(20));
+  });
+
+  it('放不下就截到「补上 … 后仍不超两行」的最长前缀，不多截也不少截', () => {
+    const cut = truncateToLines('a'.repeat(31), 2, linesOf);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(linesOf(cut)).toBeLessThanOrEqual(2);
+    // 再多留一个字就是三行：说明截的正是边界（不是靠「截一半」蒙对的）
+    expect(linesOf(`${cut.slice(0, -1)}a…`)).toBe(3);
   });
 });
 

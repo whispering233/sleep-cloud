@@ -39,6 +39,23 @@ export interface BedLook {
 /** 睡痕的不透明度：床与小人共用同一个值（`personAlpha`）。 */
 export const TRACE_ALPHA = 0.45;
 
+/**
+ * 气泡文字最多 `maxLines` 行、超出截断加 `…`（行数由调用方量：Phaser 量真实文字，单测给个假的）。
+ * Phaser 4 的 `maxLines` **只会少画多余的行**（`GetTextSize` / `updateText` 按它截断），不自带省略号，
+ * 所以省略号自己补：按字符**二分**出「补上 `…` 后仍放得下」的最长前缀（中文没有词可切，只能按字符）。
+ */
+export function truncateToLines(text: string, maxLines: number, linesOf: (text: string) => number): string {
+  if (linesOf(text) <= maxLines) return text;
+  let low = 0;
+  let high = text.length - 1;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (linesOf(`${text.slice(0, mid)}…`) <= maxLines) low = mid;
+    else high = mid - 1;
+  }
+  return `${text.slice(0, low)}…`;
+}
+
 /** 铺着人的两张床图：睡痕是同一张图换墨色档，清醒躺姿与睡着共用闭眼的那张。 */
 const BED_FRAMES: Record<Appearance, { resting: BedFrame; trace: BedFrame }> = {
   boy: { resting: 'bed_boy', trace: 'bed_boy_trace' },
