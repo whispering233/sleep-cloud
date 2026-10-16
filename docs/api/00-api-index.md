@@ -14,10 +14,11 @@
 | GET | `/api/me` | 读取会话（无则签发匿名会话）+ 下发布局版本 | `10-api-http.md` |
 | POST | `/api/age-confirm` | 18 岁自述确认 | `10-api-http.md` |
 | POST | `/api/nickname` | 设置昵称 | `10-api-http.md` |
+| POST | `/api/appearance` | 选择入场形象（`boy` / `girl`）；非法值忽略并回当前会话 | `10-api-http.md` |
 | GET | `/api/ws` | WebSocket 升级（进入大厅） | `20-api-ws.md` |
 | GET | `/api/health` | 部署冒烟检查（无业务数据） | `10-api-http.md` |
 
-**只有四个业务接口。** 大区列表与切换（`/api/halls`、`/api/hall`）随「只有一个厅」一起删除。
+**只有五个业务接口。** 大区列表与切换（`/api/halls`、`/api/hall`）随「只有一个厅」一起删除。
 
 ## WebSocket 协议
 

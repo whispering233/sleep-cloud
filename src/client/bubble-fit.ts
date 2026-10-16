@@ -17,7 +17,7 @@ export const LABEL_PX = 12;
 /** 气泡内边距（世界像素，内边距由文字自带）。 */
 export const BUBBLE_PAD = 4;
 /** 气泡的**宽度上限**（世界像素）。 */
-export const CHAT_BUBBLE_MAX_PX = 200;
+const CHAT_BUBBLE_MAX_PX = 200;
 /** 气泡里最多两行，超出截断加 `…`（见 `views.ts` 的 `fitBubbleText`）。 */
 export const CHAT_BUBBLE_MAX_LINES = 2;
 /** 文字真正能用的宽度：气泡宽度扣掉左右内边距。 */

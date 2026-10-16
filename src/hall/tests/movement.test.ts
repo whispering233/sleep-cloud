@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { WALK_SPEED_PX_PER_S } from '../../shared/constants';
 import { advanceMover, moverPosition } from '../movement';
 import type { MoverState } from '../movement';
 
@@ -8,9 +7,6 @@ import type { MoverState } from '../movement';
 function mover(path: Array<{ x: number; y: number }>): MoverState {
   return { x: 0, y: 0, path };
 }
-
-/** 走 `ms` 毫秒应有的位移（推进量只与实际经过时间有关）。 */
-const pxIn = (ms: number): number => (WALK_SPEED_PX_PER_S * ms) / 1000;
 
 describe('按实际经过的时间推进（不是按拍数，也不量化到格）', () => {
   it('位置是连续像素：100ms 走 22px，不是整格', () => {

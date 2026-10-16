@@ -28,7 +28,7 @@ import { drowsinessOf } from './ambience';
  * 名字、以及「这条是不是自己说的」，都在渲染时从 `people` / `me` 现取——气泡长在人身上，
  * 人走了气泡跟着走（见 `docs/ui/DESIGN.md` 的 `chat-bubble` 行），所以这里不快照人名。
  */
-export interface ChatBubble {
+interface ChatBubble {
   text: string;
   kind: 'chat' | 'whisper';
   /** 到期时刻（本地时钟）。过期由渲染侧比较推导，**不挂定时器** */

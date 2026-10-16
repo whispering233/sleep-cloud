@@ -134,7 +134,7 @@ export type DownstreamMessage =
 
 // ————————————————————————— 上行（客户端 → 服务端） —————————————————————————
 
-export interface UpstreamPayloads {
+interface UpstreamPayloads {
   /** 握手。必须是首条消息，携带布局版本号。 */
   hello: { layoutVersion: string };
   /** 「我要去这个世界像素点」。服务端校验它在街网上；不在就回 `3006`，不吸附。 */

@@ -7,7 +7,7 @@
  */
 
 /** 到期事件的类型：宽限到期、自动睡着到期、每日唤醒。 */
-export type DueKind = 'grace' | 'autosleep' | 'daily';
+type DueKind = 'grace' | 'autosleep' | 'daily';
 
 export interface DueEvent {
   kind: DueKind;

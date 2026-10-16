@@ -8,7 +8,7 @@ import type { Motion } from '../motion';
  */
 
 /** 单张贴图的名字（图集帧名，见 `docs/ui/DESIGN.md`「构建期要产出的变体」）。 */
-export type BedFrame =
+type BedFrame =
   | 'bed_empty_hollow'
   | 'bed_empty_owned'
   | 'bed_boy'

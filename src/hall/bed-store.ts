@@ -15,7 +15,7 @@ import { META_KEYS } from './schema';
  */
 
 /** 床位占用状态（主体是**一张床**）。没有 `roaming`——人不在床上时那张床就是 `empty`。 */
-export type BedState = 'empty' | 'lying' | 'asleep' | 'trace';
+type BedState = 'empty' | 'lying' | 'asleep' | 'trace';
 
 /** 一张床此刻的**制度事实**（过期已按时间戳推导掉，不是库里的原始值）。 */
 export interface BedRow {
