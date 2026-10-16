@@ -1,3 +1,4 @@
+import type { Appearance } from './protocol';
 import type { ErrorCode } from './error-code';
 
 /**
@@ -20,6 +21,8 @@ export interface SessionView {
   /** 未设置时为空串 */
   nickname: string;
   ageConfirmed: boolean;
+  /** 入场层选的形象；**没选过时下发按 `user_id` 派生的那个**（与服务端将要用的值一致） */
+  appearance: Appearance;
   /** 为真表示必须先设昵称才能进厅 */
   needsNickname: boolean;
   /** 布局版本号：客户端建连时首条 `hello` 必须带上它（见 `docs/design/config.md` §1） */

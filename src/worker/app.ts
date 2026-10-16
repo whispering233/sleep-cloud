@@ -3,7 +3,8 @@ import { Hono } from 'hono';
 import { HALL_ID, NICKNAME_MAX_LEN } from '../shared/constants';
 import { detect } from '../shared/content-filter';
 import { LAYOUT_VERSION } from '../shared/layout';
-import { IDENTITY_HEADERS } from '../hall/connection';
+import { APPEARANCES } from '../shared/protocol';
+import { appearanceFor, IDENTITY_HEADERS } from '../hall/connection';
 import type { Env } from './env';
 import { fail, ok } from './respond';
 import { readExistingSession, readSession, writeSession } from './session';
@@ -33,6 +34,8 @@ function sessionView(session: Session) {
   return {
     userId: session.userId,
     nickname: session.nickname ?? '',
+    // 没选过时下发派生的那个值：入场层一进来就有预览高亮，且与服务端将要用的形象一致
+    appearance: session.appearance ?? appearanceFor(session.userId),
     ageConfirmed: session.ageConfirmed,
     needsNickname: !session.nickname,
     layoutVersion: LAYOUT_VERSION,
@@ -85,6 +88,18 @@ app.post('/api/nickname', async (c) => {
   return invalid ? fail(c, '1001', sessionView(updated)) : ok(c, sessionView(updated));
 });
 
+/** 选择入场形象（协议里同样不需要「改形象」消息：与改名一样只发生在建连之前）。 */
+app.post('/api/appearance', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { appearance?: unknown };
+  // 非法值**直接忽略**（回当前会话）：只有被篡改的客户端会走到这条路，不值得为它加错误码
+  const appearance = APPEARANCES.find((value) => value === body.appearance);
+
+  const { session, invalid, secret } = await readSession(c);
+  const updated: Session = appearance ? { ...session, appearance } : session;
+  await writeSession(c, updated, secret);
+  return invalid ? fail(c, '1001', sessionView(updated)) : ok(c, sessionView(updated));
+});
+
 /**
  * WebSocket 升级：验签 cookie → 前置校验（未自述 `1002` / 未设昵称 `1003`），
  * 通过后转发给那个唯一的厅（见 `docs/api/20-api-ws.md` §1）。
@@ -100,6 +115,8 @@ app.get('/api/ws', async (c) => {
   const forwarded = new Request(c.req.raw);
   forwarded.headers.set(IDENTITY_HEADERS.userId, session.userId);
   forwarded.headers.set(IDENTITY_HEADERS.name, encodeURIComponent(session.nickname));
+  // 没选过形象时不带这个头：厅那边按 `user_id` 派生（唯一真源在 `appearanceFromHeader`）
+  if (session.appearance) forwarded.headers.set(IDENTITY_HEADERS.appearance, session.appearance);
 
   return c.env.HALL.getByName(HALL_ID).fetch(forwarded);
 });

@@ -318,6 +318,44 @@
     letter-spacing: var(--tracking-label);
   }
 
+  /* ——— 形象二选一 ——— */
+
+  .appearance-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-sm);
+  }
+
+  .appearance-option {
+    display: grid;
+    justify-items: center;
+    gap: var(--spacing-xs);
+    min-height: 44px;
+    padding: var(--spacing-sm);
+    color: var(--color-neutral-muted);
+    background-color: var(--color-primary);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  .appearance-option-selected {
+    color: var(--color-neutral);
+    border-color: var(--color-neutral);
+  }
+
+  .appearance-option:focus-visible {
+    outline: 2px solid var(--color-neutral);
+    outline-offset: 1px;
+  }
+
+  /* 图集的帧是背景图，行内元素吃不到宽高（`sprites/frames.css` 只给 width/height/background-position） */
+  .appearance-preview {
+    display: block;
+  }
+
   /* ——— 提示条：只对可恢复错误出现，几秒后自行消失 ——— */
 
   /* 动画末帧停在透明，`animationend` 一到组件就自己卸下（见 `Toast.tsx`，那边不挂定时器） */

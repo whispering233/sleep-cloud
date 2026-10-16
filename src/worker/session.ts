@@ -2,12 +2,14 @@ import { getSignedCookie, setSignedCookie } from 'hono/cookie';
 
 import type { Context } from 'hono';
 
+import { APPEARANCES } from '../shared/protocol';
+import type { Appearance } from '../shared/protocol';
 import type { Env } from './env';
 
 /**
  * 匿名会话（见 `docs/api/api-public.md` §2）：服务端签发的 **HMAC 签名 cookie**（HttpOnly）。
  *
- * 会话里只有三样东西：用户标识、昵称、18 岁自述位。**不放床位号**（归属的权威在厅的数据库）、
+ * 会话里只有四样东西：用户标识、昵称、形象、18 岁自述位。**不放床位号**（归属的权威在厅的数据库）、
  * **不放所属厅**（只有一个厅，路由用常量）、**不放时区**（时区概念已删除）。
  */
 
@@ -20,6 +22,8 @@ export interface Session {
   userId: string;
   /** 入场层自己输入的名字；未设置时为空 */
   nickname?: string;
+  /** 入场层选的形象；未设置时为空——厅按 `user_id` 派生（见 `connection.ts` 的 `appearanceFor`） */
+  appearance?: Appearance;
   ageConfirmed: boolean;
 }
 
@@ -66,6 +70,8 @@ function parseSession(raw: string): Session | null {
     return {
       userId: parsed.userId,
       nickname: typeof parsed.nickname === 'string' ? parsed.nickname : undefined,
+      // 枚举是唯一白名单（与 `emote.ts` 同形）：非法或缺失一律当未设置
+      appearance: APPEARANCES.find((value) => value === parsed.appearance),
       ageConfirmed: parsed.ageConfirmed === true,
     };
   } catch {

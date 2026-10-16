@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HALL_ID } from '../../shared/constants';
 import { LAYOUT_VERSION } from '../../shared/layout';
+import { APPEARANCES } from '../../shared/protocol';
 import app from '../app';
 import type { Env } from '../env';
 
@@ -31,6 +32,7 @@ function makeEnv(options: { ownedBeds?: number; full?: boolean } = {}): Env {
 const headersOf = (request: Request): Record<string, string> => ({
   userId: request.headers.get('x-sleep-user-id') ?? '',
   name: decodeURIComponent(request.headers.get('x-sleep-name') ?? ''),
+  appearance: request.headers.get('x-sleep-appearance') ?? '',
 });
 
 const body = async (res: Response): Promise<ApiBody> => (await res.json()) as ApiBody;
@@ -50,6 +52,10 @@ const post = (path: string, env: Env, cookie: string, payload: unknown) =>
   );
 
 const currentSession = async (env: Env, cookie: string) => (await body(await get('/api/me', env, cookie))).data;
+
+/** `/api/ws` 转发给厅的那份身份头（假房间服务把它原样回成 JSON）。 */
+const forwardedHeaders = async (env: Env, cookie: string): Promise<Record<string, string>> =>
+  ((await (await get('/api/ws', env, cookie)).json()) as { forwarded: Record<string, string> }).forwarded;
 
 /** 写会话的接口都会重签 cookie（会话是无状态的），后续请求要用新的那一份。 */
 async function postSession(path: string, env: Env, cookie: string, payload: unknown) {
@@ -78,6 +84,13 @@ describe('匿名会话接口', () => {
     expect(session.layoutVersion).toBe(LAYOUT_VERSION);
     expect(session).not.toHaveProperty('hallId');
     expect(session).not.toHaveProperty('timezone');
+  });
+
+  it('没选过形象也下发一个：按 user_id 派生的那个（入场层一进来就有预览高亮）', async () => {
+    const env = makeEnv();
+    const session = await currentSession(env, await newCookie(env));
+
+    expect(APPEARANCES).toContain(session?.appearance);
   });
 
   it('厅满（级表触顶且无空床）→ 2002，但会话照常返回（前端据此提示而不是建连）', async () => {
@@ -130,6 +143,27 @@ describe('入场接口', () => {
     expect(saved.code).toBe('0');
     expect(await currentSession(env, saved.cookie)).toMatchObject({ nickname: '小明', needsNickname: false });
   });
+
+  it('形象二选一：合法值写进会话', async () => {
+    const env = makeEnv();
+    const cookie = await newCookie(env);
+
+    const saved = await postSession('/api/appearance', env, cookie, { appearance: 'girl' });
+    expect(saved.code).toBe('0');
+    expect((await currentSession(env, saved.cookie))?.appearance).toBe('girl');
+  });
+
+  it('非法形象被直接忽略：不报错、不写入会话（不加新错误码）', async () => {
+    const env = makeEnv();
+    const cookie = await newCookie(env);
+    const before = await currentSession(env, cookie);
+
+    for (const appearance of ['cat', '', 1, null]) {
+      const ignored = await postSession('/api/appearance', env, cookie, { appearance });
+      expect(ignored.code, String(appearance)).toBe('0');
+      expect((await currentSession(env, ignored.cookie))?.appearance).toBe(before?.appearance);
+    }
+  });
 });
 
 describe('WebSocket 升级', () => {
@@ -163,6 +197,16 @@ describe('WebSocket 升级', () => {
 
     expect(forwarded.name).toBe('阿雅');
     expect(forwarded.userId).toMatch(/^u_[0-9a-f]{10}$/);
+  });
+
+  it('选过形象时身份头带所选值；没选过则不带（厅那边按 user_id 派生）', async () => {
+    const env = makeEnv();
+    const cookie = await enter(env);
+
+    expect((await forwardedHeaders(env, cookie)).appearance).toBe('');
+
+    const chosen = (await postSession('/api/appearance', env, cookie, { appearance: 'girl' })).cookie;
+    expect((await forwardedHeaders(env, chosen)).appearance).toBe('girl');
   });
 
   it('未自述 → 1002；未设昵称 → 1003（都不升级连接）', async () => {

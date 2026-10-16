@@ -9,7 +9,7 @@ import type { ErrorCode } from './error-code';
 /** 人物显示态（主体是「一个人」）。`roaming` 不写进数据库。 */
 export type PersonState = 'roaming' | 'lying' | 'asleep' | 'trace';
 
-/** 小人外观（第一版固定两种；不提供用户选择入口，由 `user_id` 派生，见 `docs/api/20-api-ws.md` §3.1）。 */
+/** 小人外观（两种）：**入场层自己选**；没选的按 `user_id` 派生（见 `docs/api/20-api-ws.md` §3.1）。 */
 export const APPEARANCES = ['boy', 'girl'] as const;
 export type Appearance = (typeof APPEARANCES)[number];
 

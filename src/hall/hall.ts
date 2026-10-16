@@ -36,7 +36,7 @@ import {
 } from './bed-store';
 import { chatVerdictFor } from './chat';
 import {
-  appearanceFor,
+  appearanceFromHeader,
   deriveDisplayState,
   guardIncoming,
   IDENTITY_HEADERS,
@@ -149,6 +149,7 @@ export class Hall extends DurableObject<Env> {
     const userId = request.headers.get(IDENTITY_HEADERS.userId);
     const name = decodeName(request.headers.get(IDENTITY_HEADERS.name));
     if (!userId || !name) return new Response('缺少连接身份', { status: 400 });
+    const appearance = appearanceFromHeader(request.headers.get(IDENTITY_HEADERS.appearance), userId);
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
@@ -156,7 +157,7 @@ export class Hall extends DurableObject<Env> {
     server.serializeAttachment({
       userId,
       name,
-      appearance: appearanceFor(userId),
+      appearance,
       // 位置在握手时定（出生点 / 宽限恢复 / 从睡痕醒来都要查库），这里先给一个合法的占位点
       x: frontPointOf(0)?.x ?? 0,
       y: frontPointOf(0)?.y ?? 0,

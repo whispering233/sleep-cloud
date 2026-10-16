@@ -1,4 +1,5 @@
 import type { ApiResponse, SessionView } from '../shared/http-api';
+import type { Appearance } from '../shared/protocol';
 
 /** HTTP 接口调用（同源，会话 cookie 自动携带）。 */
 
@@ -25,3 +26,7 @@ export const confirmAge = () => postJson<SessionView>('/api/age-confirm', { conf
 
 /** 昵称只在建连之前设置（协议里因此不需要「改名」消息）。 */
 export const setNickname = (nickname: string) => postJson<SessionView>('/api/nickname', { nickname });
+
+/** 形象也只在建连之前选（与改名同理：协议里不需要「改形象」消息）。 */
+export const setAppearance = (appearance: Appearance) =>
+  postJson<SessionView>('/api/appearance', { appearance });

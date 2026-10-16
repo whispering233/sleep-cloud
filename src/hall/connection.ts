@@ -42,7 +42,7 @@ export interface ConnectionState {
   rate?: RateWindow;
 }
 
-/** 外观由用户标识推导：第一版不提供选择入口，但同一个人每次进来长得一样。 */
+/** 外观由用户标识推导：**没选过形象的人**由它决定，同一个人每次进来长得一样。 */
 export function appearanceFor(userId: string): Appearance {
   let hash = 0;
   for (const char of userId) hash = (hash * 31 + (char.codePointAt(0) as number)) >>> 0;
@@ -91,7 +91,16 @@ export function personFromConnection(connection: ConnectionState): Person {
 export const IDENTITY_HEADERS = {
   userId: 'x-sleep-user-id',
   name: 'x-sleep-name',
+  appearance: 'x-sleep-appearance',
 } as const;
+
+/**
+ * 身份头里的形象：合法值照用，**缺失或非法一律回落到 `appearanceFor(userId)`**。
+ * 客户端能伪造这个头没用——它由 Worker 依据验签后的会话写入（与昵称同处）。
+ */
+export function appearanceFromHeader(raw: string | null | undefined, userId: string): Appearance {
+  return APPEARANCES.find((value) => value === raw) ?? appearanceFor(userId);
+}
 
 /**
  * 显示态的**推导**（正确性的真正来源，见 `10-hall-runtime.md` §4.3）：

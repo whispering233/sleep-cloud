@@ -1,5 +1,7 @@
 import type { SessionView } from '../../shared/http-api';
-import { confirmAge, setNickname } from '../api';
+import { APPEARANCES } from '../../shared/protocol';
+import type { Appearance } from '../../shared/protocol';
+import { confirmAge, setAppearance, setNickname } from '../api';
 import { ERROR_FALLBACK_TEXT, errorTextFor } from '../error-text';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
@@ -7,6 +9,11 @@ import { useState } from 'react';
 
 /** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
 const errorText = (code: string) => errorTextFor(code) ?? ERROR_FALLBACK_TEXT;
+
+/** 图集帧名（`public/sprites/frames.css`，坐标由素材管线生成，不手抄）与中文名。
+ * 两个表都是 `Record<Appearance, …>`：枚举加第三种时这里会直接编译不过。 */
+const PREVIEW_FRAME: Record<Appearance, string> = { boy: 'boy_stand', girl: 'girl_stand' };
+const APPEARANCE_NAME: Record<Appearance, string> = { boy: '男孩', girl: '女孩' };
 
 export interface EntryOverlayProps {
   session: SessionView;
@@ -16,12 +23,13 @@ export interface EntryOverlayProps {
 }
 
 /**
- * 入场层：18 岁自述 + 昵称。**每次进入大厅前都出现**；会话已完善时它是「预填 + 一键继续」。
- * 改名只发生在这里（建连之前），因此协议不需要「名字变更」消息。
+ * 入场层：18 岁自述 + 昵称 + 形象二选一。**每次进入大厅前都出现**；会话已完善时它是「预填 + 一键继续」。
+ * 改名与改形象都只发生在这里（建连之前），因此协议不需要「名字变更」/「形象变更」消息。
  * 没有大区选择：只有一个厅（见 `docs/design/config.md` §1）。
  */
 export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayProps) {
   const [nickname, setNicknameDraft] = useState(session.nickname);
+  const [appearance, setAppearanceDraft] = useState(session.appearance);
   const [ageConfirmed, setAgeConfirmed] = useState(session.ageConfirmed);
   const [error, setError] = useState<string | null>(blocked ? errorText('2002') : null);
   const [busy, setBusy] = useState(false);
@@ -48,6 +56,7 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
 
       const name = nickname.trim();
       if (name !== current.nickname) current = await runStep(() => setNickname(name), current);
+      if (appearance !== current.appearance) current = await runStep(() => setAppearance(appearance), current);
 
       onDone(current);
     } catch (cause) {
@@ -80,6 +89,24 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
             enterKeyHint="go"
             onChange={(event) => setNicknameDraft(event.target.value)}
           />
+        </div>
+
+        <div className="entry-field" role="group" aria-label="你的样子">
+          <span className="field-label">你的样子</span>
+          <div className="appearance-row">
+            {APPEARANCES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={value === appearance ? 'appearance-option appearance-option-selected' : 'appearance-option'}
+                aria-pressed={value === appearance}
+                onClick={() => setAppearanceDraft(value)}
+              >
+                <span className={`appearance-preview sprite-${PREVIEW_FRAME[value]}`} />
+                {APPEARANCE_NAME[value]}
+              </button>
+            ))}
+          </div>
         </div>
 
         <label className="checkbox-row">

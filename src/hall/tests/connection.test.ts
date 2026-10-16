@@ -4,6 +4,7 @@ import { APPEARANCES } from '../../shared/protocol';
 import { HALL_LEVELS, frontPointOf, isWalkable } from '../../shared/layout';
 import {
   appearanceFor,
+  appearanceFromHeader,
   deriveDisplayState,
   guardIncoming,
   parseUpstream,
@@ -47,6 +48,26 @@ describe('连接附加数据', () => {
       state: 'asleep',
       bedNo: 42,
     });
+  });
+});
+
+describe('身份头里的形象', () => {
+  it('合法值照用（与哈希无关）', () => {
+    expect(appearanceFromHeader('girl', 'u_1')).toBe('girl');
+    expect(appearanceFromHeader('boy', 'u_1')).toBe('boy');
+  });
+
+  it('缺失时回落：按 user_id 派生的那个（老 cookie / 没选过形象的人）', () => {
+    expect(appearanceFromHeader(null, 'u_1')).toBe(appearanceFor('u_1'));
+    expect(appearanceFromHeader(undefined, 'u_1')).toBe(appearanceFor('u_1'));
+    expect(appearanceFromHeader('', 'u_1')).toBe(appearanceFor('u_1'));
+  });
+
+  it('非法时回落：不报错、不吸附到别的值，同一个用户永远是同一个外观', () => {
+    for (const userId of ['u_1', 'u_abcdef']) {
+      expect(appearanceFromHeader('cat', userId)).toBe(appearanceFor(userId));
+      expect(appearanceFromHeader('BOY', userId)).toBe(appearanceFor(userId));
+    }
   });
 });
 
