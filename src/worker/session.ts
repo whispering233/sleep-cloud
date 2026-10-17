@@ -70,7 +70,7 @@ function parseSession(raw: string): Session | null {
     return {
       userId: parsed.userId,
       nickname: typeof parsed.nickname === 'string' ? parsed.nickname : undefined,
-      // 枚举是唯一白名单（与 `emote.ts` 同形）：非法或缺失一律当未设置
+      // 枚举是唯一白名单：非法或缺失一律当未设置
       appearance: APPEARANCES.find((value) => value === parsed.appearance),
       ageConfirmed: parsed.ageConfirmed === true,
     };

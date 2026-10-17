@@ -33,6 +33,8 @@
 
 ### Changed
 
+- **表情不再是独立通道**：`emote` 上行 / 下行删掉，表情改为**聊天文本**——点表情按钮发出去的就是一条只含该 emoji 的 `chat`（选中了私聊对象时发 `whisper`）。表情因此跟着聊天的全部规则走（打码、长度、5 条/秒限流、**8 秒** `CHAT_BUBBLE_MS` 气泡、可与文字混排），原来的 `EMOTE_MS`（2.5 秒）与「中文短标签气泡」一起删掉；睡着时自动醒的行为不变（`chat` / `whisper` 本来就这样）。按钮字形换成 emoji（`aria-label` 仍是中文），协议少两种消息
+
 - **引擎单独一个 chunk**：构建现在产出三块——`index`（React + UI 层）、`world`（世界层，动态导入）、`phaser`（引擎）。此前引擎被并进 `world` 里，于是**任何业务代码改动都会让整块 363 KB gzip 失效**；拆开后引擎 chunk 的 hash 只在升级 Phaser 时变化，老用户回访只需重下十几 kB 的 `world`。首次加载的字节数与请求数基本不变（多一个 HTTP 请求，走 HTTP/2 可忽略）。**构建末尾那条 `(!) Some chunks are larger than 500 kB` 仍在**：超线的是引擎本身（1374 kB），不是业务代码；刻意不调 `chunkSizeWarningLimit`，好让这条提示继续对业务代码生效
 
 - **本地开发端口自动 +1**：`npm run dev` 从 `127.0.0.1:8787` 起探测第一个空闲端口（inspector 同法从「端口 + 1000」起），选中端口写入 `.wrangler/dev-port`（本地运行时文件，不入库）；`npm run dev:web` 按该文件代理。多个 worktree 并行起验证服务时不再互相顶掉端口

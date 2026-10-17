@@ -2,13 +2,12 @@
  * 延迟采样（**纯计算**：不碰 DOM / WebSocket / 定时器，可单测）。
  *
  * 协议**不定义应用层心跳**（`docs/api/20-api-ws.md` §1），所以客户端唯一的真实往返来源是
- * `chat` / `emote` 的回投：发出去时登记一个待配对样本，收到**自己那条**回投时用它算 RTT。
+ * `chat` 的回投：发出去时登记一个待配对样本，收到**自己那条**回投时用它算 RTT。
  * 不做推测、不发额外消息——没发言就没有样本（HUD 那一项不占位）。
  *
- * 样本按**意图类别**分开存：一条表情回投不能结算一条聊天样本（两者迟到时间不同），
- * 同一类别只留**最新**一次（后发的覆盖前一次，旧样本不产生 RTT）。
+ * 样本按**意图类别**分开存，同一类别只留**最新**一次（后发的覆盖前一次，旧样本不产生 RTT）。
  */
-export type LatencyKind = 'chat' | 'emote';
+export type LatencyKind = 'chat';
 
 /** 待配对样本：类别 → 发出时刻（`Date.now()`）。结算一次就把它用掉。 */
 export type PendingSamples = Partial<Record<LatencyKind, number>>;

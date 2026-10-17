@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
-import { EMOTE_LABELS, EMOTE_LIST } from '../emotes';
+import { EMOTE_SHORTCUTS } from '../emotes';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
-import { sendChat, sendEmote, sendRise, sendSleep, sendWhisper } from '../ws';
+import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
@@ -70,17 +70,17 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* 表情常驻一行：一次点击即发，不进二级菜单 */}
+      {/* 表情常驻一行：一点即发一条只含该 emoji 的聊天消息（选中对象时走私聊） */}
       <div className="emote-bar" role="group" aria-label="表情">
-        {EMOTE_LIST.map((id) => (
+        {EMOTE_SHORTCUTS.map(({ glyph, label }) => (
           <button
-            key={id}
+            key={glyph}
             type="button"
             className="emote-button"
-            aria-label={EMOTE_LABELS[id]}
-            onClick={() => sendEmote(id)}
+            aria-label={label}
+            onClick={() => (selectedId !== undefined ? sendWhisper(selectedId, glyph) : sendChat(glyph))}
           >
-            {EMOTE_LABELS[id]}
+            {glyph}
           </button>
         ))}
       </div>

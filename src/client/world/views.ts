@@ -51,13 +51,14 @@ const NUMBER_INSET = 3;
 /** 床号的字号 = `caption` 档，刻意比名字与气泡（`label` 档）小一档。 */
 const BED_NUMBER_PX = 12;
 /**
- * 名字与表情相对小人原点的位置：**站着的小人原点在脚下**（贴图锚点），躺着的小人原点在床心
+ * 名字与标签相对小人原点的位置：**站着的小人原点在脚下**（贴图锚点），躺着的小人原点在床心
  * （位置就是他的床）。两套高度相差一个人高（≈56.5 世界像素），所以标签不能共用一个常量。
+ * `CHAT_Y` 同时是**气泡槽位的底线**（气泡底与尾巴都贴在它上面）。
  */
 const NAME_Y = -BED_H * 0.34;
-const EMOTE_Y = -BED_H * 0.56;
+const CHAT_Y = -BED_H * 0.56;
 const STAND_NAME_Y = -BED_H * 0.62;
-const STAND_EMOTE_Y = -BED_H * 0.84;
+const STAND_CHAT_Y = -BED_H * 0.84;
 /** 「自己的小人脚下」那个暖灯标记：原点已经在脚下，所以几乎不需要偏移。 */
 const FOOT_MARKER_Y = 3;
 /**
@@ -240,7 +241,6 @@ export interface PersonView {
   readonly sprite: Phaser.GameObjects.Image;
   readonly footMarker: Phaser.GameObjects.Graphics;
   readonly name: Phaser.GameObjects.Text;
-  readonly emote: Phaser.GameObjects.Text;
   readonly bubbleTail: Phaser.GameObjects.Triangle;
   readonly bubbleBody: Phaser.GameObjects.Rectangle;
   readonly bubbleText: Phaser.GameObjects.Text;
@@ -250,7 +250,7 @@ export interface PersonView {
   paint: string;
   /** 上一次画的气泡（槽位底线 + 种类 + 文字）：不变就跳过整段重排（重排要重新量文字） */
   chat: string;
-  /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字、表情一起换 */
+  /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字一起换 */
   chatBaseY: number;
 }
 
@@ -286,21 +286,19 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
     .setVisible(false);
-  const emote = scene.add.text(0, EMOTE_Y, '', BUBBLE_STYLE).setOrigin(0.5, 1).setVisible(false);
-  const container = scene.add.container(0, 0, [bubbleBody, bubbleTail, bubbleText, sprite, footMarker, name, emote, bubbleName]);
+  const container = scene.add.container(0, 0, [bubbleBody, bubbleTail, bubbleText, sprite, footMarker, name, bubbleName]);
   return {
     container,
     sprite,
     footMarker,
     name,
-    emote,
     bubbleTail,
     bubbleBody,
     bubbleText,
     bubbleName,
     paint: '',
     chat: '',
-    chatBaseY: EMOTE_Y,
+    chatBaseY: CHAT_Y,
   };
 }
 
@@ -323,9 +321,8 @@ export function paintPerson(
     view.container.setAlpha(personAlpha(person.state));
     view.footMarker.setVisible(mine && roaming);
     view.name.setY(roaming ? STAND_NAME_Y : NAME_Y);
-    view.emote.setY(roaming ? STAND_EMOTE_Y : EMOTE_Y);
-    // 气泡与表情共用同一条槽位底线（站着的小人原点在脚下，躺着的人在床心）
-    view.chatBaseY = roaming ? STAND_EMOTE_Y : EMOTE_Y;
+    // 气泡槽位的底线：站着的小人原点在脚下，躺着的人在床心
+    view.chatBaseY = roaming ? STAND_CHAT_Y : CHAT_Y;
   }
   const sway = roaming && moving ? 1 + WALK_SWAY * Math.sin((nowMs / 1000) * Math.PI * 2 * WALK_SWAY_HZ) : 1;
   view.sprite.setScale(ART_SCALE * sway);
@@ -341,11 +338,6 @@ export function setPersonName(view: PersonView, text: string, dim: boolean, bubb
     .setVisible(text !== '');
 }
 
-/** 表情气泡：比名字再高一点；过期由调用方比较 `expiresAt` 后传空串（**不挂定时器**）。 */
-export function setPersonEmote(view: PersonView, text: string): void {
-  view.emote.setText(text).setVisible(text !== '');
-}
-
 /**
  * `setPersonChat` 的入参：文字、它是全局消息还是私聊，以及气泡上方的名字行。
  * 名字**别人的消息才传**（自己知道是自己，见 `docs/ui/DESIGN.md` 的 `chat-bubble` 行）。
@@ -357,7 +349,7 @@ export interface ChatBubbleInput {
 }
 
 /**
- * 头顶那一个槽位里的聊天气泡（**槽位优先级 聊天 > 表情 > 选中名字** 由调用方保证，这一支只管自己画不画）。
+ * 头顶那一个槽位里的聊天气泡（**槽位优先级 聊天 > 选中名字** 由调用方保证，这一支只管自己画不画）。
  *
  * 底是圆角矩形、尾巴是三角，都程序化画（不走素材，理由见 `docs/ui/DESIGN.md`「气泡不走素材」）：
  * 高度跟着行数撑开，宽度跟文字走，所以**尺寸与位置一律取整**——半像素的描边照样会糊。

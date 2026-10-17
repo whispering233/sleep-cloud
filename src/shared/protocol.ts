@@ -13,10 +13,6 @@ export type PersonState = 'roaming' | 'lying' | 'asleep' | 'trace';
 export const APPEARANCES = ['boy', 'girl'] as const;
 export type Appearance = (typeof APPEARANCES)[number];
 
-/** 表情枚举（第一版固定几个；非法值静默丢弃）。 */
-export const EMOTE_IDS = ['wave', 'zzz', 'heart', 'cry', 'hug'] as const;
-export type EmoteId = (typeof EMOTE_IDS)[number];
-
 /** 「人在哪」：不在床上带坐标（世界像素），在床上带床号（位置就是他的床）。 */
 export type PersonPlacement =
   | { state: 'roaming'; x: number; y: number }
@@ -108,12 +104,6 @@ export interface WhisperMessage {
   ts: number;
 }
 
-export interface EmoteMessage {
-  t: 'emote';
-  id: string;
-  emoteId: EmoteId;
-}
-
 export interface ErrorMessage {
   t: 'error';
   code: ErrorCode;
@@ -135,7 +125,6 @@ export type DownstreamMessage =
   | ResizeMessage
   | ChatMessage
   | WhisperMessage
-  | EmoteMessage
   | ErrorMessage
   | PongMessage;
 
@@ -164,7 +153,6 @@ interface UpstreamPayloads {
   sleep: Record<string, never>;
   chat: { text: string };
   whisper: { toId: string; text: string };
-  emote: { id: EmoteId };
 }
 
 export type UpstreamType = keyof UpstreamPayloads;
@@ -184,7 +172,6 @@ export const UPSTREAM_TYPES = [
   'sleep',
   'chat',
   'whisper',
-  'emote',
 ] as const satisfies readonly UpstreamType[];
 
 /** 运行时可枚举的下行类型名（顺序与 `docs/api/20-api-ws.md` §4 表格一致）。 */
@@ -198,7 +185,6 @@ export const DOWNSTREAM_TYPES = [
   'resize',
   'chat',
   'whisper',
-  'emote',
   'error',
   'pong',
 ] as const satisfies readonly DownstreamMessage['t'][];

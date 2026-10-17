@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HALL_LEVELS } from '../layout';
-import { APPEARANCES, DOWNSTREAM_TYPES, EMOTE_IDS, UPSTREAM_TYPES, decodeOwnedBeds, encodeOwnedBeds } from '../protocol';
+import { APPEARANCES, DOWNSTREAM_TYPES, UPSTREAM_TYPES, decodeOwnedBeds, encodeOwnedBeds } from '../protocol';
 import { readDoc, tableRows } from './doc';
 
 const wsDoc = readDoc('api/20-api-ws.md');
@@ -17,12 +17,12 @@ const docUpstream = messageNames('## 3. 上行消息', '## 4. 下行消息');
 const docDownstream = messageNames('## 4. 下行消息', '### 4.1');
 
 describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
-  it('上行消息与文档一致（10 种）', () => {
-    expect(docUpstream).toEqual(['hello', 'ping', 'walk', 'hop', 'lie', 'rise', 'sleep', 'chat', 'whisper', 'emote']);
+  it('上行消息与文档一致（9 种）', () => {
+    expect(docUpstream).toEqual(['hello', 'ping', 'walk', 'hop', 'lie', 'rise', 'sleep', 'chat', 'whisper']);
     expect([...UPSTREAM_TYPES]).toEqual(docUpstream);
   });
 
-  it('下行消息与文档一致（12 种，含 resize 与 pong）', () => {
+  it('下行消息与文档一致（11 种，含 resize 与 pong）', () => {
     expect(docDownstream).toEqual([
       'snapshot',
       'join',
@@ -33,7 +33,6 @@ describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
       'resize',
       'chat',
       'whisper',
-      'emote',
       'error',
       'pong',
     ]);
@@ -54,11 +53,6 @@ describe('枚举取值与 docs/api/20-api-ws.md §3.1 一致', () => {
   it('外观是 `boy` / `girl`（由 user_id 派生）', () => {
     expect(enumValues('appearance')).toEqual(['boy', 'girl']);
     expect([...APPEARANCES]).toEqual(enumValues('appearance'));
-  });
-
-  it('表情枚举与文档一致', () => {
-    expect(enumValues('emote.id')).toEqual(['wave', 'zzz', 'heart', 'cry', 'hug']);
-    expect([...EMOTE_IDS]).toEqual(enumValues('emote.id'));
   });
 });
 

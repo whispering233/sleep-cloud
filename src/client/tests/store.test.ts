@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LAYOUT_VERSION } from '../../shared/layout';
 import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
-import { CHAT_BUBBLE_MS, EMOTE_MS } from '../../shared/constants';
+import { CHAT_BUBBLE_MS } from '../../shared/constants';
 import {
   applyBed,
   applyChat,
-  applyEmote,
   applyError,
   applyJoin,
   applyLeave,
@@ -400,39 +399,6 @@ describe('客户端私聊气泡', () => {
 
     expect(getState().bubbles.size).toBe(1);
     expect(getState().bubbles.get('u_other')).toMatchObject({ text: '只给你', kind: 'whisper' });
-  });
-});
-
-describe('客户端表情', () => {
-  it('写入显示到期的时刻：约等于现在 + EMOTE_MS', () => {
-    const before = Date.now();
-    applyEmote({ t: 'emote', id: 'u_other', emoteId: 'wave' });
-    const emote = getState().emotes.get('u_other');
-    expect(emote?.emoteId).toBe('wave');
-    expect(Math.abs((emote?.expiresAt ?? 0) - (before + EMOTE_MS))).toBeLessThanOrEqual(100);
-  });
-
-  it('同一个人后来的表情覆盖前一条（不堆叠）', () => {
-    applyEmote({ t: 'emote', id: 'u_other', emoteId: 'wave' });
-    const first = getState().emotes.get('u_other')?.expiresAt ?? 0;
-    applyEmote({ t: 'emote', id: 'u_other', emoteId: 'hug' });
-    expect(getState().emotes.size).toBe(1);
-    expect(getState().emotes.get('u_other')?.emoteId).toBe('hug');
-    expect(getState().emotes.get('u_other')?.expiresAt).toBeGreaterThanOrEqual(first);
-  });
-
-  it('快照重来清空表情（重连以新快照为准）', () => {
-    applyEmote({ t: 'emote', id: 'u_other', emoteId: 'zzz' });
-    applySnapshot(snapshot());
-    expect(getState().emotes.size).toBe(0);
-  });
-
-  it('发过表情的人离开大厅后，不该再留着他的表情', () => {
-    applyEmote({ t: 'emote', id: 'u_other', emoteId: 'wave' });
-    expect(getState().emotes.has('u_other')).toBe(true);
-
-    applyLeave({ t: 'leave', id: 'u_other', online: 2 });
-    expect(getState().emotes.has('u_other')).toBe(false);
   });
 });
 

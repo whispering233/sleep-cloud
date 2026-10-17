@@ -1,7 +1,7 @@
 import { INTENT_ECHO_TIMEOUT_MS, PROBE_TIMEOUT_MS } from '../shared/constants';
 import { beginSample, clearSamples, settleSample } from './latency';
 import type { LatencyKind, PendingSamples } from './latency';
-import type { DownstreamMessage, EmoteId, UpstreamMessage } from '../shared/protocol';
+import type { DownstreamMessage, UpstreamMessage } from '../shared/protocol';
 import {
   backoffMs,
   connecting,
@@ -17,7 +17,6 @@ import type { ConnState } from './conn-state';
 import {
   applyBed,
   applyChat,
-  applyEmote,
   applyError,
   applyJoin,
   applyLeave,
@@ -56,7 +55,7 @@ interface Session {
 }
 
 /**
- * 待配对的延迟样本：协议不定义心跳（`docs/api/20-api-ws.md` §1），只有 `chat` / `emote` 的回投
+ * 待配对的延迟样本：协议不定义心跳（`docs/api/20-api-ws.md` §1），只有 `chat` 的回投
  * 能给出真实往返。纯客户端临时量，丢了就丢了——下一次发言再采一个。
  */
 let pendingSamples: PendingSamples = {};
@@ -137,14 +136,6 @@ export function sendChat(text: string): boolean {
 export function sendWhisper(toId: string, text: string): boolean {
   const s = live();
   return s ? sendRaw(s, { t: 'whisper', toId, text }) : false;
-}
-
-/** 表情：一次点击即发（不进二级菜单）。 */
-export function sendEmote(id: EmoteId): boolean {
-  const s = live();
-  if (!s || !sendRaw(s, { t: 'emote', id })) return false;
-  pendingSamples = beginSample(pendingSamples, 'emote', Date.now());
-  return true;
 }
 
 /** 躺到某张床上：走过去 + 躺下是服务端的一条复合意图。 */
@@ -396,10 +387,6 @@ function handleMessage(s: Session, event: MessageEvent): void {
     case 'whisper':
       applyWhisper(message);
       return;
-    case 'emote':
-      applyEmote(message);
-      settleLatency('emote', message.id);
-      return;
     case 'error':
       applyError(message.code);
       return;
@@ -427,7 +414,6 @@ function concernsMe(message: DownstreamMessage): boolean {
     case 'leave':
     case 'state':
     case 'chat':
-    case 'emote':
       return me !== undefined && message.id === me.id;
     case 'whisper':
       return me !== undefined && (message.fromId === me.id || message.toId === me.id);

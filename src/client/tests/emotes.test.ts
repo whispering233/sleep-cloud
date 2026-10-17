@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { EMOTE_IDS } from '../../shared/protocol';
-import { EMOTE_LABELS, EMOTE_LIST } from '../emotes';
+import { EMOTE_SHORTCUTS } from '../emotes';
 
-describe('表情标签', () => {
-  it('共享枚举里每个值都有非空标签（新增枚举值忘了配标签就立刻失败）', () => {
-    for (const id of EMOTE_IDS) {
-      expect(EMOTE_LABELS[id]?.trim().length ?? 0).toBeGreaterThan(0);
+describe('表情快捷表', () => {
+  it('每一项都有非空 emoji 字形与中文可访问名（字形给眼睛看，中文只给屏读）', () => {
+    for (const { glyph, label } of EMOTE_SHORTCUTS) {
+      expect(glyph.trim().length).toBeGreaterThan(0);
+      expect(label.trim().length).toBeGreaterThan(0);
     }
   });
 
-  it('按钮顺序就是共享枚举的顺序', () => {
-    expect([...EMOTE_LIST]).toEqual([...EMOTE_IDS]);
+  it('字形互不重复：按钮的 key 与最简断言都靠它', () => {
+    expect(new Set(EMOTE_SHORTCUTS.map((item) => item.glyph)).size).toBe(EMOTE_SHORTCUTS.length);
   });
 });
