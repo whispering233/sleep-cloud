@@ -30,8 +30,14 @@ const snapshotWith = (
 });
 
 describe('HUD 派生视图', () => {
-  it('两项都从状态里取：床号（归属，**显示值**）、在线人数', () => {
-    expect(hudViewOf(stateWith())).toEqual({ bedNo: 43, online: 37 });
+  it('各项都从状态里取：床号（归属，**显示值**）、在线人数、空床、延迟', () => {
+    // 空床 = 床位数 − 归属数：114 张床里只有表里的这几张有主
+    expect(hudViewOf(stateWith({ ownedBeds: new Set([42]) }))).toEqual({
+      bedNo: 43,
+      online: 37,
+      emptyBeds: BED_COUNT - 1,
+      rttMs: undefined,
+    });
   });
 
   it('床号是显示值 = 内部床号 + 1：内部 0 显示 1，还没有床时不换算', () => {
@@ -54,8 +60,18 @@ describe('HUD 派生视图', () => {
     expect(view.bedNo).toBe(43);
   });
 
-  it('快照还没到（没有厅）时在线人数是 undefined', () => {
-    expect(hudViewOf(stateWith({ hall: undefined })).online).toBeUndefined();
+  it('快照还没到（没有厅）时在线人数与空床都是 undefined', () => {
+    const view = hudViewOf(stateWith({ hall: undefined }));
+    expect(view.online).toBeUndefined();
+    expect(view.emptyBeds).toBeUndefined();
+  });
+
+  it('空床 = 床位数 − 归属数（占用与睡痕不占名额）', () => {
+    expect(hudViewOf(stateWith({ ownedBeds: new Set([0, 42, 113]) }))).toMatchObject({ emptyBeds: BED_COUNT - 3 });
+  });
+
+  it('没有任何归属时空床等于床位数：刚开厅、一个新来的人就是看到这个数', () => {
+    expect(hudViewOf(stateWith({ ownedBeds: new Set() }))).toMatchObject({ emptyBeds: BED_COUNT });
   });
 
   it('字段变了才算变化：逐个字段改一处都判为变化', () => {
@@ -74,6 +90,23 @@ describe('HUD 派生视图', () => {
     for (const other of [otherOnline, otherBed, noBed, noHall]) {
       expect(sameHudView(base, other)).toBe(false);
     }
+  });
+
+  it('延迟变了才算变化：`rttMs` 变化会换视图对象，没样本（undefined）也是一步', () => {
+    const noSample = hudViewOf(stateWith());
+    const sampled = hudViewOf(stateWith({ rttMs: 120 }));
+
+    expect(noSample.rttMs).toBeUndefined();
+    expect(sampled.rttMs).toBe(120);
+    expect(sameHudView(noSample, sampled)).toBe(false);
+    expect(sameHudView(sampled, hudViewOf(stateWith({ rttMs: 121 })))).toBe(false);
+    expect(sameHudView(sampled, hudViewOf(stateWith({ rttMs: 120 })))).toBe(true);
+  });
+
+  it('空床变了才算变化：归属集合大小变化会换视图对象', () => {
+    const base = hudViewOf(stateWith({ ownedBeds: new Set([42]) }));
+    expect(sameHudView(base, hudViewOf(stateWith({ ownedBeds: new Set([42, 43]) })))).toBe(false);
+    expect(sameHudView(base, hudViewOf(stateWith({ ownedBeds: new Set([43]) })))).toBe(true);
   });
 
   it('方位字形变了才算变化：离屏时补字形，回到视野内（undefined）再收掉', () => {

@@ -82,6 +82,8 @@ export interface ClientState {
   bedDirection?: BedDirection;
   /** 人物 id → 表情。过期只靠渲染时比较 `expiresAt`，**不挂定时器** */
   emotes: Map<string, { emoteId: EmoteId; expiresAt: number }>;
+  /** 最近一次延迟样本（毫秒，HUD 显示用）；还没采到样本时是 `undefined`，那一项不占位 */
+  rttMs?: number;
 }
 
 const emptyState = (): ClientState => ({

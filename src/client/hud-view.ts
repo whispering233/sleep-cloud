@@ -15,6 +15,13 @@ export interface HudView {
   bedDirection?: BedDirection;
   /** 服务端算的在线人数；快照还没到时不知道 */
   online?: number;
+  /**
+   * **无主空床**（= 床位数 − 归属数）：这就是「这个厅还有没有位置」的同义词，
+   * 所以它到 0 才算真的满（占用/睡痕不占名额）。快照还没到时不知道。
+   */
+  emptyBeds?: number;
+  /** 最近一次延迟样本（毫秒）；还没有样本时不知道，那一项不占位 */
+  rttMs?: number;
 }
 
 export function hudViewOf(state: ClientState): HudView {
@@ -23,10 +30,18 @@ export function hudViewOf(state: ClientState): HudView {
     bedNo: ownedBedNo === undefined ? undefined : displayBedNoOf(ownedBedNo),
     bedDirection: state.bedDirection,
     online: state.hall?.online,
+    emptyBeds: state.hall === undefined ? undefined : state.hall.bedCount - state.ownedBeds.size,
+    rttMs: state.rttMs,
   };
 }
 
 /** 字段逐个比较：只有它们真的变了才换掉视图对象（对象身份用于 React 的 `useState`）。 */
 export function sameHudView(a: HudView, b: HudView): boolean {
-  return a.bedNo === b.bedNo && a.bedDirection === b.bedDirection && a.online === b.online;
+  return (
+    a.bedNo === b.bedNo &&
+    a.bedDirection === b.bedDirection &&
+    a.online === b.online &&
+    a.emptyBeds === b.emptyBeds &&
+    a.rttMs === b.rttMs
+  );
 }
