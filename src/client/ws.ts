@@ -1,4 +1,6 @@
 import type { DownstreamMessage, EmoteId } from '../shared/protocol';
+import { beginSample, clearSamples, settleSample } from './latency';
+import type { LatencyKind, PendingSamples } from './latency';
 import {
   applyBed,
   applyChat,
@@ -11,6 +13,7 @@ import {
   applySnapshot,
   applyState,
   applyWhisper,
+  getState,
   setState,
 } from './store';
 
@@ -21,6 +24,22 @@ import {
  * 重连语义见 `docs/api/20-api-ws.md` §5（重连后以新的快照为准，不做增量补偿）。
  */
 let active: WebSocket | null = null;
+
+/**
+ * 待配对的延迟样本：协议不定义心跳（`docs/api/20-api-ws.md` §1），只有 `chat` / `emote` 的回投
+ * 能给出真实往返。纯客户端临时量，丢了就丢了——下一次发言再采一个。
+ */
+let pendingSamples: PendingSamples = {};
+
+/**
+ * 命中「自己那条回投」才算 RTT：别人的消息与我发出的意图无关，既不算样本、也不清样本。
+ */
+function settleLatency(kind: LatencyKind, id: string): void {
+  if (id !== getState().me?.id) return;
+  const settled = settleSample(pendingSamples, kind, Date.now());
+  pendingSamples = settled.pending;
+  if (settled.rttMs !== undefined) setState({ rttMs: settled.rttMs });
+}
 
 export function connectHall(input: { layoutVersion: string }): () => void {
   const url = new URL('/api/ws', window.location.href);
@@ -41,6 +60,8 @@ export function connectHall(input: { layoutVersion: string }): () => void {
     }
     switch (message.t) {
       case 'snapshot':
+        // 重连后以新快照为准：旧连接上的回投不会再来，样本留着只会结算出假 RTT
+        pendingSamples = clearSamples();
         applySnapshot(message);
         return;
       case 'pos':
@@ -63,12 +84,14 @@ export function connectHall(input: { layoutVersion: string }): () => void {
         return;
       case 'chat':
         applyChat(message);
+        settleLatency('chat', message.id);
         return;
       case 'whisper':
         applyWhisper(message);
         return;
       case 'emote':
         applyEmote(message);
+        settleLatency('emote', message.id);
         return;
       case 'error':
         applyError(message.code);
@@ -78,8 +101,15 @@ export function connectHall(input: { layoutVersion: string }): () => void {
     }
   });
 
-  socket.addEventListener('close', () => setState({ connected: false }));
-  socket.addEventListener('error', () => setState({ connected: false }));
+  // 连接断了就没有回投可等：close / error 两条都要清（`error` 之后不一定还有 close）
+  socket.addEventListener('close', () => {
+    pendingSamples = clearSamples();
+    setState({ connected: false });
+  });
+  socket.addEventListener('error', () => {
+    pendingSamples = clearSamples();
+    setState({ connected: false });
+  });
 
   return () => {
     if (active === socket) active = null;
@@ -103,6 +133,8 @@ export function sendHop(bedNo?: number): void {
 export function sendChat(text: string): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'chat', text }));
+  // 只有**真的发出去**才有回投可等：上面提前 return 的那些不登记样本
+  pendingSamples = beginSample(pendingSamples, 'chat', Date.now());
 }
 
 /** 私聊：文本规则与全局聊天相同，由服务端判定。 */
@@ -115,6 +147,7 @@ export function sendWhisper(toId: string, text: string): void {
 export function sendEmote(id: EmoteId): void {
   if (active?.readyState !== WebSocket.OPEN) return;
   active.send(JSON.stringify({ t: 'emote', id }));
+  pendingSamples = beginSample(pendingSamples, 'emote', Date.now());
 }
 
 /** 躺到某张床上：走过去 + 躺下是服务端的一条复合意图。 */
