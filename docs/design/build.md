@@ -58,7 +58,7 @@
 | :--- | :--- | :--- |
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
-| `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。路由带着 zone 名，所以**不写在入库的 `wrangler.jsonc` 里**，而写在未入库的 `wrangler.local.jsonc`（部署命令已改为 `--config` 它）。水印：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
+| `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。路由带着 zone 名，所以**不写在入库的 `wrangler.jsonc` 里**，而写在未入库的 `wrangler.local.jsonc`（部署命令已改为 `--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：忘了注入 `SESSION_SECRET`**
@@ -79,7 +79,7 @@
 
 **为什么标签排在最后**：标签是公开且难撤的产物。部署失败或冒烟不过时还没有标签，仓库里不会留下一个「标了发布但没上线」的版本；推送 `main` 则可以早做（远端是事实来源）。`release.yml` 用推送的标签建 GitHub Release，正文取自 `CHANGELOG.md` 里对应的那一段 —— 所以那一段的版本号必须与标签逐字对应。
 
-### 4.2 生产入口必须是自定义域名
+### 4.2 生产入口：自定义域名或路由（默认的 `workers.dev` 不能用）
 
 部署默认给出的 `*.workers.dev` 地址在部分网络里**整个域名的 SNI 被阻断**（本机实测：同一个 Cloudflare IP，SNI 换成 `cloudflare.com` 能握手，换成 `workers.dev` 系列直接收到 TCP RST）。
 
@@ -107,17 +107,25 @@
 | `{ …, zone_name: "<写成了另一个 zone>" }` | `Could not find zone for <写错的那个>. Make sure the domain is set up to be proxied by Cloudflare.`——那个 zone 不在本账号里（实测 `GET /zones?name=<它>` 返回空） |
 | `{ pattern: "<入口域名>/*", zone_name: "<入口域名真正所属的 zone>" }` | **通过**：`Deployed sleep-cloud triggers → <入口域名>/* (zone name: <那个 zone>)` |
 
-两个域名的**根域**都不挂 Worker。
+入口域名与它所属 zone 的**根域**都不挂 Worker。
 
-**别把本机网络的假象当成生产故障**：实测本机到这两个域名都会间歇性超时、Chromium 还可能报 `net::ERR_CERT_COMMON_NAME_INVALID`，而同一时刻 `curl` 能拿到 HTTP/2 200、`openssl s_client` 拿到的证书 `CN`/SAN 完全正确。排查顺序：先用 `curl -sI` 与 `openssl s_client -servername <域名>` 分开确认「证书对不对」与「响应通不通」，再怀疑应用。
+**别把本机网络的假象当成生产故障**：实测本机到入口域名（及其 zone）会间歇性超时、Chromium 还可能报 `net::ERR_CERT_COMMON_NAME_INVALID`，而同一时刻 `curl` 能拿到 HTTP/2 200、`openssl s_client` 拿到的证书 `CN`/SAN 完全正确。排查顺序：先用 `curl -sI` 与 `openssl s_client -servername <域名>` 分开确认「证书对不对」与「响应通不通」，再怀疑应用。
 
-**做法**：给 Worker 加一个自己域名的**自定义域名**（域名需在同账号下），SNI 就变成自己的域名：
+**做法（两种，都是让 SNI 变成自己的域名）**：
+
+**自定义域名**（域名所在 zone 必须在同账号下）：
 
 ```jsonc
 "routes": [{ "pattern": "sleep.<你的域名>", "custom_domain": true }]
 ```
 
-或走面板：Workers & Pages → 该 Worker → Settings → Domains & Routes → Add → Custom Domain。
+**路由**（本项目用的这种：zone 在本账号、pattern 的 hostname 可以是另一个名字）：
+
+```jsonc
+"routes": [{ "pattern": "<入口域名>/*", "zone_name": "<入口域名所属的 zone>" }]
+```
+
+或走面板：Workers & Pages → 该 Worker → Settings → Domains & Routes → Add。
 
 HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带 `Secure`，本地 http 开发才不加。
 
