@@ -59,7 +59,8 @@
   .hud {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    /* 组间间距大于组内间距：分组靠间距读出来，不画分隔线（`docs/ui/DESIGN.md` 的 `hud` 行） */
+    gap: var(--spacing-md);
     padding-block: calc(env(safe-area-inset-top) + var(--spacing-sm)) var(--spacing-sm);
     padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
       calc(env(safe-area-inset-right) + var(--spacing-md));
@@ -70,8 +71,26 @@
     letter-spacing: var(--tracking-caption);
   }
 
+  /* 显示组：纯文字，与右边的胶囊按钮靠外观区分。`flex:1 1 auto` 把它剩下的宽度全吃掉，
+     可点击组就被钉在最右；窄屏放不下时它自己折行（`flex-wrap`），不去挤压按钮 */
+  .hud-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
 
-  /* HUD 里的数值（床号、在线人数）用等宽：数字跳动时不推挤旁边的文字 */
+  /* 可点击组：不参与伸缩（宽度就是按钮的宽度），垂直居中跟随 HUD 高度 */
+  .hud-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  /* HUD 里的数值（床号、在线人数、空床、延迟）用等宽：数字跳动时不推挤旁边的文字 */
   .hud-numeric {
     font-family: var(--font-numeric);
     font-size: var(--text-numeric);
@@ -80,32 +99,22 @@
     letter-spacing: var(--tracking-numeric);
   }
 
-  /* 床号那一条：整条可点 = 相机跳到我的床（顶部其余区域仍不吃点击，见 `.hud-stack`） */
-  .hud-my-bed {
-    /* 通栏 `pointer-events: none`，这个按钮要把它收回来 */
+  /* 可点击组的按钮外观：描边胶囊，与 `.emote-button` 同规格——项目里「这是个按钮」的既有答案，
+     HUD 沿用而不发明第二套。底透明：衬在 `primary` 通栏上，不写第二层底色。
+     高 44px 是触击尺寸（`touch-target-min`），不再用负外边距把它吃掉 */
+  .hud-action {
+    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
     pointer-events: auto;
-    padding-block: var(--spacing-sm);
-    /* 撑出来的 16px 用负外边距抵掉：HUD 的高度不变，点击区正好铺满通栏这一条 */
-    margin-block: calc(-1 * var(--spacing-sm));
-    color: inherit;
-    background-color: transparent;
-    font: inherit;
-    letter-spacing: inherit;
-    border: 0;
-  }
-
-  /* 「⇢」：展开 HUD 下沿那一行床号输入（通栏 `pointer-events: none`，这个按钮要把它收回来） */
-  .hud-jump-toggle {
-    pointer-events: auto;
-    min-width: 44px;
     min-height: 44px;
-    /* 同 `.hud-my-bed`：撑出来的 16px 用负外边距抵掉，HUD 的高度不变 */
-    margin-block: calc(-1 * var(--spacing-sm));
-    color: inherit;
+    padding: 0 var(--spacing-md);
+    color: var(--color-neutral);
     background-color: transparent;
-    font: inherit;
-    letter-spacing: inherit;
-    border: 0;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--tracking-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
   }
 
   /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击 */
@@ -272,8 +281,7 @@
   .input-field:focus-visible,
   .action-primary:focus-visible,
   .emote-button:focus-visible,
-  .hud-my-bed:focus-visible,
-  .hud-jump-toggle:focus-visible,
+  .hud-action:focus-visible,
   .hud-jump-cancel:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
