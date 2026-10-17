@@ -6,29 +6,9 @@
 
 **派活硬约束（每张卡都适用）**：一条命令一步、不要管道 / 重定向 / `&&` / 多行内联脚本；工具自己会截断输出，不要用 `tail` / `grep` 过滤。工具不可用就如实写「未能验证」并退出，不要为了凑结论硬撑。
 
-**顺序**：卡 2 → 卡 3（依赖 2）→ 卡 4（独立，可并行）→ 卡 5（独立，量完即删）。每张卡完成后 `git commit` 一次。
+**顺序**：卡 3（依赖 2）→ 卡 4（独立，可并行）→ 卡 5（独立，量完即删）。每张卡完成后 `git commit` 一次。
 
-**已完成**：卡 1（探活协议 `ping` / `pong`）已落地并独立验证通过。
-
----
-
-## 卡 2 · 连接管理：三态 + 按需探活 + 退避重连（无 UI）
-
-依赖卡 1（要 `ping` / `pong`）。
-
-- [ ] `src/shared/constants.ts`：加 `PROBE_TIMEOUT_MS = 2000`、`INTENT_ECHO_TIMEOUT_MS = 1500`、`RECONNECT_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000]`（与 `config.md` §2 一致）。
-- [ ] `src/client/conn-state.ts`（新，**纯函数**）：退避取值、探测状态机、`'connecting' | 'online' | 'offline'` 迁移。**不许 import WebSocket / DOM / React**，否则测不了。
-- [ ] `src/client/ws.ts`（重写为连接管理器）：
-  - `probe()`：socket 不是 `OPEN` → 立即重连；是 `OPEN` → 发 `ping`，`PROBE_TIMEOUT_MS` 内无 `pong` → `close()` + 重连。
-  - 三条触发点：`visibilitychange`（可见时探活；**hidden 时停掉退避等待**）、`online` 事件、发上行后 `INTENT_ECHO_TIMEOUT_MS` 内没收到任何「关于自己的下行」。
-  - 退避 `RECONNECT_BACKOFF_MS` 封顶 15s，成功后归零；**永不放弃**。
-  - 两个导出给 UI 用：`retryNow()`（打断等待、立即试一次，不改退避序列）、连接态写进 store。
-  - 发送出口一律返回布尔：`offline` 时**丢弃不排队**（理由见 `../api/20-api-ws.md` §5.1），失败即 `ensureConnected()`。
-- [ ] `src/client/store.ts`：`connected: boolean` → `connection: 'connecting' | 'online' | 'offline'`（`applySnapshot` 置 `online`）；`applyPos` **补写 `me.x/y`**（卡 4 的回退锚点，现在只写 `people`）。
-- [ ] `src/client/world/world.ts`：`update` 里 `state.connected` 改判 `connection === 'online'`；重连对准 **`selfPoint`**（首次进厅仍走 `focusPoint` = 我的床）。
-- [ ] `src/client/tests/conn-state.test.ts`（新）+ `src/client/tests/store.test.ts`（`connected` 断言跟着改）：退避序列、探针超时→重连、hidden 暂停、三态迁移、`applyPos` 写 `me.x/y`。
-
-**验收**：`npm test`、`npm run typecheck`；本地 `npm run dev` 后拔网 30s 再恢复，控制台应看到退避重连并最终恢复（服务端恢复后位置按 `snapshot` 落位）。**不要**在卡 2 里做任何 DOM。**回滚**：删 `conn-state.ts` 并还原 `ws.ts` 一处文件即可。
+**已完成**：卡 1（探活协议 `ping` / `pong`）、卡 2（连接管理：三态 + 按需探活 + 退避重连）均已落地并独立验证通过。
 
 ---
 
@@ -40,8 +20,11 @@
 - [ ] `src/client/components/ChatPanel.tsx`：作为 `.chat-panel` 的**第一个子元素**挂载（**占位，不是浮层**）。理由：世界层的可用视口只扣 `.chat-panel` 与 `.hud` 的实占高度，**占位就不需要改世界层**（硬纪律 22）。
 - [ ] `src/client/styles/app.css`：新 class，**复用 `toast-recoverable` 的令牌组合**（`secondary` 底 + `alert` 文 + `label` 档 + `rounded.md`），**不新增 token**（`npm run lint:design` 基线不动）。
 - [ ] `src/client/tests/` 里补一条：文案由连接态决定的纯函数（两态 + 3s 阈值）。
+- [ ] **按钮在 `connecting` 下不能是空操作**（独立验证时发现的 P2）：`retryNow()` 现在对 `CONNECTING` 直接返回，于是 socket 若长期卡在建连（TCP 黑洞），“尝试连接”点下去什么也不会发生。改法：连接管理器记下建连开始时刻，`retryNow()` 遇到 `CONNECTING` 超过 `PROBE_TIMEOUT_MS` 就抬掉重建，否则维持现状。
 
 **验收**（交 `subAgent` 验证，条目 ≤8、机位 393×852 手机视口）：断网后 2s 内出现 / 条在聊天面板之上、不遮床号 / 按钮可点且重连成功后条消失 / 输入框与表情行没被顶出视口 / 最底一行床位数没被盖住。**回滚**：删组件与 `ChatPanel` 一行挂载。
+
+**端到端附带要看的**（卡 2 的 P1 修好后的唯一真实验证机会，浏览器里可观测）：切后台/断网 → 恢复后**相机对准我的小人**（不是我的床）——若做得到，先把小人挪到离自己的床很远的地方再断，否则这一条看不出来。做不到就如实写「未能验证」。
 
 ---
 

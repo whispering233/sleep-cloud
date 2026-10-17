@@ -17,6 +17,7 @@ import type {
 } from '../shared/protocol';
 import { CHAT_BUBBLE_MS, EMOTE_MS } from '../shared/constants';
 import { decodeOwnedBeds } from '../shared/protocol';
+import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
@@ -46,7 +47,8 @@ export interface Notice {
  * 否则几百个小人会把框架拖死（见 `AGENTS.md` 硬纪律）。
  */
 export interface ClientState {
-  connected: boolean;
+  /** 连接态（渲染层的显示态）：由 `ws.ts` 的连接管理器写，见 `docs/api/20-api-ws.md` §5.1 */
+  connection: Connection;
   /** 厅的事实：当前床位数与在线人数（都是服务端下发的运行时事实） */
   hall?: HallInfo;
   /** 布局版本号：客户端据此自检几何是否与本机一致 */
@@ -85,7 +87,7 @@ export interface ClientState {
 }
 
 const emptyState = (): ClientState => ({
-  connected: false,
+  connection: 'connecting',
   ownedBeds: new Set(),
   people: new Map(),
   motion: new Map(),
@@ -109,15 +111,16 @@ export function subscribe(listener: (state: ClientState) => void): () => void {
 
 export function setState(patch: Partial<ClientState>): void {
   const next = { ...state, ...patch };
-  // 困倦度只在「人的显示态 / 在线人数」变化时重算：位置节拍（只改 `motion`）不改变它
-  if ('people' in patch || 'me' in patch || 'hall' in patch) next.drowsiness = drowsinessOf(next);
+  // 困倦度只在「人的显示态 / 在线人数」变化时重算：位置节拍（只改 `motion`，或只挪 `me.x/y`）不改变它
+  const meStateChanged = 'me' in patch && patch.me?.state !== state.me?.state;
+  if ('people' in patch || 'hall' in patch || meStateChanged) next.drowsiness = drowsinessOf(next);
   state = next;
   for (const listener of listeners) listener(state);
 }
 
 export function applySnapshot(message: SnapshotMessage): void {
   setState({
-    connected: true,
+    connection: 'online',
     layoutVersion: message.layoutVersion,
     hall: message.hall,
     me: message.me,
@@ -211,8 +214,13 @@ export function applyResize(message: ResizeMessage): void {
 export function applyPos(message: PosMessage): void {
   const motion = new Map(state.motion);
   const people = new Map(state.people);
+  const me = state.me;
+  // 自己不在 `people` 里：位置再另存一份到 `me`（走动时渲染自己，卡 4 的外推以它为权威锚点）
+  let nextMe = me;
 
   for (const [id, x, y] of message.items) {
+    if (me !== undefined && me.state === 'roaming' && id === me.id) nextMe = { ...me, x, y };
+
     const person = people.get(id);
     // 已经躺在床上的人不需要插值窗口（位置就是那张床）；服务端也不会为他发位置，
     // 这里只是防同一节拍里「状态先到、位置后到」的竞态
@@ -222,7 +230,7 @@ export function applyPos(message: PosMessage): void {
     if (person) people.set(id, { ...person, x, y });
   }
 
-  setState({ motion, people });
+  setState(nextMe === me ? { motion, people } : { motion, people, me: nextMe });
 }
 
 /** 从下行消息里取出「人在哪」的那一半（丢掉 `t`，别让它混进 Person）。 */
