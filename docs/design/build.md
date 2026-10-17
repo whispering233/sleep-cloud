@@ -38,7 +38,7 @@
 | 产物 | 说明 |
 | :--- | :--- |
 | 美术素材 | `npm run art` 从 `tools/art/masters/` 的 5 张母图重新生成 `public/sprites/`（图集 + 逐帧坐标的 `frames.css` + 许可）。**产物入库，不挂进 `npm run build`**（构建保持快且确定）；改素材或改映射规则后要重跑 |
-| 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管 |
+| 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**分包固定为三块**（`vite.config.ts` 的 `rolldownOptions.output.codeSplitting`）：`index`（React + UI 层）、`world`（世界层，创建画布时动态导入）、`phaser`（引擎单独一块）。**引擎分块是为了缓存**：引擎 chunk 的 hash 只在升级 Phaser 时变化，业务代码改动不会让老用户重下引擎（否则两者同块，改任何一行界面代码都要重下 363 KB gzip）。构建末尾那条 `(!) Some chunks are larger than 500 kB` 是**引擎自己超线**（1374 kB），不是业务代码膨胀；**刻意不调 `chunkSizeWarningLimit`**，好让这条提示继续对业务代码生效。实测产物：`index` 249 kB / gzip 79 kB、`world` 16 kB / gzip 6 kB、`phaser` 1374 kB / gzip 357 kB |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
 | 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/20-layout.md` §4）。`public/` 只放素材 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
@@ -199,7 +199,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 | 3 | 空芯（可躺）通道 | 真机·低亮度 | 无主空床与地板看得出区别（1.53:1 的面积差） | ①加大 `paper` 与底色的差 ②无主空床床角加一个 `claimed` 小标记 |
 | 4 | 困倦度幅度 | 真机·低亮度 | 看得出变暗，但不读成「切换」 | 只改 `primary-dim` 一个色值 |
 | 5 | 帧率 | 真机·低端机 | 滚动 + 多人走动时不顿（同屏对象约 80；本地软渲染 28~38fps 不代表真机）。**画布按 DPR 3 渲染，填充率是上限 2 时的 2.25 倍**（见 `config.md` §3） | ①减少床号文字对象（只给整行编号）或换位图字体 ②把 `MAX_DPR` 调回 2（整块画布被放大 1.5×，代价是发虚） |
-| 6 | 首次加载 | 真机·4G | 首屏可交互时长可接受（`world` 分块 gzip **363 KB**、UI 层 **76 KB**、CSS 3 KB） | 拆包 / 懒加载 Phaser |
+| 6 | 首次加载 | 真机·4G | 首屏可交互时长可接受（入场层 DOM gzip **79 KB** + CSS 3 KB 先可用；`world` 6 KB 与引擎 357 KB 在其后异步取，页面刚打开时就已经在取） | 引擎已单独成块（见 §3），下一步只能是**砍子系统本体**（不用物理 / Tilemap / 粒子却照单全收）；真机确实卡再动，成本见 CHANGELOG 与 §3 |
 | 7 | 桌面鼠标拖拽平移 | 桌面 | 按住拖拽能平移相机 | 查 `world.ts` 的拖拽判据是不是只认 touch |
 | 8 | 提示条可见时长 | 真机 | 稳定可见 ≥ 2.5 秒 | 改成显式计时，不依赖 `animationend` |
 | 9 | 点击手感三连：点床 vs 点地面 / 点自己 22px 半径抢走脚下点击 / 面板变高时相机不立刻重滚 | 真机 | 都刁钻得能接受 | ①调床的命中矩形 ②收窄「点自己」半径（或长按才回中）③可用视口变化时立刻重新夹取一次 |
