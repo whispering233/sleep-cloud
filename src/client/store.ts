@@ -129,11 +129,12 @@ export function applySnapshot(message: SnapshotMessage): void {
     motion: new Map(),
     // 客户端据此换算服务端时间轴：插值一律按服务端时间戳算
     clockOffsetMs: message.serverTs - Date.now(),
-    // 重连以新快照为准、不做增量补偿 → 旧的气泡不保留
+    // 重连以新快照为准、不做增量补偿 → 旧的气泡不保留；旧连接上采到的延迟样本同样作废
     bubbles: new Map(),
     selectedId: undefined,
     bedDirection: undefined,
     emotes: new Map(),
+    rttMs: undefined,
   });
 }
 

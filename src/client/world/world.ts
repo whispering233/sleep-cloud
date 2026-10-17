@@ -63,7 +63,7 @@ export interface WorldHandle {
   destroy(): void;
   /** 相机跳到我的床（HUD 的床号条）；还没有床时按进厅对准的退路（`focusPoint`）。 */
   focusMyBed(): void;
-  /** 相机跳到指定床（HUD 输入床号的「⇢」）。 */
+  /** 相机跳到指定床（HUD 输入床号的 `GO`）。 */
   focusBed(bedNo: number): void;
 }
 

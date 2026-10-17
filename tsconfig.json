@@ -19,7 +19,8 @@
   "include": [
     "src/worker",
     "src/hall",
-    "src/shared"
+    "src/shared",
+    "src/globals.d.ts"
   ],
   "exclude": [
     "src/**/tests/**"
