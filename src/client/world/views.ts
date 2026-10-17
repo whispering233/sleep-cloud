@@ -167,6 +167,8 @@ export interface BedView {
   frame: string;
   /** 睁眼躺姿的两个点是否已经画上：lying ⇄ asleep 换的是这两个点，不是贴图 */
   eyesOn: boolean;
+  /** 床号文字当前是否显示（拉远到 `Z < ZOOM_TEXT_MIN` 时退役）：只在翻转时改可见性 */
+  numberOn: boolean;
   /** 当前画在床角上的标记种类（`none` = 没画）：只在种类翻转时重绘 */
   marker: BedMarker;
 }
@@ -177,8 +179,9 @@ export function createBedView(scene: Phaser.Scene): BedView {
   const rug = scene.add.rectangle(0, 0, 0, 0, COLORS.rug).setOrigin(0, 0);
   const sprite = scene.add.image(0, 0, SPRITES_KEY, 'bed_empty_hollow').setScale(ART_SCALE);
   const eyes = scene.add.graphics().setVisible(false);
-  // 颜色随种类变（我的床 = 暖灯色 / 可搬的空床 = `claimed`），所以不在这里配色，由 `drawMarker` 画
-  const markerGfx = scene.add.graphics().setVisible(false);
+  // 颜色随种类变（我的床 = 暖灯色 / 可搬的空床 = `claimed`），所以不在这里配色，由 `drawMarker` 画。
+  // 小点画在**自己的原点**、由 `setPosition` 摆位：这样拉远时 `setScale(1/Z)` 只把它放大，不会把它挪位
+  const markerGfx = scene.add.graphics().setPosition(MARKER_X, MARKER_Y).setVisible(false);
   const number = scene.add
     .text(NUMBER_INSET, BED_H - NUMBER_INSET, '', {
       fontFamily: FONT_FAMILY,
@@ -199,6 +202,7 @@ export function createBedView(scene: Phaser.Scene): BedView {
     bedNo: -1,
     frame: '',
     eyesOn: false,
+    numberOn: false,
     marker: 'none',
   };
 }
@@ -208,7 +212,8 @@ export function placeBed(view: BedView, bed: BedPlacement, look: BedLook, marker
   view.container.setVisible(true).setPosition(bed.x, bed.y);
   if (view.bedNo !== bed.bedNo) {
     view.bedNo = bed.bedNo;
-    view.number.setText(String(displayBedNoOf(bed.bedNo)));
+    // 文字只在它确实要显示时写：拉远档把文字退掉后，每张床那个 12px 的离屏 canvas 也跟着变成 1×1
+    view.number.setText(look.number ? String(displayBedNoOf(bed.bedNo)) : '');
     // 位置与错位一律向 layout 要：矩形是绝对坐标，容器的坐标就是 `positionOf(bedNo)`，相减得相对偏移
     const room = roomOf(bed.bedNo);
     const reserve = reserveOf(bed.bedNo);
@@ -228,6 +233,12 @@ export function placeBed(view: BedView, bed: BedPlacement, look: BedLook, marker
     view.eyesOn = look.eyes;
     drawEyes(view, look.eyes);
   }
+  if (view.numberOn !== look.number) {
+    view.numberOn = look.number;
+    view.number.setVisible(look.number);
+    // 从退役档回到 1×：文字得从当前绑定的床号重写（退役期间它被清空了）
+    view.number.setText(look.number ? String(displayBedNoOf(view.bedNo)) : '');
+  }
   if (view.marker !== marker) {
     view.marker = marker;
     drawMarker(view, marker);
@@ -243,7 +254,7 @@ function drawMarker(view: BedView, marker: BedMarker): void {
     return;
   }
   graphics.fillStyle(MARKER_COLORS[marker], 1);
-  graphics.fillCircle(MARKER_X, MARKER_Y, MARKER_RADIUS);
+  graphics.fillCircle(0, 0, MARKER_RADIUS);
   graphics.setVisible(true);
 }
 
@@ -294,9 +305,10 @@ export interface PersonView {
 
 export function createPersonView(scene: Phaser.Scene): PersonView {
   const sprite = scene.add.image(0, 0, SPRITES_KEY, 'boy_stand').setScale(ART_SCALE).setVisible(false);
-  const footMarker = scene.add.graphics();
+  const footMarker = scene.add.graphics().setPosition(0, FOOT_MARKER_Y);
   footMarker.fillStyle(COLORS.marker, 1);
-  footMarker.fillCircle(0, FOOT_MARKER_Y, MARKER_RADIUS);
+  // 同床角那颗点：画在原点、由 `setPosition` 摆位，拉远时 `setScale(1/Z)` 只放大不改位
+  footMarker.fillCircle(0, 0, MARKER_RADIUS);
   footMarker.setVisible(false);
   // 气泡压在人物贴图**之下**：尾巴落在头上不会遮住脸
   // 底锚在**下沿**（原点 0.5, 1），尾巴锚在**上沿**（0.5, 0）：两个都贴在 `chatBaseY` 上就对上了

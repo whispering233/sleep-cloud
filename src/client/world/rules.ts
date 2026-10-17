@@ -1,3 +1,4 @@
+import { ZOOM_MIN } from '../../shared/constants';
 import type { Appearance, Person, PersonState } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
@@ -34,6 +35,8 @@ export interface BedLook {
   alpha: number;
   /** 清醒躺着：床图上只有闭眼的那一张，靠脸上叠两个点表达「睁着眼」（补画见 backlog） */
   eyes: boolean;
+  /** 床号是否画：拉远到 `Z < ZOOM_TEXT_MIN` 时退役（见 `docs/ui/DESIGN.md` 的世界相机） */
+  number: boolean;
 }
 
 /** 睡痕的不透明度：床与小人共用同一个值（`personAlpha`）。 */
@@ -69,17 +72,19 @@ const BED_FRAMES: Record<Appearance, { resting: BedFrame; trace: BedFrame }> = {
 };
 
 /** 占用优先于归属；无主空床**不返回空值**——它是「这里可以躺」的唯一提示。 */
-export function bedLook(input: { owned: boolean; occupant?: Occupant }): BedLook {
+export function bedLook(input: { owned: boolean; occupant?: Occupant; detail?: boolean }): BedLook {
+  const look = input.detail ?? true;
   const occupant = input.occupant;
   if (!occupant) {
-    return { frame: input.owned ? 'bed_empty_owned' : 'bed_empty_hollow', alpha: 1, eyes: false };
+    return { frame: input.owned ? 'bed_empty_owned' : 'bed_empty_hollow', alpha: 1, eyes: false, number: look };
   }
   const trace = occupant.state === 'trace';
   const pair = BED_FRAMES[occupant.appearance];
   return {
     frame: trace ? pair.trace : pair.resting,
     alpha: trace ? TRACE_ALPHA : 1,
-    eyes: occupant.state === 'lying',
+    eyes: look && occupant.state === 'lying',
+    number: look,
   };
 }
 
@@ -191,6 +196,15 @@ export interface ViewInsets {
 }
 
 /**
+ * 相机比例的夹取：**只缩不放**——上限恒为 1×（放大必然被放大采样而糊，见 `docs/ui/DESIGN.md`），
+ * 下限是 `ZOOM_MIN`。非有限值（两指恰好重合时算出的 `Infinity` / `NaN`）退回 1×。
+ */
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return 1;
+  return Math.min(1, Math.max(ZOOM_MIN, zoom));
+}
+
+/**
  * 可用视口（世界像素）= 视口 − 顶部 HUD − 底部聊天面板的**实际占位**
  * （`docs/ui/DESIGN.md`「世界相机」；占位指「从视口边缘量到界面内沿」，**含外边距**）。
  * 取景中心、垂直夹取、死区都按它算：按整视口算时最底一行永远压在聊天面板之下，走不到也点不到。
@@ -212,8 +226,7 @@ export function usableView(view: Rect, insets: ViewInsets): Rect {
  * y 上移 `insets.top`、height 加回顶 + 底（推法：视窗下沿最大 = `y + height − 视口高`，
  * 令它 + `insets.top` + 可用高 = 厅的下边缘）。可见区比厅大时照旧居中。
  */
-export function cameraBounds(region: Rect, view: Rect, usable: Rect): Rect {
-  const width = Math.max(region.width, usable.width);
+export function cameraBounds(region: Rect, view: Rect, usable: Rect): Rect {  const width = Math.max(region.width, usable.width);
   const height = Math.max(region.height, usable.height);
   return {
     x: region.x - (width - region.width) / 2,
@@ -237,8 +250,7 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
   };
 }
 
-/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */
-export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 /** 45° 一个扇区，从「东」起按屏幕顺时针排（`atan2` 的正方向在屏幕上朝下 = 南）。 */
 const COMPASS: readonly BedDirection[] = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
