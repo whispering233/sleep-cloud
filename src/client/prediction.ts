@@ -39,8 +39,11 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
  * 路径不必重算——服务端与客户端走的是同一条折线，只是锚点往后挪了一拍。
  *
  * 权威点离我外推的位置太远时返回 `undefined`（**外推作废**，渲染回落到权威值）：`hop` 传送、
- * 服务端换了目标、或那条 `walk` 被静默拒了。判据用 `TELEPORT_SNAP_PX`——与插值判「位置跳变」
- * 是同一个阈值，客户端对「传送」只有这一种口径。
+ * 或服务端换了目标。判据用 `TELEPORT_SNAP_PX`——与插值判「位置跳变」是同一个阈值，
+ * 客户端对「传送」只有这一种口径。
+ *
+ * **「意图被拒」不走这里**：服务端拒掉一条意图后不会再为那个目标发 `pos`，等不到重锚——
+ * 那种情况由 `store.applyError` 就地丢掉外推（见 `MOVE_INTENT_ERRORS`）。
  */
 export function anchorPrediction(prediction: Prediction, x: number, y: number, ts: number): Prediction | undefined {
   const predicted = predictionPointAt(prediction, ts);
