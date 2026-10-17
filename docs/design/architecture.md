@@ -11,7 +11,7 @@
 | 前端 | **React + TypeScript + Vite + Tailwind**（**移动端优先**） | UI 小但会长（聊天、留言、装饰）；也贴合既定的 Tailwind 与细粒度组件要求。手机是主场景，竖屏窄幅下先定稿 |
 | 世界渲染 | **Phaser 4.2.1**（独立 canvas，`Scale.NONE`，**无缩放**；画布按 DPR ≤3 放大，**世界里的文字按同一个 DPR 栅格化**） | 图集与批量渲染、相机（跟随/死区/边界）、输入、tween 一站齐备；比自绘少写一套相机与输入 |
 | **布局** | **共享纯函数**（`src/shared/layout.ts`） | 床号 ↔ 位置、区域、走道全部由**与床位数无关**的纯函数给出 → 自动伸缩不移动任何床；同一份函数被前端与房间服务引用 → 不存在「服务端认为不可走而客户端画得出」 |
-| 本地开发 | 平台的本地运行时（`wrangler dev`） | 本地即可跑完整的对象 + SQLite + WebSocket |
+| 本地开发 | 平台的本地运行时（`wrangler dev`，由 `npm run dev` 包一层并自动选端口） | 本地即可跑完整的对象 + SQLite + WebSocket |
 | 不引入 | D1 / KV / R2 / 全栈同构框架 / 渲染用 Tilemap / 物理引擎（Arcade / Matter）/**寻路库**（phaser-navmesh / easystarjs / grid-engine） | 见 §2.5、§5 与 `backlog.md` |
 
 **Phaser 使用边界**（细节见 `20-layout.md` §2 与 `../ui/DESIGN.md`）：
