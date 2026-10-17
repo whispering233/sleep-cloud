@@ -6,7 +6,7 @@ import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState, setBedDirection, setSwitching } from '../store';
+import { getState, setBedDirection, setSwitching, showNotice } from '../store';
 import type { ClientState } from '../store';
 import {
   bedDirection,
@@ -610,6 +610,8 @@ class WorldScene extends Phaser.Scene {
       selfId: state.me?.id,
       residentId: bedNo !== undefined ? residentOf(state, bedNo) : undefined,
       bedNo,
+      ownedBedNo: state.me?.ownedBedNo,
+      switching: state.switching,
       walkTarget: nearestStreetPoint(point, bedCount),
     });
 
@@ -621,6 +623,10 @@ class WorldScene extends Phaser.Scene {
         // 模式里那一下就是决定：发出躺下意图后立刻收起模式，下一次点击不再有换床含义
         if (state.switching) setSwitching(false);
         this.handlers.onLie(target.bedNo);
+        return;
+      case 'notice':
+        // 我有别的床、又不在换床模式里：**不发上行**，只指路（纯文字提示，不是操作目标）
+        showNotice('已经有一张床 · 换床在设置里');
         return;
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）

@@ -306,6 +306,8 @@ export type TapTarget =
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
   | { kind: 'recenter' }
+  /** 「已经有床了」的那一下：**只给提示，不发上行**（文案由世界层出，判据不该带文案） */
+  | { kind: 'notice' }
   | { kind: 'none' };
 
 export interface TapInput {
@@ -318,6 +320,18 @@ export interface TapInput {
   residentId?: string;
   bedNo?: number;
   /**
+   * 我已经有主的床号（`me.ownedBedNo`）：换床的闸门靠它。它**只可能等于服务端那张床**——
+   * 归属过期要 30 天不出现，而在线的人一直在刷 `last_seen_at`（见 `docs/db/schema.md`），
+   * 所以不存在「服务端认为我没床、客户端认为我有床」的漂移。
+   */
+  ownedBedNo?: number;
+  /**
+   * 换床模式是否开着（`state.switching`）：模式内点无主空床才是换床。
+   * 它只是**人的意图**，所以闸门在客户端；老 bundle（缓存未刷新）仍会点空床即换床，
+   * 那是可接受的过渡态，见 `docs/api/20-api-ws.md` §4.5。
+   */
+  switching?: boolean;
+  /**
    * 已经**吸附到街网**的目标点（`layout.nearestStreetPoint`）；那一带没有街网时为 `undefined`。
    * 服务端只校验街网、不做吸附，所以吸附必须发生在客户端（见 `docs/api/20-api-ws.md` §7）。
    */
@@ -326,13 +340,18 @@ export interface TapInput {
 
 /**
  * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
- * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的街网 → 走过去；⑥ 其余 → 什么都不做。
+ * ③ 可躺的床 → 躺下（**我还没床**、**就是我自己那张**、**换床模式里**这三种情形）；
+ * ④ 床上有人（含自己）→ 什么都不做；⑧ 我有别的床又不在模式里 → 只给提示（换床走显式模式）；
+ * ⑨ 可走的街网 → 走过去；⑩ 其余 → 什么都不做。
  * ② 与 ④ 都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做，别把两者合成一个 `none`。
  *
  * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
+ *
+ * 为什么「我有别的床又不在模式里」要拦：换床会**当场释放旧床归属**（别人可以立刻捡走），而一次轻点的意图强度太低——
+ * 用户大多只是点错了。旧床归属的代价不能由一次误点承担（见 `docs/design/00-master-design.md` §4）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkTarget } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
@@ -346,6 +365,11 @@ export function tapTargetFor(input: TapInput): TapTarget {
     return { kind: 'recenter' };
   }
 
-  if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };
+  if (bedNo !== undefined) {
+    if (residentId !== undefined) return { kind: 'none' };
+    // 无主空床：我还没床（首次认领）/ 目标就是我那张（躺着在床上点它会被服务端回 3004 静默）/ 模式内
+    if (ownedBedNo === undefined || ownedBedNo === bedNo || switching === true) return { kind: 'lie', bedNo };
+    return { kind: 'notice' };
+  }
   return walkTarget ? { kind: 'walk', x: walkTarget.x, y: walkTarget.y } : { kind: 'none' };
 }

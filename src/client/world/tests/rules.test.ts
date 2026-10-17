@@ -26,7 +26,7 @@ import {
   usableView,
   usableCenterOffset,
 } from '../rules';
-import type { Occupant, PersonSpot } from '../rules';
+import type { Occupant, PersonSpot, TapInput } from '../rules';
 
 const sleeper: Person = { id: 'u_1', name: '小明', appearance: 'boy', state: 'asleep', bedNo: 7 };
 const walker: Person = { id: 'u_2', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 };
@@ -164,14 +164,29 @@ describe('轻点命中（世界像素）', () => {
     });
   });
 
-  it('空床可以躺（不管有没有主）；床上有人时什么都不做且绝不落成 walk', () => {
-    expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], bedNo: 42 })).toEqual({ kind: 'lie', bedNo: 42 });
+  it('床上有人时什么都不做且绝不落成 walk', () => {
     expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], residentId: 'u_other', bedNo: 42 })).toEqual({
       kind: 'none',
     });
     expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], selfId: 'u_me', residentId: 'u_me', bedNo: 42 })).toEqual(
       { kind: 'none' },
     );
+  });
+
+  it('无主空床：我还没床 / 就是我那张 / 在模式里 → 躺下；我有别的床又不在模式里 → 只给提示', () => {
+    const tap = (extra: Partial<TapInput> = {}) => tapTargetFor({ point: { x: 812, y: 316 }, spots: [], bedNo: 42, ...extra });
+
+    // ① 我还没床（没有 ownedBedNo）：新人第一次点空床不会有任何额外步骤
+    expect(tap()).toEqual({ kind: 'lie', bedNo: 42 });
+    expect(tap({ ownedBedNo: undefined })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ② 目标就是我名下那张床：走回去躺下（在床上点它由服务端回 3004 静默）
+    expect(tap({ ownedBedNo: 42 })).toEqual({ kind: 'lie', bedNo: 42 });
+    expect(tap({ ownedBedNo: 42, switching: true })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ③ 我有别的床、在换床模式里：这才是换床
+    expect(tap({ ownedBedNo: 7, switching: true })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ④ 我有别的床、不在模式里：不发上行，只给提示（换床会当场释放旧床归属）
+    expect(tap({ ownedBedNo: 7 })).toEqual({ kind: 'notice' });
+    expect(tap({ ownedBedNo: 7, switching: false })).toEqual({ kind: 'notice' });
   });
 
   it('没有可走的街网点（厅外、床缝）：什么都不做（服务端会回 3006，别发）', () => {
