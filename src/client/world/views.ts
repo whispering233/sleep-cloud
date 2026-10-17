@@ -48,6 +48,8 @@ const TEXT_RESOLUTION = Math.min(window.devicePixelRatio || 1, MAX_DPR);
 
 /** 床号离床角的距离（世界像素）。 */
 const NUMBER_INSET = 3;
+/** 床号的字号 = `caption` 档，刻意比名字与气泡（`label` 档）小一档。 */
+const BED_NUMBER_PX = 12;
 /**
  * 名字与表情相对小人原点的位置：**站着的小人原点在脚下**（贴图锚点），躺着的小人原点在床心
  * （位置就是他的床）。两套高度相差一个人高（≈56.5 世界像素），所以标签不能共用一个常量。
@@ -167,7 +169,7 @@ export function createBedView(scene: Phaser.Scene): BedView {
   const number = scene.add
     .text(NUMBER_INSET, BED_H - NUMBER_INSET, '', {
       fontFamily: FONT_FAMILY,
-      fontSize: LABEL_PX,
+      fontSize: BED_NUMBER_PX,
       color: MUTED_CSS,
       resolution: TEXT_RESOLUTION,
     })

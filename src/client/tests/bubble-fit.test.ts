@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { bubbleHintOf, BUBBLE_TEXT_PX, estimateBubbleLines } from '../bubble-fit';
 
-/** 12px 的中文正好一行 16 个（16 × 12 = 192 = `BUBBLE_TEXT_PX`），所以两行的容量是 32 个。 */
-const CJK_PER_LINE = BUBBLE_TEXT_PX / 12;
+/** 13px 的中文一行 14 个（14 × 13 = 182 ≤ 192 = `BUBBLE_TEXT_PX`），所以两行的容量是 28 个。 */
+const CJK_PER_LINE = Math.floor(BUBBLE_TEXT_PX / 13);
 
 describe('气泡行数估算', () => {
   it('空串 0 行', () => {
@@ -46,7 +46,7 @@ describe('气泡放不下的提示', () => {
 
   it('明显超长的中文：有提示，且末尾被吃掉的字数 > 0', () => {
     const hint = bubbleHintOf('睡'.repeat(40));
-    expect(hint).toContain('末尾约 8 字会变成 …');
+    expect(hint).toContain('末尾约 12 字会变成 …');
     const trailing = Number(/末尾约 (\d+) 字/.exec(hint ?? '')?.[1]);
     expect(trailing).toBeGreaterThan(0);
   });
