@@ -41,7 +41,7 @@
   .world-layer {
     position: absolute;
     inset: 0;
-    background-color: var(--color-primary);
+    background-color: var(--color-outside);
   }
 
   /* 顶部区域（HUD + 提示条）是同一条自上而下的流：提示条不必去猜 HUD 有多高 */
@@ -385,7 +385,7 @@
       calc(env(safe-area-inset-right) + var(--spacing-lg))
       calc(env(safe-area-inset-bottom) + var(--spacing-lg))
       calc(env(safe-area-inset-left) + var(--spacing-lg));
-    background-color: var(--color-primary);
+    background-color: var(--color-outside);
   }
 
   .entry-card {

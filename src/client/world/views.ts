@@ -89,13 +89,11 @@ export const SPRITES_KEY = 'sprites';
 
 export const COLORS = {
   floor: color('primary'),
-  /** 氛围最暗档（全厅都睡下时）：只用于地板底色，不参与任何语义（见 ui/DESIGN.md「明暗的边界」） */
-  floorDim: color('primary-dim'),
-  /** 厅外那块底（屏空间）：与界面同底，**不跟困倦度缓动**（它不是厅里的地板，见 ui/DESIGN.md 颜色） */
-  outside: color('secondary'),
+  /** 厅外那块台面（相机背景色）：**不是第四档地**，比地板暗一档（见 ui/DESIGN.md 颜色） */
+  outside: color('outside'),
   line: color('line'),
   marker: color('tertiary'),
-  /** 房间地面：`room`/`rug` 与床板一样是**材料**，固定色，不参与困倦度缓动（见 ui/DESIGN.md「地面梯次」） */
+  /** 房间地面：`room`/`rug` 与床板一样是**材料**，色阶固定（见 ui/DESIGN.md「地面梯次」） */
   room: color('room'),
   /** 预留位（每间房留给装饰物的那块空地）暂时按地毯画 */
   rug: color('rug'),
