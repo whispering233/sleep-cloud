@@ -119,6 +119,12 @@ export interface ErrorMessage {
   code: ErrorCode;
 }
 
+/** 探活回执：只回给发出 `ping` 的那条连接（不广播）。`ts` 是服务端回执时刻。 */
+export interface PongMessage {
+  t: 'pong';
+  ts: number;
+}
+
 export type DownstreamMessage =
   | SnapshotMessage
   | JoinMessage
@@ -130,13 +136,20 @@ export type DownstreamMessage =
   | ChatMessage
   | WhisperMessage
   | EmoteMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | PongMessage;
 
 // ————————————————————————— 上行（客户端 → 服务端） —————————————————————————
 
 interface UpstreamPayloads {
   /** 握手。必须是首条消息，携带布局版本号。 */
   hello: { layoutVersion: string };
+  /**
+   * 探活：服务端只回一条 `pong`。**不是输入**——不刷新 `lastInputAt`（躺在床上的人探活时不会把
+   * 自动睡着往后推）；**与业务意图共用** §7 的 5 条/秒窗口，超限时**静默丢弃**（不回 `4002`：
+   * 探活会唤醒对象，不能变成绕过限流的口子）。见 `docs/api/20-api-ws.md` §3 / §7。
+   */
+  ping: Record<string, never>;
   /** 「我要去这个世界像素点」。服务端校验它在街网上；不在就回 `3006`，不吸附。 */
   walk: { x: number; y: number };
   /**
@@ -163,6 +176,7 @@ export type UpstreamMessage = {
 /** 运行时可枚举的上行类型名（顺序与 `docs/api/20-api-ws.md` §3 表格一致）。 */
 export const UPSTREAM_TYPES = [
   'hello',
+  'ping',
   'walk',
   'hop',
   'lie',
@@ -186,6 +200,7 @@ export const DOWNSTREAM_TYPES = [
   'whisper',
   'emote',
   'error',
+  'pong',
 ] as const satisfies readonly DownstreamMessage['t'][];
 
 // ————————————————————————— 归属位图 —————————————————————————

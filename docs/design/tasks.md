@@ -6,19 +6,9 @@
 
 **派活硬约束（每张卡都适用）**：一条命令一步、不要管道 / 重定向 / `&&` / 多行内联脚本；工具自己会截断输出，不要用 `tail` / `grep` 过滤。工具不可用就如实写「未能验证」并退出，不要为了凑结论硬撑。
 
-**顺序**：卡 1 → 卡 2 → 卡 3（依赖 1、2）→ 卡 4（独立，可并行）→ 卡 5（独立，量完即删）。每张卡完成后 `git commit` 一次。
+**顺序**：卡 2 → 卡 3（依赖 2）→ 卡 4（独立，可并行）→ 卡 5（独立，量完即删）。每张卡完成后 `git commit` 一次。
 
----
-
-## 卡 1 · 探活协议 `ping` / `pong`
-
-- [ ] `src/shared/protocol.ts`：`UpstreamMessage` 加 `{ t: 'ping' }`；`DownstreamMessage` 加 `{ t: 'pong'; ts: number }`。**两个运行时数组（`UPSTREAM_TYPES` / `DOWNSTREAM_TYPES`）都追加到末尾**，顺序必须与 `../api/20-api-ws.md` §3 / §4 的表格一致。
-- [ ] `src/hall/hall.ts`：`handleIntent` 的 `switch` **最前面**加 `case 'ping'`，只 `this.send(ws, JSON.stringify({ t: 'pong', ts: Date.now() }))` 然后 `return`。
-- [ ] **必须在 `consumeUpstream` 之前、`writeConnection` / `armAutoSleep` 之前返回**：`ping` 不是输入，不刷新 `lastInputAt`（否则躺在床上的人切一次屏就把自动睡着推后 5 分钟），也不占 5 条/秒窗口（`../api/20-api-ws.md` §7）。
-- [ ] `src/shared/tests/protocol.test.ts`：两处镜像断言会先红，补齐（数组与文档表格一致）。
-- [ ] `src/hall/tests/broadcast.test.ts`：新增断言——两个连接时 `ping` **只有发起方**收到 `pong`，对方零消息；迟到一条 `ping` 不改写连接附加数据里的 `lastInputAt`。
-
-**验收**：`npm test` 全绿；`npm run typecheck` 全绿。**回滚**：只删协议两项与那个 `case`，不影响任何既有消息。
+**已完成**：卡 1（探活协议 `ping` / `pong`）已落地并独立验证通过。
 
 ---
 

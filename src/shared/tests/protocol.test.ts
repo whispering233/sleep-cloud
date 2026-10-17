@@ -17,12 +17,12 @@ const docUpstream = messageNames('## 3. 上行消息', '## 4. 下行消息');
 const docDownstream = messageNames('## 4. 下行消息', '### 4.1');
 
 describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
-  it('上行消息与文档一致（9 种）', () => {
-    expect(docUpstream).toEqual(['hello', 'walk', 'hop', 'lie', 'rise', 'sleep', 'chat', 'whisper', 'emote']);
+  it('上行消息与文档一致（10 种）', () => {
+    expect(docUpstream).toEqual(['hello', 'ping', 'walk', 'hop', 'lie', 'rise', 'sleep', 'chat', 'whisper', 'emote']);
     expect([...UPSTREAM_TYPES]).toEqual(docUpstream);
   });
 
-  it('下行消息与文档一致（11 种，含 resize）', () => {
+  it('下行消息与文档一致（12 种，含 resize 与 pong）', () => {
     expect(docDownstream).toEqual([
       'snapshot',
       'join',
@@ -35,6 +35,7 @@ describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
       'whisper',
       'emote',
       'error',
+      'pong',
     ]);
     expect([...DOWNSTREAM_TYPES]).toEqual(docDownstream);
   });
