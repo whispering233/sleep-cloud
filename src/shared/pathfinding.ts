@@ -9,8 +9,8 @@ import {
   streetBlockCount,
   streetPointAt,
   wallRegionOf,
-} from '../shared/layout';
-import type { Point } from '../shared/layout';
+} from './layout';
+import type { Point } from './layout';
 
 /**
  * 街网寻路（见 `docs/design/hall-runtime.md` §5.1）。

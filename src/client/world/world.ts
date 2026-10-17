@@ -1,12 +1,13 @@
 import * as Phaser from 'phaser';
 
 import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
-import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
+import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState, setBedDirection } from '../store';
+import { predictionPointAt } from '../prediction';
+import { beginWalk, getState, setBedDirection } from '../store';
 import type { ClientState } from '../store';
 import {
   alignTargetOf,
@@ -622,12 +623,19 @@ class WorldScene extends Phaser.Scene {
       case 'select':
         this.handlers.onSelect(target.id);
         return;
-      case 'lie':
+      case 'lie': {
+        // 「点床 = 走过去 + 躺下」也要立刻起步：服务端会先把我走到**床脚前那一点**再躺下，
+        // 客户端用同一个 `frontPointOf` 当锚点，于是这一趟也不等插值滞后（同 `walk` 那条）
+        const front = frontPointOf(target.bedNo);
+        if (front) beginWalk(front);
         this.handlers.onLie(target.bedNo);
         return;
+      }
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
         this.handlers.onClearSelection();
+        // 外推**在发出意图的这一刻**登记：`findPath` 只算这一次，之后每帧只沿这条折线推进
+        beginWalk({ x: target.x, y: target.y });
         this.handlers.onWalk({ x: target.x, y: target.y });
         return;
       case 'recenter':
@@ -646,10 +654,15 @@ class WorldScene extends Phaser.Scene {
     return position ? { x: position.x + BED_W / 2, y: position.y + BED_H / 2 } : undefined;
   }
 
-  /** 自己所在的世界像素位置（走动时按插值、躺着时就是那张床）。**调用方一帧只取一次**（见 `update`）。 */
+  /**
+   * 自己所在的世界像素位置：**外推优先**（点地面后立刻起步、不等插值滞后），否则按插值 / 那张床。
+   * 外推点在这里、也就是 `update` 里每帧现算（**不进 React 的逐帧状态**）；**调用方一帧只取一次**。
+   */
   private selfPoint(state: ClientState, serverNow: number): Point | undefined {
     const me = state.me;
     if (!me) return undefined;
+    const prediction = state.prediction;
+    if (prediction) return predictionPointAt(prediction, serverNow);
     return personPoint({
       person: me,
       motion: state.motion.get(me.id),

@@ -24,6 +24,7 @@ import {
   applySnapshot,
   applyState,
   applyWhisper,
+  clearPrediction,
   getState,
   setState,
 } from './store';
@@ -93,10 +94,15 @@ export function sendWalk(x: number, y: number): boolean {
   return s ? sendRaw(s, { t: 'walk', x, y }) : false;
 }
 
-/** 一跳：服务端把我一步放到某张床脚前的走道（不寻路）。不带床号 = 我自己那张；没有归属时服务端静默忽略。 */
+/**
+ * 一跳：服务端把我一步放到某张床脚前的走道（不寻路）。不带床号 = 我自己那张；没有归属时服务端静默忽略。
+ * **一跳当场作废本地那条外推**：它一步到位，而外推只会沿旧折线把我画向旧目标（相邻床脚只差一格，
+ * 重锚的跳变阈值盖不住，见 `docs/api/20-api-ws.md` §6）。
+ */
 export function sendHop(bedNo?: number): boolean {
   const s = live();
   if (!s) return false;
+  clearPrediction();
   return sendRaw(s, bedNo === undefined ? { t: 'hop' } : { t: 'hop', bedNo });
 }
 

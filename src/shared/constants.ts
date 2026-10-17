@@ -77,6 +77,13 @@ export const INTENT_ECHO_TIMEOUT_MS = 1_500;
  */
 export const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
+/**
+ * 自身外推的保鲜期（**只在客户端**）：发出 `walk` 后这么久没收到任何「关于自己的 `pos`」
+ * → 停在最后一个外推点（**不回退**到旧权威点，倒退比停住更难受）。
+ * 见 `docs/api/20-api-ws.md` §6。
+ */
+export const PREDICTION_STALE_MS = 2_000;
+
 /** 素材像素 → 世界像素的固定比。**没有缩放**，1 世界像素 = 1 CSS 像素。 */
 export const ART_SCALE = 0.5;
 

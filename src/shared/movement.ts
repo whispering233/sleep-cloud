@@ -1,5 +1,5 @@
-import { WALK_SPEED_PX_PER_S } from '../shared/constants';
-import type { Point } from '../shared/layout';
+import { WALK_SPEED_PX_PER_S } from './constants';
+import type { Point } from './layout';
 
 /**
  * 移动者的推进状态。**只在内存里**（工作集），位置与目标放在连接附加数据上；

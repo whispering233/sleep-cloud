@@ -6,23 +6,9 @@
 
 **派活硬约束（每张卡都适用）**：一条命令一步、不要管道 / 重定向 / `&&` / 多行内联脚本；工具自己会截断输出，不要用 `tail` / `grep` 过滤。工具不可用就如实写「未能验证」并退出，不要为了凑结论硬撑。
 
-**顺序**：卡 4（独立）→ 卡 5（独立，量完即删）。每张卡完成后 `git commit` 一次。
+**顺序**：只剩卡 5（量测探针，量完即删）。
 
-**已完成**：卡 1（探活协议 `ping` / `pong`）、卡 2（连接管理：三态 + 按需探活 + 退避重连）、卡 3（断连提示条）均已落地并独立验证通过（卡 3 可视验收：393×852 手机视口，8 项逐条取证）。
-
----
-
-## 卡 4 · 自身外推（外推自己，别人不动）
-
-与卡 1–3 无交集，可并行。
-
-- [ ] 挪文件：`src/hall/pathfinding.ts` → `src/shared/pathfinding.ts`、`src/hall/movement.ts` → `src/shared/movement.ts`，改 3 处 import（`hall.ts`、`hall/tests/*`、`docs/design/architecture.md` §3 已写好新描述）。两个文件都只依赖 `../shared/layout` 与 `../shared/constants`，挪过去即零改逻辑。
-- [ ] `src/client/prediction.ts`（新，**纯函数**）：`walk` 时用共享 `findPath` + `WALK_SPEED_PX_PER_S` 按时间外推；收到关于自己的 `pos` 就**重锚**（权威点 + 服务端时刻，沿同一路径继续）；`2s` 无自己的 `pos` → **冻结在最后一个外推点（不回退）**；上床 / 离开 / 重连 → 清掉。
-- [ ] `src/client/store.ts`：意图发出时登记外推；`applyState` / `applyLeave` / `applySnapshot` 清掉。
-- [ ] `src/client/world/world.ts`：`selfPoint` 优先取外推点，否则回落到插值；推进在 `update` 里做（**不进 React 循环**）。
-- [ ] `src/client/tests/prediction.test.ts`（新）：外推推进、重锚、2s 冻结、清预测、与服务端路径一致（同一 `findPath` 输入 → 同一折线）。
-
-**验收**：单测 + 真机（点地面后小人立刻起步、贴边与拐角不抖、躺下/`hop` 后不残留外推、别人移动手感不变）。**回滚**：删 `prediction.ts` 与 `world.ts` 那一段，其他不动。
+**已完成**：卡 1（探活协议）、卡 2（连接管理：三态 + 按需探活 + 退避重连）、卡 3（断连提示条，393×852 手机视口 8 项取证）、卡 4（自身外推）均已落地并独立验证通过。
 
 ---
 

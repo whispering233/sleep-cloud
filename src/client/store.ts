@@ -16,11 +16,15 @@ import type {
   WhisperMessage,
 } from '../shared/protocol';
 import { CHAT_BUBBLE_MS, EMOTE_MS } from '../shared/constants';
+import { frontPointOf } from '../shared/layout';
+import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
 import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
+import { anchorPrediction, beginPrediction } from './prediction';
+import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
 import { drowsinessOf } from './ambience';
 
@@ -60,6 +64,11 @@ export interface ClientState {
   people: Map<string, Person>;
   /** 每个人的位置插值窗口（服务端时间轴） */
   motion: Map<string, Motion>;
+  /**
+   * **我自己的**外推（别人一律走插值）：发出 `walk` 的那一次算好折线，之后每帧只沿它推进；
+   * 收到关于自己的 `pos` 就重锚，上床 / 离开 / 重连即丢弃（见 `prediction.ts`）。
+   */
+  prediction?: Prediction;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
   /**
@@ -135,6 +144,8 @@ export function applySnapshot(message: SnapshotMessage): void {
     selectedId: undefined,
     bedDirection: undefined,
     emotes: new Map(),
+    // 重连以新快照为准：新位置可能是宽限恢复的原位、也可能是出生点，旧的外推没有意义
+    prediction: undefined,
   });
 }
 
@@ -217,9 +228,15 @@ export function applyPos(message: PosMessage): void {
   const me = state.me;
   // 自己不在 `people` 里：位置再另存一份到 `me`（走动时渲染自己，卡 4 的外推以它为权威锚点）
   let nextMe = me;
+  // 自己的外推在这里**重锚**：权威点 + 该批的服务端时刻，沿同一条折线继续（路径不重算）；
+  // 权威点跑得离外推位置太远（`hop` 传送 / 服务端换了目标）时重锚返回 `undefined`，外推一并作废
+  let prediction = state.prediction;
 
   for (const [id, x, y] of message.items) {
-    if (me !== undefined && me.state === 'roaming' && id === me.id) nextMe = { ...me, x, y };
+    if (me !== undefined && id === me.id) {
+      if (me.state === 'roaming') nextMe = { ...me, x, y };
+      if (prediction) prediction = anchorPrediction(prediction, x, y, message.ts);
+    }
 
     const person = people.get(id);
     // 已经躺在床上的人不需要插值窗口（位置就是那张床）；服务端也不会为他发位置，
@@ -230,8 +247,47 @@ export function applyPos(message: PosMessage): void {
     if (person) people.set(id, { ...person, x, y });
   }
 
-  setState(nextMe === me ? { motion, people } : { motion, people, me: nextMe });
+  const patch: Partial<ClientState> = { motion, people };
+  if (nextMe !== me) patch.me = nextMe;
+  if (prediction !== state.prediction) patch.prediction = prediction;
+  setState(patch);
 }
+
+/**
+ * 点地面：**用与服务端同一份寻路**算一次折线并登记自身外推（只在这一次算路径，之后每帧只沿折线推进）。
+ * 不在线时不登记：上行会被丢掉（`ws.ts` 的 `sendRaw`），没有服务端在走，外推只会把我画错地方。
+ */
+export function beginWalk(to: Point): void {
+  const me = state.me;
+  const bedCount = state.hall?.bedCount;
+  if (state.connection !== 'online' || me === undefined || bedCount === undefined) return;
+  // 锚点：走动时用权威坐标；**躺在床上时用床脚前那一点**——点地面会先起身再走，而服务端
+  // `standUp` 保留的就是那个位置（`frontPointOf`）。不等「起身」那条消息回来，这一步才能也立刻起步。
+  const from = me.state === 'roaming' ? { x: me.x, y: me.y } : frontPointOf(me.bedNo);
+  if (!from) return;
+  // 锚点时刻用服务端时间轴（= 世界层读外推点的同一把尺），起步的提前量因此与插值口径一致
+  const prediction = beginPrediction(from, to, bedCount, Date.now() + state.clockOffsetMs);
+  if (prediction) setState({ prediction });
+}
+
+/**
+ * 丢弃自身外推（渲染回落到权威值）。三个调用面：`hop`（一步到位，本地那条路当场作废）、
+ * 「意图没生效」的错误码（见 `MOVE_INTENT_ERRORS`）、以及上床 / 离开 / 重连。
+ */
+export function clearPrediction(): void {
+  if (state.prediction === undefined) return;
+  setState({ prediction: undefined });
+}
+
+/**
+ * 「这条意图一步也没走」的错误码：服务端拒绝了它，**不会**再为这个目标发任何 `pos`
+ * （我不是移动者），所以外推必须就地丢掉——否则小人会朝一个已经被拒的目标走满保鲜期，
+ * 然后永久停在错位（见 `docs/api/20-api-ws.md` §6）。
+ *
+ * 不在这里面的：`4001` / `4003`（聊天长度 / 空消息）——它们与走动无关，
+ * 清掉外推等于把一趟正当的走路打断（那是「倒退」的另一种形式）。
+ */
+const MOVE_INTENT_ERRORS = new Set(['3001', '3002', '3003', '3004', '3005', '3006', '3008', '4002']);
 
 /** 从下行消息里取出「人在哪」的那一半（丢掉 `t`，别让它混进 Person）。 */
 function placementOf(source: PersonPlacement): PersonPlacement {
@@ -279,7 +335,12 @@ export function applyState(message: StateMessage): void {
     // 归属与占用是两个维度：在床上时床号就是我的床；起身后归属位继续留着（暖灯标记不能丢）
     const ownedBedNo = placement.state === 'roaming' ? state.me.ownedBedNo : placement.bedNo;
     if (ownedBedNo !== undefined) next.ownedBedNo = ownedBedNo;
-    setState({ me: next, motion, ...onlinePatch(message.online) });
+    // 上了床（或转睡着 / 变睡痕）：外推作废，位置以权威为准。
+    // **起身（回到 `roaming`）不清**：起身不改变位置，而那条外推的锚点就是床脚前那一点——
+    // 清掉它，「躺在床上点地面立刻起步」那一支就没了（后续 `pos` 会照常重锚）
+    const patch: Partial<ClientState> = { me: next, motion, ...onlinePatch(message.online) };
+    if (placement.state !== 'roaming') patch.prediction = undefined;
+    setState(patch);
     return;
   }
 
@@ -302,6 +363,8 @@ export function applyLeave(message: LeaveMessage): void {
   const motion = new Map(state.motion);
   motion.delete(message.id);
   const patch: Partial<ClientState> = { people, motion, ...onlinePatch(message.online) };
+  // 走的是我自己（宽限超时后服务端不认我了）：外推一并丢掉
+  if (state.me?.id === message.id) patch.prediction = undefined;
   // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）
   if (state.selectedId === message.id) patch.selectedId = undefined;
   // 走了就不该再留着他的气泡：同一个 id 在 CHAT_BUBBLE_MS 内重连会带着旧气泡复现
@@ -333,6 +396,9 @@ export function showNotice(text: string): void {
  * （点墙、重复躺下这类失败用户无法处理，弹提示只会让他更焦虑，见 `docs/api/error-code.md` §3）。
  */
 export function applyError(code: string): void {
+  // 先丢外推再管文案：静默类错误（`3001` / `3004` / `3006`…）本来就不出提示，
+  // 但它们同样意味着「刚那条动起来的意图没生效」
+  if (MOVE_INTENT_ERRORS.has(code)) clearPrediction();
   const text = errorTextFor(code);
   if (text === undefined) return;
   showNotice(text);
