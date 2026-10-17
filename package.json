@@ -13,7 +13,7 @@
     "dev:web": "npm run tokens && vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy --config wrangler.local.jsonc"
   },
   "repository": {
     "type": "git",

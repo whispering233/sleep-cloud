@@ -4,13 +4,14 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-14",
 
-  // 生产入口是下面的**路由**（不是自定义域名）；workers.dev 与 Preview URLs 一律关掉。
-  // 本机开发不受影响（wrangler dev 照常在 localhost:8787 起）。
+  // workers.dev 与 Preview URLs 一律关掉；本机开发不受影响（wrangler dev 照常在 localhost:8787 起）。
+  // **生产入口那条路由不写在这里**——它带着 zone 名，只放在本地未入库的 `wrangler.local.jsonc`
+  // 里（见 .gitignore 与 package.json 的 deploy 脚本）。自己部署时照抄那个文件里的模板：
+  //   "routes": [{ "pattern": "<你的入口域名>/*", "zone_name": "<该入口域名所在的 zone>" }]
+  // **zone_name 必须显式写**：不写 wrangler 推断不出来，报 `Can't infer zone from route ... [code: 10082]`。
+  // 细节与踩过的坑见 docs/design/build.md §4.2。
   "workers_dev": false,
   "preview_urls": false,
-  // 生产入口：路由。zone 显式写出来（不写 wrangler 推断不出来，会报 10082）：
-  // pattern 的 hostname 是入口域名，zone 是它所属的 zone。
-  "routes": [{ "pattern": "sleep-cloud.whispering233.com/*", "zone_name": "<zone>" }],
 
   // 打开后能在平台面板里看 Worker 日志（排查生产问题就靠它）
   "observability": { "enabled": true },
