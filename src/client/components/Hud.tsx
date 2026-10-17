@@ -23,8 +23,9 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * 顶部的极简信息条，**三块固定顺序**：显示组（`在线 n` / `空床 n` / `延迟 n ms`）→ 可点击组
- * （`床号 n ↑` + `GO`）→ 设置齿轮（卡 4 才填内容）。**只吃 `HudView` 的字段**：位置节拍每 100 ms
- * 通知一次 store，用不上的变化不能变成重渲染。不显示昵称（我知道我是谁）、不显示厅名（只有一个厅）。
+ * （`床号 n ↑` + `GO`）→ 设置齿轮（点开是一个只有版本号一行字的浮层）。**只吃 `HudView` 的字段**：
+ * 位置节拍每 100 ms 通知一次 store，用不上的变化不能变成重渲染。不显示昵称（我知道我是谁）、
+ * 不显示厅名（只有一个厅），版本号也不常驻（排查用的信息不该占常驻版面）。
  *
  * 分组**只靠外观区分**（`docs/ui/DESIGN.md` 的 `hud` 行）：显示组是纯文字，可点击组是描边胶囊
  * （`hud-action`）。「延迟」**常驻**——没有样本时显示 `—`，它不是 live ping，久不聊天就停在上一个数。
@@ -37,12 +38,24 @@ export function Hud() {
   /** `GO` 展开的输入行：提交、取消、Esc 都收起（不留一个空行占着 HUD 下沿） */
   const [jumpOpen, setJumpOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  /** 齿轮浮层：遮罩 / `Esc` / 再点齿轮三条路径都收起（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const sync = (): void => setView((prev) => (sameHudView(prev, hudViewOf(getState())) ? prev : hudViewOf(getState())));
     sync();
     return subscribe(sync);
   }, []);
+
+  // 浮层开着时的 `Esc`：键盘用户不必靠鼠标点遮罩才能关（遮罩是 `aria-hidden` 的纯点击面）
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [menuOpen]);
 
   const closeJump = (): void => {
     setJumpOpen(false);
@@ -64,6 +77,12 @@ export function Hud() {
 
   return (
     <>
+      {/* 透明遮罩：只在浮层开着时存在。它**吃掉那一下点击**——否则点「外面」会同时关掉浮层
+          并让小人在世界层开始走路（Phaser 只在自己的画布上收指针事件，遮罩盖在画布之上就够了）。
+          层级靠 `z-index`（遮罩 1 < 浮层 2 < 齿轮 3），不靠 DOM 顺序：遮罩在 `.hud-stack` 里、
+          浮层在 `.hud` 里，两者的祖先关系随时会变 */}
+      {menuOpen ? <div className="hud-scrim" aria-hidden="true" onClick={() => setMenuOpen(false)} /> : null}
+
       <header className="hud">
         {/* 显示组：纯文字，缺值的一项不占位（快照还没到时不知道就不说）。
             延迟常驻：没有样本时是 `—`，因为「量过但久没量」和「从来没量过」都还是同一个信息 */}
@@ -113,6 +132,39 @@ export function Hud() {
           >
             GO
           </button>
+        </div>
+
+        {/* 齿轮：与可点击组同一套描边胶囊外观，但是 44×44 的正方形（里面只有图标） */}
+        <div className="hud-settings">
+          <button
+            type="button"
+            className="hud-settings-button"
+            aria-label="设置"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
+                与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
+            <svg
+              className="hud-settings-icon"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {/* 8 齿 + 中心圆：外径 8.3、齿根 6.1，坐标由 45° 步进的齿形算出来，不手调 */}
+              <path d="M18.09 8.13L18.09 11.87L15.17 13.23L17.04 14.4L14.4 17.04L11.37 15.94L11.87 18.09L8.13 18.09L6.77 15.17L5.6 17.04L2.96 14.4L4.06 11.37L1.91 11.87L1.91 8.13L4.83 6.77L2.96 5.6L5.6 2.96L8.63 4.06L8.13 1.91L11.87 1.91L13.23 4.83L14.4 2.96L17.04 5.6L15.94 8.63Z" />
+              <circle cx="10" cy="10" r="2.6" />
+            </svg>
+          </button>
+
+          {/* 浮层：`position: absolute` 锚在齿轮下方右对齐（定位基准是 `position: relative` 的 `.hud`）。
+              版本号是构建期注入的，不存在于任何运行时请求里 */}
+          {menuOpen ? (
+            <div className="hud-menu">v{__APP_VERSION__}</div>
+          ) : null}
         </div>
       </header>
 

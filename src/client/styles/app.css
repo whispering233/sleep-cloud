@@ -57,6 +57,8 @@
   }
 
   .hud {
+    /* 浮层（`.hud-menu`）的定位基准：铺在齿轮下方右对齐，不用 `getBoundingClientRect` 算坐标 */
+    position: relative;
     display: flex;
     align-items: center;
     /* 组间间距大于组内间距：分组靠间距读出来，不画分隔线（`docs/ui/DESIGN.md` 的 `hud` 行） */
@@ -115,6 +117,69 @@
     letter-spacing: var(--tracking-label);
     border: 1px solid var(--color-claimed);
     border-radius: var(--radius-full);
+  }
+
+  /* 设置齿轮：钉在最右、垂直居中。与可点击组只靠 `.hud` 的组间间距（12px）分开，不画分隔线 */
+  .hud-settings {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
+     图标颜色吃 `neutral-muted`（齿轮是次要入口，与 `GO` 的 `neutral` 拉开一档） */
+  .hud-settings-button {
+    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
+    pointer-events: auto;
+    /* 齿轮自己也在遮罩之上（层级 3 > 浮层 2 > 遮罩 1）：「再点齿轮也关」就是按钮自己的 `onClick`，
+       而不是碰巧被遮罩吃掉那一下 */
+    position: relative;
+    z-index: 3;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: var(--color-neutral-muted);
+    background-color: transparent;
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
+  }
+
+  .hud-settings-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* 齿轮浮层：右对齐到齿轮所在侧（右内边距与 `.hud` 的 `padding-inline-end` 同一个算式，
+     否则会在安全区手机上错开一截）、贴在 HUD 通栏下沿之下。宽度就一行字，不设上限也不会被右边缘裁掉。
+     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud` 本身不是层叠上下文） */
+  .hud-menu {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-end: calc(env(safe-area-inset-right) + var(--spacing-md));
+    z-index: 2;
+    padding: var(--spacing-sm);
+    color: var(--color-neutral-muted);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--tracking-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+    /* 版本号是「读一眼」的字串，不是会跳的数值：不用等宽字体 */
+    white-space: nowrap;
+  }
+
+  /* 透明遮罩：盖满视口、吃掉那一下点击（否则点「外面」会同时关掉浮层并让小人开始走路）。
+     背景透明——它不是一层变暗的模态，只是「点在浮层外面」的落点 */
+  .hud-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background-color: transparent;
+    pointer-events: auto;
   }
 
   /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击 */
@@ -282,6 +347,7 @@
   .action-primary:focus-visible,
   .emote-button:focus-visible,
   .hud-action:focus-visible,
+  .hud-settings-button:focus-visible,
   .hud-jump-cancel:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
