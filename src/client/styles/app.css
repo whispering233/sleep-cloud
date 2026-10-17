@@ -172,6 +172,39 @@
     letter-spacing: var(--tracking-caption);
   }
 
+  /*
+   * 连接提示条（`docs/ui/DESIGN.md` 的 `conn-banner`）：复用 `toast-recoverable` 的令牌组合，
+   * **不新增 token**。占位、不浮层、不自动消失、无入场动画；里面的按钮是唯一可点处，
+   * 所以**不能**照抄 `toast-recoverable` 的 `pointer-events: none`。
+   */
+  .conn-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    color: var(--color-alert);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    line-height: var(--text-label--line-height);
+    letter-spacing: var(--tracking-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-md);
+  }
+
+  .conn-banner-retry {
+    min-width: 44px;
+    min-height: 44px;
+    margin-inline-start: auto;
+    color: var(--color-alert);
+    background-color: var(--color-secondary);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
+  }
+
   /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉） */
   .whisper-target {
     display: flex;
@@ -272,6 +305,7 @@
   .input-field:focus-visible,
   .action-primary:focus-visible,
   .emote-button:focus-visible,
+  .conn-banner-retry:focus-visible,
   .hud-my-bed:focus-visible,
   .hud-jump-toggle:focus-visible,
   .hud-jump-cancel:focus-visible,

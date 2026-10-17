@@ -7,6 +7,7 @@ import { EMOTE_LABELS, EMOTE_LIST } from '../emotes';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendEmote, sendRise, sendSleep, sendWhisper } from '../ws';
+import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
 
@@ -51,6 +52,9 @@ export function ChatPanel() {
 
   return (
     <section className="chat-panel" aria-label="聊天">
+      {/* 连接提示条：占位（不浮层），所以可用视口自动扣掉它；显示与否由自己订阅的连接态决定 */}
+      <ConnectionBanner />
+
       {/* 私聊目标行：查不到名字就不渲染（目标离开时选中已被清掉，这里只是兜底） */}
       {selectedId !== undefined && targetName !== undefined && (
         <div className="whisper-target">

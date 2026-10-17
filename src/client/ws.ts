@@ -44,6 +44,11 @@ interface Session {
   probeTimer?: ReturnType<typeof setTimeout>;
   echoTimer?: ReturnType<typeof setTimeout>;
   retryTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * 当前这条连接开始建连的本地时刻。只给 `retryNow()` 用：`CONNECTING` 长期不落地（TCP 黑洞）时
+   * 才知道该不该掐掉它重建；建连结束（`open` / 死亡）后不再读。
+   */
+  connectingSinceMs?: number;
   disposed: boolean;
 }
 
@@ -73,7 +78,12 @@ export function connectHall(input: { layoutVersion: string }): () => void {
 export function retryNow(): void {
   const s = live();
   if (!s) return;
-  if (s.socket?.readyState === WebSocket.CONNECTING) return; // 已经在建连：不必掐了重来
+  if (s.socket?.readyState === WebSocket.CONNECTING) {
+    // 建连超过 PROBE_TIMEOUT_MS 还没落地（TCP 黑洞，`readyState` 会一直停在 CONNECTING）：
+    // 掐掉重建，否则这个按钮就是个空操作；没超时就维持现状（不折腾一条正在建的连接）
+    const since = s.connectingSinceMs;
+    if (since === undefined || Date.now() - since < PROBE_TIMEOUT_MS) return;
+  }
   reconnectNow(s);
 }
 
@@ -150,6 +160,7 @@ function openSocket(s: Session): void {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
   s.socket = socket;
+  s.connectingSinceMs = Date.now();
   updateState(s, connecting(s.state));
 
   socket.addEventListener('open', () => {
