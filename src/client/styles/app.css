@@ -44,6 +44,18 @@
     background-color: var(--color-outside);
   }
 
+  /* 三档减光层：整屏一层中性黑，`opacity` 跟着我自己的显示态（漫游 / 躺下 / 睡下，α 在 `src/client/tone.ts`）。
+     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在 HUD 遮罩 / 浮层 / 齿轮的 1/2/3 之上；
+     `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡（`docs/ui/DESIGN.md` 的 `tone-layer` 行） */
+  .tone-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    background-color: #000;
+    pointer-events: none;
+    transition: opacity 900ms ease-out;
+  }
+
   /* 顶部区域（HUD + 提示条）是同一条自上而下的流：提示条不必去猜 HUD 有多高 */
   .hud-stack {
     position: absolute;
