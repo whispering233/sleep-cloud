@@ -131,7 +131,16 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 ## 7. 真机验收清单
 
-基线设备：**iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）**。本地验收环境没有触摸屏、只能用仿真 DPR，所以下面这两类结论只能在真机（或生产用量面板）上得出来。
+基线设备：**iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）**。本地没有触摸屏、也拿不到 393 宽（见下），所以涉及**触摸 / 真机低亮度观感 / 低端机帧率 / 首次加载**的结论只能在真机（或生产用量面板）上得出来；DPR 3 本身本地可以真仿真。
+
+### 本地怎么跑「真 DPR 3」
+
+合成器级的真 DPR 3（不是给页面塞一个假的 `devicePixelRatio`）：
+
+- 起浏览器时带 `BETTERWRIGHT_CHROMIUM_ARGS="--force-device-scale-factor=3 --window-size=500,939"`，并加 `--no-ad-block`（本机过滤器列表加载不了）。实测得到 `devicePixelRatio = 3`、视口 **500×852** = 1500×2556 设备像素。
+- **别调 `page.setViewportSize()`**：它会把 `devicePixelRatio` 打回 1（实测 `1.0000000298`）。
+- **拿不到 393 宽**：Chromium 最小窗宽 500，`--window-size=393,852` 被夹到 500。500 仍属窄档（<640），但「响应式 / 触摸」类结论仍只能在真机上得。
+- **默认截图看不到设备像素**：proof PNG 一律 1 像素/CSS 像素（写死 `scale:"css"`，`screenshot()` 忽略 `clip`/`scale`）。要判读设备像素：临时给世界 `canvas` 加 `transform: translate(…) scale(3); image-rendering: pixelated`（1 输出像素 = 1 设备像素），用完清空并核对残留。
 
 **这份清单是流程、不是任务**：跑完把不合格的按「不行就怎么补」改掉，然后把 `backlog.md` 里对应那条删掉。**A 每次上真机都跑（≈10 分钟），B 只在首次部署或相关改动之后跑。**
 

@@ -4,10 +4,4 @@
 > 依据：`00-master-design.md`、`architecture.md`、`10-hall-runtime.md`、`20-layout.md`、`config.md`、`build.md`、`../db/schema.md`、`../api/`、`../ui/DESIGN.md`、`../../AGENTS.md`（硬纪律）。
 > 下一批候选见 `backlog.md`。
 
-当前没有进行中的卡片。
-
-已知待办（都不是缺陷，等真实反馈再动）：
-
-- **气泡两行容量 约 32 → 约 28 字**（卡 19 落地后）在真机上的手感：`build.md` §7 A9 顺带看。
-- **提示报的「末尾约 N 字」比渲染实际吃掉的字数少 1**（`…` 自己占一格；30 字消息提示「约 2 字」而实际吃掉 3 字）。已在 `src/client/bubble-fit.ts` 的 `bubbleHintOf` 上留 `shortcut:` 注释，真机出现抱怨时加 1 即可。
-- **`MAX_DPR = 3` 之后的真机帧率**：`build.md` §7 B5（填充率是上限 2 时的 2.25 倍）。
+当前没有进行中的卡片。下一批候选与已知待办都在 `backlog.md`；真机验收清单在 `build.md` §7（含本地怎么跑真 DPR 3）。
