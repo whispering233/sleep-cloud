@@ -58,7 +58,7 @@
 | :--- | :--- | :--- |
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
-| `routes` | `[{ pattern: "sleep-cloud.whispering233.com", custom_domain: true }]` | 生产入口只有这一个域名（理由见 §4.2） |
+| `routes` | `[{ pattern: "sleep-cloud.whispering233.com/*", zone_name: "<zone>" }]` | 生产入口是一条**路由**（不是自定义域名）：pattern 的 hostname 是入口域名，`zone_name` 是它所属的 zone。**zone 必须显式写**，不写 wrangler 推断不出来（10082）——踩过的三种写法见 §4.2 |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：忘了注入 `SESSION_SECRET`**
@@ -89,11 +89,27 @@
 | :--- | :--- |
 | `curl -s https://<worker>.workers.dev/api/health` 返回 `Recv failure: Connection reset by peer`，而 `curl -s http://<worker>.workers.dev/api/health`（同域名、明文 80）返回 `{"code":"0"}` | 部署是好的，被挡的是 `*workers.dev` 的 SNI |
 
-**本项目的生产入口**：`sleep-cloud.whispering233.com`（自定义域名，已实测：HTTP/2 200 + `server: cloudflare`，证书 `CN=sleep-cloud.whispering233.com`、SAN 含该名字、签发者 Cloudflare TLS Issuing ECC CA 4）。根域 `whispering233.com` 不挂 Worker。
+**生产入口是一条路由，不是一个自定义域名**（`wrangler deploy` 的输出会打印它）：
 
-**入口换过一次域名**（原 `sleep-cloud.<zone>`，已停用、解析不通）。换域名要改三处：`wrangler.jsonc` 的 `routes`（**配置是权威**，面板上改了下次 `deploy` 会被覆盖）、README 的线上入口链接、本节；然后 `npm run deploy` 会把自定义域名按新配置同步。
+```text
+sleep-cloud.whispering233.com/* (zone name: <zone>)
+```
 
-**别把本机网络的假象当成生产故障**：实测本机到自定义域名会间歇性出现超时、以及 Chromium 的 `net::ERR_CERT_COMMON_NAME_INVALID`，而同一时刻 `curl` 能拿到 HTTP/2 200、`openssl s_client` 拿到的证书 `CN`/SAN 完全正确。排查顺序：先用 `curl -sI` 与 `openssl s_client -servername <域名>` 分开确认「证书对不对」与「响应通不通」，再怀疑应用。
+- **入口域名** `sleep-cloud.whispering233.com` 是给人访问的那一个；Cloudflare 这边靠上面这条路由把它交给本 Worker。
+- **zone 是 `<zone>`**（本账号拥有的那个）。pattern 的 hostname 与 zone 可以是两个不同的名字——这是本项目实测可用的写法（2026-10-17 部署成功，路由与业务均正常）。
+- `sleep-cloud.<zone>` 这个自定义域名**仓库已不再声明**（它不是必需项）。实测它目前仍能访问（面板上大概还留着那条自定义域，已不由仓库管），要彻底摘掉得去面板删。
+
+**踩过的三种写法（省下一次 530）**：
+
+| 写法 | 实测结果 |
+| :--- | :--- |
+| `{ pattern: "sleep-cloud.whispering233.com/*" }`（不写 zone） | `Can't infer zone from route, please specify zone for "…" [code: 10082]`。**更麻烦的是这是「部分更新且不回滚」**：当场把当时的自定义域名摘掉，`sleep-cloud.<zone>` 随后连续 **530**；修法是改回能通过 trigger 同步的写法再 `deploy` 一次 |
+| `{ …, zone_name: "whispering233.com" }` | `Could not find zone for whispering233.com. Make sure the domain is set up to be proxied by Cloudflare.`——该 zone 不在本账号里（实测 `GET /zones?name=whispering233.com` 返回空） |
+| `{ pattern: "sleep-cloud.whispering233.com/*", zone_name: "<zone>" }` | **通过**：`Deployed sleep-cloud triggers → sleep-cloud.whispering233.com/* (zone name: <zone>)` |
+
+两个域名的**根域**（`<zone>` / `whispering233.com`）都不挂 Worker。
+
+**别把本机网络的假象当成生产故障**：实测本机到这两个域名都会间歇性超时、Chromium 还可能报 `net::ERR_CERT_COMMON_NAME_INVALID`，而同一时刻 `curl` 能拿到 HTTP/2 200、`openssl s_client` 拿到的证书 `CN`/SAN 完全正确。排查顺序：先用 `curl -sI` 与 `openssl s_client -servername <域名>` 分开确认「证书对不对」与「响应通不通」，再怀疑应用。
 
 **做法**：给 Worker 加一个自己域名的**自定义域名**（域名需在同账号下），SNI 就变成自己的域名：
 
