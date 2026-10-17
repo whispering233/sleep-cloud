@@ -55,8 +55,8 @@ interface Session {
 }
 
 /**
- * 待配对的延迟样本：协议不定义心跳（`docs/api/20-api-ws.md` §1），只有 `chat` 的回投
- * 能给出真实往返。纯客户端临时量，丢了就丢了——下一次发言再采一个。
+ * 待配对的延迟样本：只有 `chat` 回投与按需探活的 `pong` 能给出真实往返。
+ * 纯客户端临时量，丢了就丢了——下一次发言或探活再采一个。
  */
 let pendingSamples: PendingSamples = {};
 
@@ -113,14 +113,19 @@ export function sendHop(bedNo?: number): boolean {
   return sendRaw(s, bedNo === undefined ? { t: 'hop' } : { t: 'hop', bedNo });
 }
 
+/** 结算一个待配对样本并把 RTT 写进 store：没有对应类别的样本时什么都不产生。 */
+function settleLatencySample(kind: LatencyKind): void {
+  const settled = settleSample(pendingSamples, kind, Date.now());
+  pendingSamples = settled.pending;
+  if (settled.rttMs !== undefined) setState({ rttMs: settled.rttMs });
+}
+
 /**
  * 命中「自己那条回投」才算 RTT：别人的消息与我发出的意图无关，既不算样本、也不清样本。
  */
 function settleLatency(kind: LatencyKind, id: string): void {
   if (id !== getState().me?.id) return;
-  const settled = settleSample(pendingSamples, kind, Date.now());
-  pendingSamples = settled.pending;
-  if (settled.rttMs !== undefined) setState({ rttMs: settled.rttMs });
+  settleLatencySample(kind);
 }
 
 /** 全局消息：空消息与超长都由服务端判定（`4003` / `4001`），客户端不做重复校验。 */
@@ -261,6 +266,8 @@ function probe(): void {
   }
   if (socket.readyState === WebSocket.CONNECTING) return; // 正在建连：等它自己出结果
 
+  // 探活前登记样本：这一次 `ping` / `pong` 本来就是真实往返，不新增任何流量
+  pendingSamples = beginSample(pendingSamples, 'probe', Date.now());
   socket.send(JSON.stringify({ t: 'ping' }));
   updateState(s, probing(s.state, Date.now()));
   clearTimer(s, 'probeTimer');
@@ -350,6 +357,7 @@ function handleMessage(s: Session, event: MessageEvent): void {
   }
 
   if (message.t === 'pong') {
+    settleLatencySample('probe');
     clearTimer(s, 'probeTimer');
     updateState(s, settled(s.state));
   }
