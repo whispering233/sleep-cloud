@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { BASE_PORT, readDevPort } from './tools/dev/dev-port.mjs';
 
 // 版本号从 package.json 读文件取，构建期注入成 `__APP_VERSION__`（浮层里显示 `v0.0.3`）。
 // 客户端不 `import` package.json：那会把整个文件打进产物，而我们只要一个字符串。
@@ -18,9 +19,10 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   build: { outDir: '../../dist', emptyOutDir: true },
   server: {
-    // 开发时把 /api（含 WebSocket 升级）代理到本地 Worker，保持「同源」语义
+    // 开发时把 /api（含 WebSocket 升级）代理到本地 Worker，保持「同源」语义。
+    // 端口由 `npm run dev` 自动 +1 选中并写进 `.wrangler/dev-port`；没起后端时回落到起始端口。
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true, ws: true },
+      '/api': { target: `http://127.0.0.1:${readDevPort() ?? BASE_PORT}`, changeOrigin: true, ws: true },
     },
   },
 });

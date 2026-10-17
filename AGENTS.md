@@ -111,10 +111,10 @@ npm run tokens
 # 美术素材管线（5 张母图 → 8 张贴图 → 图集 + frames.css；产物入库，不挂进 build）
 npm run art
 
-# 完整站点（后端 + 房间服务 + SQLite + 静态资源，http://localhost:8787）
+# 完整站点（后端 + 房间服务 + SQLite + 静态资源；端口从 8787 起自动 +1，实际 URL 看终端）
 npm run build && npm run dev
 
-# 前端热更新开发服务器（/api 代理到 8787，含 WebSocket）
+# 前端热更新开发服务器（/api 代理到本 worktree 的后端端口，含 WebSocket）
 npm run dev:web
 
 # 单元测试 / 类型检查

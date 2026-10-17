@@ -88,8 +88,8 @@
 ```bash
 npm install
 npm run tokens                 # 从 docs/ui/DESIGN.md 导出令牌（生成物不入库）
-npm run build && npm run dev   # 完整站点（Worker + 房间服务 + 静态资源，http://localhost:8787）
-npm run dev:web                # 前端热更新开发服务器（/api 代理到 8787）
+npm run build && npm run dev   # 完整站点（端口从 8787 起自动 +1，实际 URL 看终端）
+npm run dev:web                # 前端热更新开发服务器（/api 代理到本 worktree 的后端端口）
 npm test
 npm run typecheck
 npm run art                    # （可选）从 tools/art/masters/ 的母图重新生成图集

@@ -9,7 +9,7 @@
     "lint:design": "design.md lint docs/ui/DESIGN.md",
     "art": "node tools/art/build-sprites.mjs",
     "build": "npm run tokens && vite build",
-    "dev": "wrangler dev",
+    "dev": "node tools/dev/dev.mjs",
     "dev:web": "npm run tokens && vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.client.json --noEmit",
