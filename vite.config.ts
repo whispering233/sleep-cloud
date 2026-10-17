@@ -17,7 +17,15 @@ export default defineConfig({
   publicDir: fileURLToPath(new URL('./public', import.meta.url)),
   plugins: [react(), tailwindcss()],
   define: { __APP_VERSION__: JSON.stringify(version) },
-  build: { outDir: '../../dist', emptyOutDir: true },
+  build: {
+    outDir: '../../dist',
+    emptyOutDir: true,
+    // 引擎单独切包：Phaser 占了整个懒加载分支的 99%（自己 1.37 MB），单独成一个 chunk 后它的 hash
+    // 只在升级 Phaser 时变化；老用户回访只需重下十几 kB 的世界代码，而不是整包。
+    rolldownOptions: {
+      output: { codeSplitting: { groups: [{ name: 'phaser', test: /node_modules[/\\]phaser/ }] } },
+    },
+  },
   server: {
     // 开发时把 /api（含 WebSocket 升级）代理到本地 Worker，保持「同源」语义。
     // 端口由 `npm run dev` 自动 +1 选中并写进 `.wrangler/dev-port`；没起后端时回落到起始端口。
