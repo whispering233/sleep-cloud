@@ -24,6 +24,8 @@ export interface HudView {
   rttMs?: number;
   /** 换床模式是否开着：开着时 HUD 下沿换成换床提示行、可点击组收起 `GO`（见 `docs/ui/DESIGN.md`） */
   switching: boolean;
+  /** 相机是否已拉到下限：决定那颗按钮是「看全厅」还是「回到 1×」 */
+  overview: boolean;
 }
 
 export function hudViewOf(state: ClientState): HudView {
@@ -35,6 +37,7 @@ export function hudViewOf(state: ClientState): HudView {
     emptyBeds: state.hall === undefined ? undefined : state.hall.bedCount - state.ownedBeds.size,
     rttMs: state.rttMs,
     switching: state.switching,
+    overview: state.overview,
   };
 }
 
@@ -46,6 +49,7 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.online === b.online &&
     a.emptyBeds === b.emptyBeds &&
     a.rttMs === b.rttMs &&
-    a.switching === b.switching
+    a.switching === b.switching &&
+    a.overview === b.overview
   );
 }

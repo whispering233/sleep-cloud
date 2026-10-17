@@ -4,7 +4,7 @@ import { parseJumpTarget } from '../bed-jump';
 import { hudViewOf, sameHudView } from '../hud-view';
 import type { HudView } from '../hud-view';
 import { getState, setSwitching, showNotice, subscribe } from '../store';
-import { focusBed, focusMyBed } from '../world-handle';
+import { focusBed, focusMyBed, toggleOverview } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
 import { TextInput } from './TextInput';
@@ -139,6 +139,16 @@ export function Hud() {
               GO
             </button>
           )}
+          {/* 世界缩放的**单指入口**：WCAG 2.5.1 要求多指手势必须有单指替代，而且捧合本身没有可发现性。
+              文案随状态（不在下限 = 「看全厅」，已在下限 = 「回到 1×」）；捧合与它操作同一个状态 */}
+          <button
+            type="button"
+            className="hud-action"
+            aria-label={view.overview ? '回到原来的比例' : '看全厅'}
+            onClick={() => toggleOverview()}
+          >
+            {view.overview ? '回到 1×' : '看全厅'}
+          </button>
         </div>
 
         {/* 齿轮：与可点击组同一套描边胶囊外观，但是 44×44 的正方形（里面只有图标） */}
@@ -184,6 +194,7 @@ export function Hud() {
               >
                 {view.switching ? '取消换床' : '更换床位'}
               </button>
+              {/* pi-lens-ignore: 2304 —— 构建期注入的全局量，声明在 src/globals.d.ts（两个 tsconfig 都 include 它） */}
               <div className="hud-menu-version">v{__APP_VERSION__}</div>
             </div>
           ) : null}

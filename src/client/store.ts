@@ -90,6 +90,11 @@ export interface ClientState {
    * 忘了自己在模式里的人点一张空床，代价与误点一样（旧床归属当场释放）。
    */
   switching: boolean;
+  /**
+   * 相机已拉到下限（拉远档）。**只在翻越时写**（世界层逐帧算、同值不通知），HUD 那颗按钮的文案吃它。
+   * 它与 `switching` 无关：拉远是视角，不是模式，两个可以同时开。
+   */
+  overview: boolean;
 }
 
 const emptyState = (): ClientState => ({
@@ -102,6 +107,7 @@ const emptyState = (): ClientState => ({
   emotes: new Map(),
   drowsiness: 0,
   switching: false,
+  overview: false,
 });
 
 let state: ClientState = emptyState();
@@ -204,6 +210,12 @@ export function setBedDirection(direction: BedDirection | undefined): void {
 export function setSwitching(on: boolean): void {
   if (state.switching === on) return;
   setState({ switching: on });
+}
+
+/** 相机是否已拉到下限（见 `ClientState.overview`）：世界层只在翻越时写，同值不通知。 */
+export function setOverview(on: boolean): void {
+  if (state.overview === on) return;
+  setState({ overview: on });
 }
 
 /**

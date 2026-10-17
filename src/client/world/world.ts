@@ -1,12 +1,22 @@
 import * as Phaser from 'phaser';
 
-import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH, ZOOM_TEXT_MIN } from '../../shared/constants';
+import {
+  BED_H,
+  BED_W,
+  CELL_H,
+  CELL_W,
+  MAX_DPR,
+  POOL_SIZE,
+  WALL_WIDTH,
+  ZOOM_MIN,
+  ZOOM_TEXT_MIN,
+} from '../../shared/constants';
 import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState, setBedDirection, setSwitching, showNotice } from '../store';
+import { getState, setBedDirection, setOverview, setSwitching, showNotice } from '../store';
 import type { ClientState } from '../store';
 import {
   bedDirection,
@@ -44,7 +54,8 @@ import type { BedView, PersonView } from './views';
  * 三条边界：
  * 1. 世界走画布、界面走 DOM——这里不画任何文字界面，名字是贴在床上的小标签，不是 UI；
  * 2. 画布不参与 React 的渲染循环——状态直接读 store，重画由 Phaser 的 game loop 驱动；
- * 3. **没有缩放**——世界与屏幕是一个固定比例（1 世界像素 = 1 CSS 像素，画布按 DPR ≤`MAX_DPR` 放大）。
+ * 3. **世界只缩不放**（`docs/ui/DESIGN.md` 的世界相机）：1× 下 1 世界像素 = 1 CSS 像素，相机可以拉远到
+ *    `ZOOM_MIN`（相机 zoom = 画布 DPR × 拉远比例），也**只有**拉远这一档——没有放大。
  *
  * 几何全部来自 `src/shared/layout.ts`（与厅服务同一份纯函数）：床位坐标、区域尺寸、命中判定。
  * 床位数（`hall.bedCount`）是运行时事实，**每个 `bedNoAt` / `isWalkable` 调用点都显式带上它**。
@@ -67,6 +78,8 @@ export interface WorldHandle {
   focusMyBed(): void;
   /** 相机跳到指定床（HUD 输入床号的 `GO`）。 */
   focusBed(bedNo: number): void;
+  /** 拉开 / 收起整厅视角（HUD 的「看全厅 / 回到 1×」；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
+  toggleOverview(): void;
 }
 
 /**
@@ -78,6 +91,12 @@ export interface UiInsets {
   top: HTMLElement | null;
   bottom: HTMLElement | null;
 }
+
+/**
+ * 「已拉到下限」的容差：比例是浮点乘积（起点比例 × 距离比），不会正好等于 `ZOOM_MIN`。
+ * 它只用于 HUD 那颗按钮的文案，不参与夹取（夹取是 `clampZoom` 的严格边界）。
+ */
+const OVERVIEW_EPS = 0.005;
 
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
@@ -580,9 +599,12 @@ class WorldScene extends Phaser.Scene {
    */
   private setZoom(next: number): void {
     const clamped = clampZoom(next);
-    if (clamped === this.zoom) return;
-    this.zoom = clamped;
-    this.applyZoom();
+    if (clamped !== this.zoom) {
+      this.zoom = clamped;
+      this.applyZoom();
+    }
+    // 已在下限 → HUD 那颗按钮改文案（同值不通知）；浮点乘积不会正好等于下限，所以留一点容差
+    setOverview(clamped <= ZOOM_MIN + OVERVIEW_EPS);
   }
 
   // ——— 输入：单指拖拽平移 + 轻点；两根手指 = 拉远／放回 ———
@@ -785,6 +807,14 @@ class WorldScene extends Phaser.Scene {
     const point = this.bedPoint(bedNo);
     if (point) this.centerOnUsable(point);
   }
+
+  /**
+   * HUD 的「看全厅 / 回到 1×」：一次性的相机命令，**不动相机焦点**（只改比例）。
+   * 不在下限就拉到下限，已在下限就回 1×——两个入口（捏合与这条）操作同一个状态。
+   */
+  toggleOverview(): void {
+    this.setZoom(this.zoom <= ZOOM_MIN + OVERVIEW_EPS ? 1 : ZOOM_MIN);
+  }
 }
 
 export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
@@ -816,6 +846,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     focusBed(bedNo: number): void {
       scene.focusBed(bedNo);
+    },
+    toggleOverview(): void {
+      scene.toggleOverview();
     },
   };
 }
