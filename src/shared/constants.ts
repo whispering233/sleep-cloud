@@ -59,6 +59,31 @@ export const EMOTE_MS = 2500;
  */
 export const CHAT_BUBBLE_MS = 8_000;
 
+/**
+ * 探活超时（**只在客户端**）：发 `ping` 后这么久没有 `pong` → 判连接已死、关掉并重连。
+ * 三条探活触发点与动作见 `docs/api/20-api-ws.md` §5.1。
+ */
+export const PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * 意图无回执超时（**只在客户端**）：发出上行后这么久没收到任何「关于自己的下行」→ 视为可疑，
+ * 触发一次探活（不直接判死）。
+ */
+export const INTENT_ECHO_TIMEOUT_MS = 1_500;
+
+/**
+ * 重连退避序列（封顶 15 秒），成功后归零；**页面 hidden 期间不重试**（省电，回到前台由探活接手）。
+ * 永不放弃——这个序列不是放弃阈值，只是等待时长表。
+ */
+export const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+
+/**
+ * 自身外推的保鲜期（**只在客户端**）：发出 `walk` 后这么久没收到任何「关于自己的 `pos`」
+ * → 停在最后一个外推点（**不回退**到旧权威点，倒退比停住更难受）。
+ * 见 `docs/api/20-api-ws.md` §6。
+ */
+export const PREDICTION_STALE_MS = 2_000;
+
 /** 素材像素 → 世界像素的固定比。**没有缩放**，1 世界像素 = 1 CSS 像素。 */
 export const ART_SCALE = 0.5;
 

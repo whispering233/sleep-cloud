@@ -10,7 +10,8 @@ vi.mock('cloudflare:workers', () => ({
 }));
 
 import { HALL_ID } from '../../shared/constants';
-import type { DownstreamMessage } from '../../shared/protocol';
+import type { DownstreamMessage, UpstreamMessage } from '../../shared/protocol';
+import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
 import { freshSql } from './sqlite';
 
@@ -22,12 +23,17 @@ import { freshSql } from './sqlite';
 class FakeSocket {
   readonly received: string[] = [];
   sendCalls = 0;
+  private attachment: unknown = { ready: true };
 
   constructor(readonly readyState = 1) {}
 
   /** 生产里这里是「一条已握手连接」的附加数据；守卫不读它的内容以外的字段。 */
   deserializeAttachment(): unknown {
-    return { ready: true };
+    return this.attachment;
+  }
+
+  serializeAttachment(value: unknown): void {
+    this.attachment = value;
   }
 
   send(payload: string): void {
@@ -66,6 +72,27 @@ function broadcast(hall: Hall, message: DownstreamMessage): unknown {
 
 const leave: DownstreamMessage = { t: 'leave', id: 'u_x', online: 1 };
 
+/** 一条站在厅里、已握手的连接（`ping` 的判定不碰几何，占位坐标够用）。 */
+function handshook(userId: string, lastInputAt: number): ConnectionState {
+  return {
+    userId,
+    name: userId,
+    appearance: 'boy',
+    x: 0,
+    y: 0,
+    state: 'roaming',
+    lastInputAt,
+    ready: true,
+  };
+}
+
+/** `handleIntent` 是私有的：运行时按名字取，不为测试放宽成 public。 */
+function feed(hall: Hall, ws: FakeSocket, connection: ConnectionState, message: UpstreamMessage): void {
+  (
+    hall as unknown as { handleIntent: (ws: WebSocket, connection: ConnectionState, m: UpstreamMessage) => void }
+  ).handleIntent(ws as never, connection, message);
+}
+
 test('中间一条连接发送会抛：后面的连接照样收到，整次广播不抛', () => {
   const first = new FakeSocket();
   const dead = new DeadSocket(1); // readyState 还是 OPEN，但 send 抛（检查与发送之间的窗口）
@@ -90,4 +117,37 @@ test('readyState 不是 OPEN 的连接直接跳过：不发、不抛、不影响
   expect(closed.sendCalls).toBe(0); // 守卫在 send 之前就返回了
   expect(live.received).toEqual([JSON.stringify(leave)]);
   expect(thrown).toBeUndefined();
+});
+
+test('ping 只回发起方一条 pong：不广播、不刷新 lastInputAt、吃一条限流额度', () => {
+  const me = new FakeSocket();
+  const other = new FakeSocket();
+  const hall = newHall([me, other]);
+  const connection = handshook('u_me', 1000);
+  me.serializeAttachment(connection);
+
+  // 无载荷的意图（`ping` / `rise` / `sleep`）与 `Record<string, never>` 相交，字面量只能断言构造
+  feed(hall, me, connection, { t: 'ping' } as UpstreamMessage);
+
+  expect(me.received).toHaveLength(1);
+  expect(JSON.parse(me.received[0] as string) as DownstreamMessage).toEqual({ t: 'pong', ts: expect.any(Number) });
+  expect(other.received).toEqual([]); // 对方零消息：pong 是单播
+  const after = me.deserializeAttachment() as ConnectionState;
+  expect(after.lastInputAt).toBe(1000); // ping 不是输入，自动睡着不因此顺延
+  expect(after.rate).toEqual({ windowStart: expect.any(Number), count: 1 }); // 但吃一条额度：探活不能变成绕过限流的口子
+});
+
+test('ping 超出限流时静默丢弃：不回 pong，也不回 4002', () => {
+  const me = new FakeSocket();
+  const hall = newHall([me]);
+  // 预先占住当前窗口（`windowStart` 就是现在，环路里不会跨过整秒边界，因此不会有时序抖动）
+  const connection: ConnectionState = { ...handshook('u_me', 1000), rate: { windowStart: Date.now(), count: 0 } };
+
+  for (let i = 0; i < 6; i += 1) {
+    const current = me.deserializeAttachment() as ConnectionState;
+    feed(hall, me, current, { t: 'ping' } as UpstreamMessage);
+  }
+
+  expect(me.received).toHaveLength(5); // 第 6 条被限流
+  expect(me.received.every((raw) => (JSON.parse(raw) as DownstreamMessage).t === 'pong')).toBe(true);
 });

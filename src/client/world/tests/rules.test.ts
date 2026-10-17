@@ -9,6 +9,7 @@ import {
   MARKER_RADIUS,
   PERSON_HIT_PX,
   TRACE_ALPHA,
+  alignTargetOf,
   bedDirection,
   bedLook,
   cameraBounds,
@@ -405,5 +406,27 @@ describe('世界几何的其他常量来自共享层（不在这里重复拼写�
     expect(BED_H).toBe(100);
     expect(CELL_W).toBe(AISLE + BED_W + RESERVE_W);
     expect(CELL_H).toBe(BED_H + AISLE);
+  });
+});
+describe('进厅 / 重连时相机对准谁', () => {
+  const bed = { x: 100, y: 200 };
+  const self = { x: 900, y: 800 };
+
+  it('首次进厅对准我的床（我知道我的床在哪）', () => {
+    expect(alignTargetOf({ reconnected: false, bedPoint: bed, selfPoint: self })).toEqual(bed);
+  });
+
+  it('重连对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）', () => {
+    expect(alignTargetOf({ reconnected: true, bedPoint: bed, selfPoint: self })).toEqual(self);
+  });
+
+  it('缺一个就退到另一个（首次进厅还没有床 / 重连时小人还不知道在哪）', () => {
+    expect(alignTargetOf({ reconnected: false, selfPoint: self })).toEqual(self);
+    expect(alignTargetOf({ reconnected: true, bedPoint: bed })).toEqual(bed);
+  });
+
+  it('两个都没有时返回 undefined（调用方退回厅中心）', () => {
+    expect(alignTargetOf({ reconnected: false })).toBeUndefined();
+    expect(alignTargetOf({ reconnected: true })).toBeUndefined();
   });
 });

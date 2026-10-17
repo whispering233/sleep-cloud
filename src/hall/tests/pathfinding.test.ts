@@ -12,7 +12,7 @@ import {
   wallRegionOf,
 } from '../../shared/layout';
 import type { HallLevel, Point, Rect } from '../../shared/layout';
-import { findPath } from '../pathfinding';
+import { findPath } from '../../shared/pathfinding';
 
 const CAPACITY = (HALL_LEVELS[0] as HallLevel).capacity;
 const TOP = HALL_LEVELS[HALL_LEVELS.length - 1] as HallLevel;

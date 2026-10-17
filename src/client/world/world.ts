@@ -1,14 +1,16 @@
 import * as Phaser from 'phaser';
 
 import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
-import { bedNoAt, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
+import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState, setBedDirection } from '../store';
+import { predictionPointAt } from '../prediction';
+import { beginWalk, getState, setBedDirection } from '../store';
 import type { ClientState } from '../store';
 import {
+  alignTargetOf,
   bedDirection,
   bedLook,
   cameraBounds,
@@ -130,8 +132,14 @@ class WorldScene extends Phaser.Scene {
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
   /** 厅的区域（地板与夹取用）：随 `bedCount` 变化重建 */
   private readonly scenery: Phaser.GameObjects.GameObject[] = [];
-  /** 上一次看到的连接状态：断线后重连要重新对准我的床 */
-  private wasConnected = false;
+  /** 上一次看到的连接态（上一帧是否 `online`）：用来抓「离线 → 在线」这一次翻转 */
+  private wasOnline = false;
+  /**
+   * 是否**曾经**进过厅：用它区分「首次进厅」与「重连」。
+   * 不能用 `wasOnline` 代替：进去的那一帧它必然是 `false`（为 `true` 就不会进那个分支），
+   * 传下去永远是「首次进厅」，重连对准我的小人那条分支会变成死代码。
+   */
+  private everOnline = false;
   /** 地板与墙的矩形（氛围明暗要重画地板、相机夹取也用它） */
   private floorGfx?: Phaser.GameObjects.Graphics;
   private region: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -187,9 +195,11 @@ class WorldScene extends Phaser.Scene {
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
 
-    // 断线后重连：与进厅同一套规则，重新对准我的床（`wasConnected` 只在真实翻转时才为真）
-    if (state.connected && !this.wasConnected) this.alignCamera(state);
-    this.wasConnected = state.connected;
+    // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
+    const online = state.connection === 'online';
+    if (online && !this.wasOnline) this.alignCamera(state, this.everOnline);
+    this.everOnline = this.everOnline || online;
+    this.wasOnline = online;
 
     this.syncBeds(state);
     // **一帧只取一次位**：渲染与跟随共用这个点（各取一次就会出现「相机追着上一帧的点」的稳态锯齿）
@@ -457,9 +467,17 @@ class WorldScene extends Phaser.Scene {
     };
   }
 
-  /** 初始视野：对准我的床（还没有床时对准自己）；连自己都还不知道在哪时退回厅中心。 */
-  private alignCamera(state: ClientState): void {
-    const focus = this.focusPoint(state);
+  /**
+   * 进入/回到 `online` 时对准：**首次进厅**对准我的床（我知道我的床在哪），
+   * **重连**则对准我的小人——宽限恢复会把我放回原位，可能在厅的另一头。
+   * 取哪个点由 `rules.alignTargetOf` 这个纯函数定（可单测）；两个点都取不到时退回厅中心。
+   */
+  private alignCamera(state: ClientState, reconnected: boolean): void {
+    const focus = alignTargetOf({
+      reconnected,
+      bedPoint: this.ownBedPoint(state),
+      selfPoint: this.selfPoint(state, Date.now() + state.clockOffsetMs),
+    });
     if (focus) this.centerOnUsable(focus);
     else if (this.loadedBedCount !== undefined) {
       const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
@@ -605,12 +623,19 @@ class WorldScene extends Phaser.Scene {
       case 'select':
         this.handlers.onSelect(target.id);
         return;
-      case 'lie':
+      case 'lie': {
+        // 「点床 = 走过去 + 躺下」也要立刻起步：服务端会先把我走到**床脚前那一点**再躺下，
+        // 客户端用同一个 `frontPointOf` 当锚点，于是这一趟也不等插值滞后（同 `walk` 那条）
+        const front = frontPointOf(target.bedNo);
+        if (front) beginWalk(front);
         this.handlers.onLie(target.bedNo);
         return;
+      }
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
         this.handlers.onClearSelection();
+        // 外推**在发出意图的这一刻**登记：`findPath` 只算这一次，之后每帧只沿这条折线推进
+        beginWalk({ x: target.x, y: target.y });
         this.handlers.onWalk({ x: target.x, y: target.y });
         return;
       case 'recenter':
@@ -629,10 +654,15 @@ class WorldScene extends Phaser.Scene {
     return position ? { x: position.x + BED_W / 2, y: position.y + BED_H / 2 } : undefined;
   }
 
-  /** 自己所在的世界像素位置（走动时按插值、躺着时就是那张床）。**调用方一帧只取一次**（见 `update`）。 */
+  /**
+   * 自己所在的世界像素位置：**外推优先**（点地面后立刻起步、不等插值滞后），否则按插值 / 那张床。
+   * 外推点在这里、也就是 `update` 里每帧现算（**不进 React 的逐帧状态**）；**调用方一帧只取一次**。
+   */
   private selfPoint(state: ClientState, serverNow: number): Point | undefined {
     const me = state.me;
     if (!me) return undefined;
+    const prediction = state.prediction;
+    if (prediction) return predictionPointAt(prediction, serverNow);
     return personPoint({
       person: me,
       motion: state.motion.get(me.id),
@@ -641,14 +671,15 @@ class WorldScene extends Phaser.Scene {
     });
   }
 
+  /** 我的床的中心点（还没有床、或几何还没建好时为 `undefined`）。 */
+  private ownBedPoint(state: ClientState): Point | undefined {
+    const bedNo = state.me?.ownedBedNo;
+    return bedNo === undefined ? undefined : this.bedPoint(bedNo);
+  }
+
   /** 初始对准的目标：我的床优先（我知道我的床在哪），还没有床时才对准自己。 */
   private focusPoint(state: ClientState): Point | undefined {
-    const bedNo = state.me?.ownedBedNo;
-    if (bedNo !== undefined) {
-      const point = this.bedPoint(bedNo);
-      if (point) return point;
-    }
-    return this.selfPoint(state, Date.now() + state.clockOffsetMs);
+    return this.ownBedPoint(state) ?? this.selfPoint(state, Date.now() + state.clockOffsetMs);
   }
 
   /** HUD 的床号条：一次性的相机跳转，对准我的床（还没有床时的退路与进厅对准同一条，见 `focusPoint`）。 */

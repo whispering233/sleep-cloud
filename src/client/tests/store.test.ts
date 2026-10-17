@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LAYOUT_VERSION } from '../../shared/layout';
 import { encodeOwnedBeds } from '../../shared/protocol';
@@ -57,7 +57,7 @@ describe('客户端状态归约', () => {
     applySnapshot(snapshot());
     const state = getState();
 
-    expect(state.connected).toBe(true);
+    expect(state.connection).toBe('online');
     expect(state.layoutVersion).toBe(LAYOUT_VERSION);
     expect(state.people.get('u_other')).toMatchObject({ name: '阿夜', x: 300, y: 280 });
     expect([...state.ownedBeds]).toEqual([42]);
@@ -212,6 +212,37 @@ describe('客户端状态归约', () => {
     const state = getState();
     expect(state.motion.get('u_other')).toMatchObject({ fromX: 420.5, fromY: 342.25, toX: 420.5, toY: 342.25 });
     expect(state.people.get('u_other')).toMatchObject({ x: 420.5, y: 342.25 });
+  });
+
+  it('pos：批次里含我自己 → me.x/y 一并补写成权威坐标', () => {
+    applySnapshot(snapshot());
+    expect(getState().me).toMatchObject({ x: 812.5, y: 430 });
+
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_me', 900, 500], ['u_other', 420, 340]] });
+    expect(getState().me).toMatchObject({ id: 'u_me', x: 900, y: 500 });
+    expect(getState().people.get('u_other')).toMatchObject({ x: 420, y: 340 });
+  });
+
+  it('pos：批次里没有我 → me 原样不动（同一个对象）', () => {
+    applySnapshot(snapshot());
+    const before = getState().me;
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_other', 420, 340]] });
+    expect(getState().me).toBe(before);
+  });
+
+  it('pos：我已经在床上（不是 roaming）→ 不写 me 的坐标', () => {
+    applySnapshot(
+      snapshot({ me: { id: 'u_me', name: '我', appearance: 'boy', state: 'lying', bedNo: 42 } }),
+    );
+    applyPos({ t: 'pos', ts: 1_000_100, items: [['u_me', 900, 500]] });
+    expect(getState().me).toMatchObject({ state: 'lying', bedNo: 42 });
+    expect(getState().me).not.toHaveProperty('x');
+  });
+
+  it('连接态的起点是 connecting（还没有收到快照）', async () => {
+    vi.resetModules();
+    const fresh = await import('../store');
+    expect(fresh.getState().connection).toBe('connecting');
   });
 });
 
@@ -402,5 +433,33 @@ describe('客户端表情', () => {
 
     applyLeave({ t: 'leave', id: 'u_other', online: 2 });
     expect(getState().emotes.has('u_other')).toBe(false);
+  });
+});
+
+describe('困倦度（氛围明暗的输入）', () => {
+  it('我自己的显示态变化要重算：只有我一个人在线时，睡着 = 1', () => {
+    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 1 }, people: [] }));
+    expect(getState().drowsiness).toBe(0);
+
+    applyState({ t: 'state', id: 'u_me', state: 'asleep', bedNo: 7, online: 1 });
+    expect(getState().drowsiness).toBe(1);
+  });
+
+  it('别人的显示态变化要重算：两个人里一个睡着 = 0.5', () => {
+    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 2 }, people: [] }));
+    applyJoin({ t: 'join', id: 'u_other', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280, online: 2 });
+    expect(getState().drowsiness).toBe(0);
+
+    applyState({ t: 'state', id: 'u_other', state: 'asleep', bedNo: 3, online: 2 });
+    expect(getState().drowsiness).toBe(0.5);
+  });
+
+  it('位置节拍不算：只挪我自己的坐标时，这个值不动', () => {
+    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 2 }, people: [] }));
+    const before = getState().drowsiness;
+
+    expect(applyPos({ t: 'pos', ts: 1_000_100, items: [['u_me', 900, 500]] })).toBeUndefined();
+    expect(getState().me).toMatchObject({ x: 900, y: 500 }); // 权威位置另存一份（卡 4 的外推锚点）
+    expect(getState().drowsiness).toBe(before);
   });
 });

@@ -251,6 +251,19 @@ export function personPoint(input: {
   return motion ? positionAt(motion, serverNow - interpolationDelay(motion)) : { x: person.x, y: person.y };
 }
 
+/**
+ * 进厅 / 重连时相机对准谁（见 `docs/api/20-api-ws.md` §5.1）：**首次进厅**对准我的床
+ * （我知道我的床在哪），**重连**对准我的小人——宽限恢复会把我放回原位，可能在厅的另一头。
+ * 各自缺一个就退到另一个；两个都没有时返回 `undefined`（调用方退回厅中心）。
+ */
+export function alignTargetOf(input: {
+  reconnected: boolean;
+  bedPoint?: { x: number; y: number };
+  selfPoint?: { x: number; y: number };
+}): { x: number; y: number } | undefined {
+  return input.reconnected ? (input.selfPoint ?? input.bedPoint) : (input.bedPoint ?? input.selfPoint);
+}
+
 /** 名字只出现在**有人的床上**，且自己一律不画（地上的自己更不画）。 */
 export function shouldDrawName(person: Person, meId: string | undefined): boolean {
   return person.state !== 'roaming' && person.id !== meId;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { advanceMover, moverPosition } from '../movement';
-import type { MoverState } from '../movement';
+import { advanceMover, moverPosition } from '../../shared/movement';
+import type { MoverState } from '../../shared/movement';
 
 /** 一条先横后竖的折线（街网路径本来就只有轴对齐的段）。 */
 function mover(path: Array<{ x: number; y: number }>): MoverState {

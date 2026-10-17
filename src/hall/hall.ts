@@ -8,6 +8,7 @@ import type {
   DownstreamMessage,
   EmoteMessage,
   ErrorMessage,
+  PongMessage,
   SnapshotMessage,
   UpstreamMessage,
   WhisperMessage,
@@ -51,9 +52,9 @@ import { emoteVerdictFor } from './emote';
 import { graceVerdict } from './grace';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from './level-rules';
 import type { GraceSession } from './grace';
-import { advanceMover } from './movement';
-import type { MoverState } from './movement';
-import { findPath } from './pathfinding';
+import { advanceMover } from '../shared/movement';
+import type { MoverState } from '../shared/movement';
+import { findPath } from '../shared/pathfinding';
 import { consumeUpstream } from './rate-limit';
 import { BED_INDEX_SQL, BED_TABLE_SQL, META_TABLE_SQL } from './schema';
 import { createDueHeap } from './scheduler';
@@ -324,6 +325,17 @@ export class Hall extends DurableObject<Env> {
   private handleIntent(ws: WebSocket, connection: ConnectionState, message: UpstreamMessage): void {
     const now = Date.now();
     const gate = consumeUpstream({ window: connection.rate, now, limit: UPSTREAM_RATE_PER_SEC });
+
+    // `ping` **不是输入**：只吃限流窗口，不刷新 `lastInputAt`（否则躺在床上的人切一次屏就把
+    // 自动睡着推后 5 分钟），也不写任何业务状态。被限流时**静默丢弃**（不回 `4002`：
+    // 探活失败不该变成用户可见的错误）。见 `docs/api/20-api-ws.md` §3 / §7。
+    if (message.t === 'ping') {
+      if (!gate.allowed) return;
+      this.writeConnection(ws, { ...connection, rate: gate.window });
+      this.send(ws, JSON.stringify({ t: 'pong', ts: now } satisfies PongMessage));
+      return;
+    }
+
     if (!gate.allowed) {
       // 被限流：不写附件（省一次写入），也不刷新任何状态
       this.sendError(ws, '4002');
