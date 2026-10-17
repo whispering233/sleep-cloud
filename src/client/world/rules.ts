@@ -83,6 +83,31 @@ export function bedLook(input: { owned: boolean; occupant?: Occupant }): BedLook
   };
 }
 
+/** 床角那颗小点的种类：`own` = 我的床；`selectable` = 换床模式里可搬的无主空床；`none` = 不画。 */
+export type BedMarker = 'none' | 'own' | 'selectable';
+
+/**
+ * 床角那颗小点该画哪种（`docs/ui/DESIGN.md` 的 `marker-own` / `bed-switch-mode`）：
+ * **我的床**（暖灯色）优先；换床模式里只给**无主且无人**的床标「可搬」（`claimed` 色）。
+ *
+ * 它是一条**可点击性的可视提示**（画的就是「这能不能点」），所以判据留在这里、颜色留在渲染层
+ * （`views.ts` 的 `MARKER_COLORS`）——与 `bedLook` 同一分工，也让单测拿得到（渲染模块会拉进 Phaser）。
+ */
+export function bedMarkerOf(input: {
+  bedNo: number;
+  /** 我的床号（`me.ownedBedNo`）；还没有床时没有 */
+  mine?: number;
+  /** 换床模式是否开着 */
+  switching: boolean;
+  /** 这张床有主吗（归属未过期） */
+  owned: boolean;
+  /** 这张床此刻有占用者吗（含未过期的睡痕） */
+  occupied: boolean;
+}): BedMarker {
+  if (input.bedNo === input.mine) return 'own';
+  return input.switching && !input.owned && !input.occupied ? 'selectable' : 'none';
+}
+
 /** 站着的小人：外观（`boy` / `girl`）→ 贴图。**不做逐帧行走动画**，走动靠极轻微的缩放摆动。 */
 export function personFrame(appearance: Appearance): PersonFrame {
   return appearance === 'girl' ? 'girl_stand' : 'boy_stand';

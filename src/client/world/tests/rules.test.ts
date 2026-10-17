@@ -11,6 +11,7 @@ import {
   TRACE_ALPHA,
   bedDirection,
   bedLook,
+  bedMarkerOf,
   cameraBounds,
   cameraStep,
   followStep,
@@ -108,6 +109,27 @@ describe('名字、不透明度与睡痕淡出', () => {
     expect(isFaded(untilNow, 999)).toBe(false);
     expect(isFaded(untilNow, 1000)).toBe(true);
     expect(isFaded(trace, 10_000_000)).toBe(false); // 没有 traceUntil 的条目（在线者）不会被淡出
+  });
+});
+
+describe('床角那颗小点：我的床（暖灯色）优先，换床模式里给可搬的空床（`claimed` 色）', () => {
+  const marker = (extra: Partial<Parameters<typeof bedMarkerOf>[0]> = {}) =>
+    bedMarkerOf({ bedNo: 42, switching: false, owned: false, occupied: false, ...extra });
+
+  it('我的床永远是 `own`（模式内外都一样）', () => {
+    expect(marker({ mine: 42 })).toBe('own');
+    expect(marker({ mine: 42, switching: true, owned: true })).toBe('own');
+  });
+
+  it('不在换床模式里就不画标记：可搬与否不是给眼睛看的', () => {
+    expect(marker({ mine: 7 })).toBe('none');
+    expect(marker({ switching: false, owned: false, occupied: false })).toBe('none');
+  });
+
+  it('模式里只有**无主且无人**的床标可搬：有主、有人、睡痕都不是可搬目标', () => {
+    expect(marker({ mine: 7, switching: true })).toBe('selectable');
+    expect(marker({ mine: 7, switching: true, owned: true })).toBe('none');
+    expect(marker({ mine: 7, switching: true, occupied: true })).toBe('none');
   });
 });
 

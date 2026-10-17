@@ -11,6 +11,7 @@ import type { ClientState } from '../store';
 import {
   bedDirection,
   bedLook,
+  bedMarkerOf,
   cameraBounds,
   followStep,
   isFaded,
@@ -34,7 +35,7 @@ import {
   setPersonEmote,
   setPersonName,
 } from './views';
-import type { BedMarker, BedView, PersonView } from './views';
+import type { BedView, PersonView } from './views';
 
 /**
  * 世界画布（Phaser 4）。**渲染层是一个纯函数**：状态快照 → 画出来（见 `docs/design/architecture.md` §2.3）。
@@ -105,15 +106,6 @@ function occupantsOf(state: ClientState): Map<number, Occupant> {
   }
   if (state.me && state.me.state !== 'roaming' && state.me.bedNo === bedNo) return state.me.id;
   return undefined;
-}
-
-/**
- * 床角那颗小点该画哪种（见 `docs/ui/DESIGN.md` 的 `marker-own` / `bed-switch-mode`）：
- * **我的床**（暖灯色）优先；换床模式里只给**无主且无人**的床标「可搬」（`claimed` 色）。
- */
-function bedMarkerOf(input: { bedNo: number; mine: number | undefined; switching: boolean; owned: boolean; occupied: boolean }): BedMarker {
-  if (input.bedNo === input.mine) return 'own';
-  return input.switching && !input.owned && !input.occupied ? 'selectable' : 'none';
 }
 
 /** 按行分桶的床位（行内按 x 升序）：每帧只走可视窗口里的那几行，同屏对象数与厅规模无关。 */

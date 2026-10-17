@@ -13,7 +13,7 @@ import {
 } from '../bubble-fit';
 import tokens from '../styles/tokens.json';
 import { MARKER_RADIUS, personAlpha, personFrame, truncateToLines } from './rules';
-import type { BedLook } from './rules';
+import type { BedLook, BedMarker } from './rules';
 
 /**
  * 「一个东西长什么样」：色值、几何常量、床与小人的贴图怎么用。
@@ -139,8 +139,7 @@ const CHAT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
  */
 const MARKER_X = BED_W - MARKER_RADIUS - 2;
 const MARKER_Y = MARKER_RADIUS + 2;
-/** 标记的种类：`own` = 我的床；`selectable` = 换床模式里可搬的无主空床；`none` = 不画 */
-export type BedMarker = 'none' | 'own' | 'selectable';
+/** 两种标记（我的床 / 换床模式里可搬的空床）的颜色：**判据在 `rules.ts`，颜色只在这里** */
 const MARKER_COLORS: Record<Exclude<BedMarker, 'none'>, number> = {
   own: COLORS.marker,
   selectable: COLORS.selectable,
