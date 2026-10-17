@@ -380,6 +380,29 @@ describe('气泡文字的截断（最多两行，超出加 …）', () => {
     // 再多留一个字就是三行：说明截的正是边界（不是靠「截一半」蒙对的）
     expect(linesOf(`${cut.slice(0, -1)}a…`)).toBe(3);
   });
+
+  /** 孤立代理码元：高代理后面没跟低代理，或低代理前面没有高代理。 */
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+  it('按字素簇截断：emoji 消息不会留下孤立代理码元', () => {
+    const cut = truncateToLines('😴'.repeat(40), 2, linesOf);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(linesOf(cut)).toBeLessThanOrEqual(2);
+    expect(LONE_SURROGATE.test(cut)).toBe(false);
+    expect(cut).toBe(`${'😴'.repeat(9)}…`);
+  });
+
+  it('按字素簇截断：ZWJ 序列（👨‍👩‍👧‍👦）整簇保留，不被拆散', () => {
+    const family = '👨‍👩‍👧‍👦';
+    const cut = truncateToLines(family.repeat(30), 2, linesOf);
+    const kept = cut.slice(0, -1);
+    expect(family.repeat(30).startsWith(kept)).toBe(true);
+    expect(kept.length % family.length).toBe(0);
+  });
+
+  it('纯中文的截断结果与按码元二分时一致', () => {
+    expect(truncateToLines('睡'.repeat(40), 2, linesOf)).toBe(`${'睡'.repeat(19)}…`);
+  });
 });
 
 describe('名字行的截断（只有一行，超出加 …）', () => {

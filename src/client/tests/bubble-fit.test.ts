@@ -29,6 +29,30 @@ describe('气泡行数估算', () => {
     const latin = 'x'.repeat(40);
     expect(estimateBubbleLines(latin)).toBeLessThan(estimateBubbleLines('睡'.repeat(40)));
   });
+
+  it('同字数下 emoji 估出的行数不少于中文（emoji 比中文宽，只会估多不会估少）', () => {
+    const emojiLines = estimateBubbleLines('😴'.repeat(20));
+    const cjkLines = estimateBubbleLines('睡'.repeat(20));
+    expect(emojiLines).toBeGreaterThanOrEqual(cjkLines);
+    expect(emojiLines).toBeGreaterThan(cjkLines);
+  });
+
+  it('emoji 一行装 9 个（21px × 9 = 189 ≤ 192，第 10 个就换行）', () => {
+    expect(estimateBubbleLines('😴'.repeat(9))).toBe(1);
+    expect(estimateBubbleLines('😴'.repeat(10))).toBe(2);
+  });
+
+  it('ZWJ 序列按字素簇算：连接符零宽，一家人不会被数成 7 个宽字符', () => {
+    const family = '👨‍👩‍👧‍👦';
+    expect(estimateBubbleLines(family)).toBe(1);
+    // 2 × (4 × 21) = 168 ≤ 192；ZWJ 若也占一档就是 2 行
+    expect(estimateBubbleLines(family.repeat(2))).toBe(1);
+  });
+
+  it('肤色修饰符与键帽零宽：一簇只算基字符那一次宽', () => {
+    expect(estimateBubbleLines('👍🏽'.repeat(9))).toBe(1);
+    expect(estimateBubbleLines('1️⃣'.repeat(24))).toBe(1);
+  });
 });
 
 describe('气泡放不下的提示', () => {
