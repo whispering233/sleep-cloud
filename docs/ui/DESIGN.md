@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Sleep Cloud
-description: 云上睡眠大厅的视觉系统：单色线稿 + 夜色调（只有一套配色）
+description: 失眠云的视觉系统：单色线稿 + 夜色调（只有一套配色）
 colors:
   primary: "#0E1526"
   primary-dim: "#080D18"

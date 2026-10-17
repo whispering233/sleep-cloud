@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **站名改成「失眠云」**：浏览器标签页与入场层标题随之更新；内部标识符（Worker 名 `sleep-cloud`、域名、仓库名）与 `docs/ui/DESIGN.md` 的设计系统名 `Sleep Cloud` 不变
+
 ## [v0.0.3] - 2026-10-17 — 看得清的字：世界文字按画布 DPR 栅格化、画布 DPR 上限 3
 
 ### Fixed

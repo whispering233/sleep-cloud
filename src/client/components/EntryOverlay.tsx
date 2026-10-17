@@ -75,7 +75,7 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
           void continueEntry();
         }}
       >
-        <h1 className="entry-title">云上睡眠大厅</h1>
+        <h1 className="entry-title">失眠云</h1>
 
         <div className="entry-field">
           <label className="field-label" htmlFor="entry-nickname">
