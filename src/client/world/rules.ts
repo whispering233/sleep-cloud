@@ -1,3 +1,4 @@
+import { ZOOM_MIN } from '../../shared/constants';
 import type { Appearance, Person, PersonState } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
@@ -34,6 +35,8 @@ export interface BedLook {
   alpha: number;
   /** 清醒躺着：床图上只有闭眼的那一张，靠脸上叠两个点表达「睁着眼」（补画见 backlog） */
   eyes: boolean;
+  /** 床号是否画：拉远到 `Z < ZOOM_TEXT_MIN` 时退役（见 `docs/ui/DESIGN.md` 的世界相机） */
+  number: boolean;
 }
 
 /** 睡痕的不透明度：床与小人共用同一个值（`personAlpha`）。 */
@@ -69,18 +72,45 @@ const BED_FRAMES: Record<Appearance, { resting: BedFrame; trace: BedFrame }> = {
 };
 
 /** 占用优先于归属；无主空床**不返回空值**——它是「这里可以躺」的唯一提示。 */
-export function bedLook(input: { owned: boolean; occupant?: Occupant }): BedLook {
+export function bedLook(input: { owned: boolean; occupant?: Occupant; detail?: boolean }): BedLook {
+  const look = input.detail ?? true;
   const occupant = input.occupant;
   if (!occupant) {
-    return { frame: input.owned ? 'bed_empty_owned' : 'bed_empty_hollow', alpha: 1, eyes: false };
+    return { frame: input.owned ? 'bed_empty_owned' : 'bed_empty_hollow', alpha: 1, eyes: false, number: look };
   }
   const trace = occupant.state === 'trace';
   const pair = BED_FRAMES[occupant.appearance];
   return {
     frame: trace ? pair.trace : pair.resting,
     alpha: trace ? TRACE_ALPHA : 1,
-    eyes: occupant.state === 'lying',
+    eyes: look && occupant.state === 'lying',
+    number: look,
   };
+}
+
+/** 床角那颗小点的种类：`own` = 我的床；`selectable` = 换床模式里可搬的无主空床；`none` = 不画。 */
+export type BedMarker = 'none' | 'own' | 'selectable';
+
+/**
+ * 床角那颗小点该画哪种（`docs/ui/DESIGN.md` 的 `marker-own` / `bed-switch-mode`）：
+ * **我的床**（暖灯色）优先；换床模式里只给**无主且无人**的床标「可搬」（`claimed` 色）。
+ *
+ * 它是一条**可点击性的可视提示**（画的就是「这能不能点」），所以判据留在这里、颜色留在渲染层
+ * （`views.ts` 的 `MARKER_COLORS`）——与 `bedLook` 同一分工，也让单测拿得到（渲染模块会拉进 Phaser）。
+ */
+export function bedMarkerOf(input: {
+  bedNo: number;
+  /** 我的床号（`me.ownedBedNo`）；还没有床时没有 */
+  mine?: number;
+  /** 换床模式是否开着 */
+  switching: boolean;
+  /** 这张床有主吗（归属未过期） */
+  owned: boolean;
+  /** 这张床此刻有占用者吗（含未过期的睡痕） */
+  occupied: boolean;
+}): BedMarker {
+  if (input.bedNo === input.mine) return 'own';
+  return input.switching && !input.owned && !input.occupied ? 'selectable' : 'none';
 }
 
 /** 站着的小人：外观（`boy` / `girl`）→ 贴图。**不做逐帧行走动画**，走动靠极轻微的缩放摆动。 */
@@ -166,6 +196,15 @@ export interface ViewInsets {
 }
 
 /**
+ * 相机比例的夹取：**只缩不放**——上限恒为 1×（放大必然被放大采样而糊，见 `docs/ui/DESIGN.md`），
+ * 下限是 `ZOOM_MIN`。非有限值（两指恰好重合时算出的 `Infinity` / `NaN`）退回 1×。
+ */
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return 1;
+  return Math.min(1, Math.max(ZOOM_MIN, zoom));
+}
+
+/**
  * 可用视口（世界像素）= 视口 − 顶部 HUD − 底部聊天面板的**实际占位**
  * （`docs/ui/DESIGN.md`「世界相机」；占位指「从视口边缘量到界面内沿」，**含外边距**）。
  * 取景中心、垂直夹取、死区都按它算：按整视口算时最底一行永远压在聊天面板之下，走不到也点不到。
@@ -187,8 +226,7 @@ export function usableView(view: Rect, insets: ViewInsets): Rect {
  * y 上移 `insets.top`、height 加回顶 + 底（推法：视窗下沿最大 = `y + height − 视口高`，
  * 令它 + `insets.top` + 可用高 = 厅的下边缘）。可见区比厅大时照旧居中。
  */
-export function cameraBounds(region: Rect, view: Rect, usable: Rect): Rect {
-  const width = Math.max(region.width, usable.width);
+export function cameraBounds(region: Rect, view: Rect, usable: Rect): Rect {  const width = Math.max(region.width, usable.width);
   const height = Math.max(region.height, usable.height);
   return {
     x: region.x - (width - region.width) / 2,
@@ -212,8 +250,7 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
   };
 }
 
-/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */
-export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 /** 45° 一个扇区，从「东」起按屏幕顺时针排（`atan2` 的正方向在屏幕上朝下 = 南）。 */
 const COMPASS: readonly BedDirection[] = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
@@ -319,6 +356,8 @@ export type TapTarget =
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
   | { kind: 'recenter' }
+  /** 「已经有床了」的那一下：**只给提示，不发上行**（文案由世界层出，判据不该带文案） */
+  | { kind: 'notice' }
   | { kind: 'none' };
 
 export interface TapInput {
@@ -331,6 +370,18 @@ export interface TapInput {
   residentId?: string;
   bedNo?: number;
   /**
+   * 我已经有主的床号（`me.ownedBedNo`）：换床的闸门靠它。它**只可能等于服务端那张床**——
+   * 归属过期要 30 天不出现，而在线的人一直在刷 `last_seen_at`（见 `docs/db/schema.md`），
+   * 所以不存在「服务端认为我没床、客户端认为我有床」的漂移。
+   */
+  ownedBedNo?: number;
+  /**
+   * 换床模式是否开着（`state.switching`）：模式内点无主空床才是换床。
+   * 它只是**人的意图**，所以闸门在客户端；老 bundle（缓存未刷新）仍会点空床即换床，
+   * 那是可接受的过渡态，见 `docs/api/20-api-ws.md` §4.5。
+   */
+  switching?: boolean;
+  /**
    * 已经**吸附到街网**的目标点（`layout.nearestStreetPoint`）；那一带没有街网时为 `undefined`。
    * 服务端只校验街网、不做吸附，所以吸附必须发生在客户端（见 `docs/api/20-api-ws.md` §7）。
    */
@@ -339,13 +390,18 @@ export interface TapInput {
 
 /**
  * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
- * ③ 空床 → 躺下；④ 床上有人（含自己）→ 什么都不做；⑤ 可走的街网 → 走过去；⑥ 其余 → 什么都不做。
+ * ③ 可躺的床 → 躺下（**我还没床**、**就是我自己那张**、**换床模式里**这三种情形）；
+ * ④ 床上有人（含自己）→ 什么都不做；⑧ 我有别的床又不在模式里 → 只给提示（换床走显式模式）；
+ * ⑨ 可走的街网 → 走过去；⑩ 其余 → 什么都不做。
  * ② 与 ④ 都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做，别把两者合成一个 `none`。
  *
  * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
+ *
+ * 为什么「我有别的床又不在模式里」要拦：换床会**当场释放旧床归属**（别人可以立刻捡走），而一次轻点的意图强度太低——
+ * 用户大多只是点错了。旧床归属的代价不能由一次误点承担（见 `docs/design/00-master-design.md` §4）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkTarget } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
@@ -359,6 +415,11 @@ export function tapTargetFor(input: TapInput): TapTarget {
     return { kind: 'recenter' };
   }
 
-  if (bedNo !== undefined) return residentId === undefined ? { kind: 'lie', bedNo } : { kind: 'none' };
+  if (bedNo !== undefined) {
+    if (residentId !== undefined) return { kind: 'none' };
+    // 无主空床：我还没床（首次认领）/ 目标就是我那张（躺着在床上点它会被服务端回 3004 静默）/ 模式内
+    if (ownedBedNo === undefined || ownedBedNo === bedNo || switching === true) return { kind: 'lie', bedNo };
+    return { kind: 'notice' };
+  }
   return walkTarget ? { kind: 'walk', x: walkTarget.x, y: walkTarget.y } : { kind: 'none' };
 }

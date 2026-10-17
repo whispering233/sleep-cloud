@@ -1,18 +1,30 @@
 import * as Phaser from 'phaser';
 
-import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
+import {
+  BED_H,
+  BED_W,
+  CELL_H,
+  CELL_W,
+  MAX_DPR,
+  POOL_SIZE,
+  WALL_WIDTH,
+  ZOOM_MIN,
+  ZOOM_TEXT_MIN,
+} from '../../shared/constants';
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { predictionPointAt } from '../prediction';
-import { beginWalk, getState, setBedDirection } from '../store';
+import { beginWalk, getState, setBedDirection, setOverview, setSwitching, showNotice } from '../store';
 import type { ClientState } from '../store';
 import {
   alignTargetOf,
   bedDirection,
   bedLook,
+  bedMarkerOf,
   cameraBounds,
+  clampZoom,
   followStep,
   isFaded,
   isMoving,
@@ -43,7 +55,8 @@ import type { BedView, PersonView } from './views';
  * 三条边界：
  * 1. 世界走画布、界面走 DOM——这里不画任何文字界面，名字是贴在床上的小标签，不是 UI；
  * 2. 画布不参与 React 的渲染循环——状态直接读 store，重画由 Phaser 的 game loop 驱动；
- * 3. **没有缩放**——世界与屏幕是一个固定比例（1 世界像素 = 1 CSS 像素，画布按 DPR ≤`MAX_DPR` 放大）。
+ * 3. **世界只缩不放**（`docs/ui/DESIGN.md` 的世界相机）：1× 下 1 世界像素 = 1 CSS 像素，相机可以拉远到
+ *    `ZOOM_MIN`（相机 zoom = 画布 DPR × 拉远比例），也**只有**拉远这一档——没有放大。
  *
  * 几何全部来自 `src/shared/layout.ts`（与厅服务同一份纯函数）：床位坐标、区域尺寸、命中判定。
  * 床位数（`hall.bedCount`）是运行时事实，**每个 `bedNoAt` / `isWalkable` 调用点都显式带上它**。
@@ -66,6 +79,8 @@ export interface WorldHandle {
   focusMyBed(): void;
   /** 相机跳到指定床（HUD 输入床号的 `GO`）。 */
   focusBed(bedNo: number): void;
+  /** 拉开 / 收起整厅视角（HUD 的「看全厅 / 回到 1×」；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
+  toggleOverview(): void;
 }
 
 /**
@@ -77,6 +92,12 @@ export interface UiInsets {
   top: HTMLElement | null;
   bottom: HTMLElement | null;
 }
+
+/**
+ * 「已拉到下限」的容差：比例是浮点乘积（起点比例 × 距离比），不会正好等于 `ZOOM_MIN`。
+ * 它只用于 HUD 那颗按钮的文案，不参与夹取（夹取是 `clampZoom` 的严格边界）。
+ */
+const OVERVIEW_EPS = 0.005;
 
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
@@ -100,8 +121,7 @@ function occupantsOf(state: ClientState): Map<number, Occupant> {
   return occupants;
 }
 
-/** 床号 → 占用者 id（含自己）：命中判定要区分「空床可躺」与「床上有人」。 */
-function residentOf(state: ClientState, bedNo: number): string | undefined {
+/** 床号 → 占用者 id（含自己）：命中判定要区分「空床可躺」与「床上有人」。 */function residentOf(state: ClientState, bedNo: number): string | undefined {
   for (const person of state.people.values()) {
     if (person.state !== 'roaming' && person.bedNo === bedNo) return person.id;
   }
@@ -127,8 +147,12 @@ class WorldScene extends Phaser.Scene {
   /** 对象池：只装得下同屏的那几十张床，与总床数无关 */
   private readonly beds: BedView[] = [];
   private readonly people = new Map<string, PersonView>();
-  /** 手指状态：单指拖拽平移；多指一律忽略（**没有缩放这条路**） */
+  /** 手指状态：单指拖拽平移；两根手指 = 缩放（见「输入」一节） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
+  /** 本次手势里出现过第二根手指：出现过就不算轻点（否则捏合收尾会误发一次走路） */
+  private gesturePinched = false;
+  /** 两指缩放的手势起点（两指距离、当时的比例、起点下的世界点）：`undefined` = 没在缩放 */
+  private pinch: { dist: number; zoom: number; worldX: number; worldY: number } | undefined;
   /** 厅的区域（地板与夹取用）：随 `bedCount` 变化重建 */
   private readonly scenery: Phaser.GameObjects.GameObject[] = [];
   /** 上一次看到的连接态（上一帧是否 `online`）：用来抓「离线 → 在线」这一次翻转 */
@@ -139,6 +163,10 @@ class WorldScene extends Phaser.Scene {
    * 传下去永远是「首次进厅」，重连对准我的小人那条分支会变成死代码。
    */
   private everOnline = false;
+  /** 拉远比例（**只缩不放**，`[ZOOM_MIN, 1]`）：相机 zoom = 画布 DPR × 它（见 `applyZoom`） */
+  private zoom = 1;
+  /** 画布 DPR（`resizeToHost` 里算）：相机 zoom 的另一半，也是 insets 换算的基准 */
+  private dpr = 1;
   private observer: ResizeObserver | null = null;
   /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
   private insetElements: UiInsets = { top: null, bottom: null };
@@ -261,6 +289,8 @@ class WorldScene extends Phaser.Scene {
 
     const occupants = occupantsOf(state);
     const mine = state.me?.ownedBedNo;
+    // 拉远到文字阈值以下：床号退役（同屏 Text 对象数也一起压回 0），但房间地面与预留位照画——它们是「厅的大致样式」
+    const detail = this.zoom >= ZOOM_TEXT_MIN;
     let used = 0;
     for (const row of this.bedRows) {
       if (row.y + BED_H < view.y - CULL_MARGIN_PX) continue;
@@ -274,12 +304,16 @@ class WorldScene extends Phaser.Scene {
           this.beds[used] = bedView;
         }
         used += 1;
+        const owned = state.ownedBeds.has(bed.bedNo);
+        const occupant = occupants.get(bed.bedNo);
         placeBed(
           bedView,
           bed,
-          bedLook({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) }),
-          bed.bedNo === mine,
+          bedLook({ owned, occupant, detail }),
+          bedMarkerOf({ bedNo: bed.bedNo, mine, switching: state.switching, owned, occupied: occupant !== undefined }),
         );
+        // 床角那颗点的**屏幕尺寸恒定**：拉远时只放大它，不把它缩小到看不见（见 `docs/ui/DESIGN.md`）
+        bedView.markerGfx.setScale(1 / this.zoom);
       }
     }
     for (let i = used; i < this.beds.length; i += 1) hideBed(this.beds[i] as BedView);
@@ -331,6 +365,11 @@ class WorldScene extends Phaser.Scene {
       personView.container.setPosition(x, y).setDepth(DEPTH.person + y);
       const motion = state.motion.get(person.id);
       paintPerson(personView, { person, mine, moving: isMoving(person, motion, serverNow), nowMs: now });
+      // 「我在哪」那颗暖点同样按屏幕尺寸恒定：拉远时它是唯一还能指出「我在哪」的东西
+      personView.footMarker.setScale(1 / this.zoom);
+
+      // 拉远到文字阈值以下：名字与气泡一起退役（这时它们已被缩到 6px 上下，既读不出又白画）
+      const detail = this.zoom >= ZOOM_TEXT_MIN;
 
       const selected = person.id === state.selectedId;
       const named = shouldDrawName(person, state.me?.id) || selected;
@@ -342,17 +381,19 @@ class WorldScene extends Phaser.Scene {
       // 名字在渲染时从 `people` 现取，**别人的消息单独占一行名字，自己的不画**（自己知道是自己）。
       setPersonChat(
         personView,
-        chat === undefined ? undefined : { text: chat.text, kind: chat.kind, name: mine ? undefined : person.name },
+        !detail || chat === undefined
+          ? undefined
+          : { text: chat.text, kind: chat.kind, name: mine ? undefined : person.name },
       );
       setPersonName(
         personView,
-        named && !(chat !== undefined && selected) ? person.name : '',
+        detail && named && !(chat !== undefined && selected) ? person.name : '',
         person.state === 'trace',
         selected,
       );
       setPersonEmote(
         personView,
-        chat === undefined && emote && emote.expiresAt > now ? EMOTE_LABELS[emote.emoteId] : '',
+        detail && chat === undefined && emote && emote.expiresAt > now ? EMOTE_LABELS[emote.emoteId] : '',
       );
     }
 
@@ -393,7 +434,7 @@ class WorldScene extends Phaser.Scene {
   private syncBedDirection(state: ClientState): void {
     const bedNo = state.me?.ownedBedNo;
     const point = bedNo === undefined ? undefined : this.bedPoint(bedNo);
-    const direction = point ? bedDirection(usableView(this.viewRect(), this.insets), point) : undefined;
+    const direction = point ? bedDirection(usableView(this.viewRect(), this.insetsWorld()), point) : undefined;
     if (direction === state.bedDirection) return;
     setBedDirection(direction);
   }
@@ -408,11 +449,13 @@ class WorldScene extends Phaser.Scene {
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
-    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下
-    const moving = me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0;
+    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下。
+    // 换床模式里不跟随：模式就是「拖着看全厅挑一张床」，镜头不该被拽回自己身上（见 `docs/ui/DESIGN.md`）
+    const moving =
+      me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0 && !state.switching;
     if (!moving || !point) return;
 
-    const usable = usableView(this.viewRect(), this.insets);
+    const usable = usableView(this.viewRect(), this.insetsWorld());
     const center = { x: usable.x + usable.width / 2, y: usable.y + usable.height / 2 };
     // 死区 = 可用视口中心 ± CENTER_BAND/2（与 Phaser 的 `setDeadzone` 同一条规则，只是自己算）
     const next = followStep({
@@ -421,7 +464,8 @@ class WorldScene extends Phaser.Scene {
       halfWidth: (usable.width * CENTER_BAND) / 2,
       halfHeight: (usable.height * CENTER_BAND) / 2,
       dtMs,
-      maxPxPerS: CAMERA_FOLLOW_PX_PER_S,
+      // 按 `1 / zoom` 换算：拉远后世界像素走得快，屏幕观感才不会变成慢拖
+      maxPxPerS: CAMERA_FOLLOW_PX_PER_S / this.zoom,
     });
     const camera = this.cameras.main;
     camera.scrollX += next.x - center.x;
@@ -444,12 +488,9 @@ class WorldScene extends Phaser.Scene {
     };
   }
 
-  /**
-   * 进入/回到 `online` 时对准：**首次进厅**对准我的床（我知道我的床在哪），
-   * **重连**则对准我的小人——宽限恢复会把我放回原位，可能在厅的另一头。
-   * 取哪个点由 `rules.alignTargetOf` 这个纯函数定（可单测）；两个点都取不到时退回厅中心。
-   */
   private alignCamera(state: ClientState, reconnected: boolean): void {
+    // 首次进厅先回 1×：拉远是当下的临时视角，不该跨会话带着（重连保留用户当时的视角）
+    if (!reconnected) this.setZoom(1);
     const focus = alignTargetOf({
       reconnected,
       bedPoint: this.ownBedPoint(state),
@@ -475,7 +516,7 @@ class WorldScene extends Phaser.Scene {
   private centerOnUsable(point: Point): void {
     const view = this.viewRect();
     // **减**偏移：可用带中心在视口中心**之上**（底部界面占位通常更大），所以焦点要跟着往上挑
-    const offset = usableCenterOffset(view, this.insets);
+    const offset = usableCenterOffset(view, this.insetsWorld());
     this.cameras.main.centerOn(point.x - offset.x, point.y - offset.y);
   }
 
@@ -491,7 +532,9 @@ class WorldScene extends Phaser.Scene {
     if (this.loadedBedCount === undefined) return;
     const outer = scrollRegionOf(levelIndexOfBedCount(this.loadedBedCount));
     const view = this.viewRect();
-    const bounds = cameraBounds(outer, view, usableView(view, this.measureInsets()));
+    // 夹取前先按 DOM 的最新实占刷新 insets，再换成世界像素（拉远后视角里「屏幕 1px」不再是「世界 1px」）
+    this.measureInsets();
+    const bounds = cameraBounds(outer, view, usableView(view, this.insetsWorld()));
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
   }
 
@@ -511,21 +554,51 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 尺寸变化（旋屏 / 地址栏收放）：只重算视口与夹取，**不重算比例**——比例是常量。
-   * `Scale.NONE` 下画布不会自己跟着宿主变，所以尺寸自己算；DPR 用 `zoom` 抵消，
-   * 画布像素 = CSS 像素 × DPR，而相机 `zoom = DPR` 把世界像素换回 CSS 像素（1 世界像素 = 1 CSS 像素）。
+   * 同一份 insets 换成**世界像素**：DOM 量到的是屏幕像素，而取景 / 夹取 / 死区 / 方位全是世界像素。
+   * 1× 时两者相等（相机 zoom = DPR 正好抵消），拉远后世界像素 = 屏幕像素 / zoom——少了这一步，
+   * 拉远时底部面板在世界坐标里就「变矮」了，最底一行会重新藏到面板后面。
+   */
+  private insetsWorld(): ViewInsets {
+    const z = this.zoom;
+    return { top: this.insets.top / z, bottom: this.insets.bottom / z };
+  }
+
+  /**
+   * 尺寸变化（旋屏 / 地址栏收放）：重算视口与夹取，**保持用户当前的拉远比例**。
+   * `Scale.NONE` 下画布不会自己跟着宿主变，所以尺寸自己算（DPR 用 `scale.zoom` 抵消）；
+   * 画布像素 = CSS 像素 × DPR，而相机 `zoom = DPR × 拉远比例` 把世界像素换回 CSS 像素（1× 下 1 世界像素 = 1 CSS 像素）。
    */
   private resizeToHost(): void {
     const rect = this.host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    this.dpr = dpr;
     this.scale.zoom = 1 / dpr;
     this.scale.resize(Math.round(rect.width * dpr), Math.round(rect.height * dpr));
-    this.cameras.main.setZoom(dpr);
+    this.applyZoom();
+  }
+
+  /** 把拉远比例推给相机（相机 zoom = 画布 DPR × 拉远比例）：比例变了可见范围也变，夹取跟着重算。 */
+  private applyZoom(): void {
+    this.cameras.main.setZoom(this.dpr * this.zoom);
     this.applyCameraBounds();
   }
 
-  // ——— 输入：单指拖拽平移 + 轻点 ———
+  /**
+   * 设拉远比例（捏合与 HUD 那条都走这里）：**只缩不放**，越界由 `clampZoom` 夹住；
+   * 不动相机焦点——锚点由调用方负责（捏合锚在两指中点，按钮锚在当前中心）。
+   */
+  private setZoom(next: number): void {
+    const clamped = clampZoom(next);
+    if (clamped !== this.zoom) {
+      this.zoom = clamped;
+      this.applyZoom();
+    }
+    // 已在下限 → HUD 那颗按钮改文案（同值不通知）；浮点乘积不会正好等于下限，所以留一点容差
+    setOverview(clamped <= ZOOM_MIN + OVERVIEW_EPS);
+  }
+
+  // ——— 输入：单指拖拽平移 + 轻点；两根手指 = 拉远／放回 ———
 
   private bindInput(): void {
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
@@ -535,9 +608,45 @@ class WorldScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.pruneReleasedPointers();
-    // 多指只管第一根：多出来的手指不改变什么（**没有缩放**），但也不会把平移带成两倍速
-    if (this.pointers.size > 0) return;
+    // 两根手指同时按着 = 缩放；第三根起直接忽略（多出来的手指不改变什么，也不会把平移带成两倍速）
+    if (this.pointers.size >= 2) return;
     this.pointers.set(pointer.id, { x: pointer.x, y: pointer.y, moved: 0 });
+    if (this.pointers.size === 2) this.beginPinch();
+  }
+
+  /** 两指缩放的起点：记下两指距离、当时的比例，以及**起点中点下的世界点**（锚点）。 */
+  private beginPinch(): void {
+    const [a, b] = [...this.pointers.values()];
+    if (!a || !b) return;
+    // 第二根手指一出场就算「捏过」：哪怕只是按着不动，收尾也不该被读成一次轻点
+    this.gesturePinched = true;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const world = this.cameras.main.getWorldPoint(mid.x, mid.y);
+    this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.zoom, worldX: world.x, worldY: world.y };
+  }
+
+  /**
+   * 两指缩放：距离比 → 比例（夹在 `[ZOOM_MIN, 1]`），**锚在起点那个世界点上**——
+   * 每帧改完比例再用同一支 `getWorldPoint` 校正一次滚屏，让那个点仍落在当前两指中点下方。
+   * 不自己推相机矩阵：Phaser 的换算不必在这里重写一遍（写错的表现就是拉远时世界在漂）。
+   */
+  private updatePinch(): void {
+    const pinch = this.pinch;
+    const [a, b] = [...this.pointers.values()];
+    if (!pinch || !a || !b) return;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    // 两指几乎重合时距离比会变成 ÷0：先重新取一次基线，别让相机废掉
+    if (pinch.dist < 1 || dist < 1) {
+      pinch.dist = dist;
+      return;
+    }
+    this.setZoom(pinch.zoom * (dist / pinch.dist));
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const now = this.cameras.main.getWorldPoint(mid.x, mid.y);
+    // 锚点的世界坐标必须仍落在当前中点上：差多少补多少（两指一起平移时，补的就是平移量）
+    const camera = this.cameras.main;
+    camera.scrollX += pinch.worldX - now.x;
+    camera.scrollY += pinch.worldY - now.y;
   }
 
   /**
@@ -549,6 +658,8 @@ class WorldScene extends Phaser.Scene {
     for (const id of [...this.pointers.keys()]) {
       if (!down.has(id)) this.pointers.delete(id);
     }
+    // 缩放要求两根手指同时在册：被清掉一根就不能再按起点算距离比
+    if (this.pointers.size < 2) this.pinch = undefined;
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
@@ -559,7 +670,12 @@ class WorldScene extends Phaser.Scene {
     tracked.moved += Math.hypot(dx, dy);
     tracked.x = pointer.x;
     tracked.y = pointer.y;
-    // 画布像素 → CSS 像素：相机 zoom 就是 DPR（见 `resizeToHost`）
+    // 两根手指按着：这一帧只缩放（锚点会顺手吃掉中点的位移），不再按单指平移走一遍
+    if (this.pointers.size >= 2) {
+      this.updatePinch();
+      return;
+    }
+    // 画布像素 → CSS 像素：相机 zoom = DPR × 拉远比例（见 `applyZoom`）
     const camera = this.cameras.main;
     camera.scrollX -= dx / camera.zoomX;
     camera.scrollY -= dy / camera.zoomY;
@@ -568,9 +684,21 @@ class WorldScene extends Phaser.Scene {
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
     const tracked = this.pointers.get(pointer.id);
     if (!tracked) return;
+    const pinched = this.gesturePinched;
     this.pointers.delete(pointer.id);
-    // 轻点（未拖动、时间短）才是一次意图；拖拽是平移镜头
-    if (tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS) this.dispatchTap(pointer);
+    if (this.pointers.size === 0) {
+      this.gesturePinched = false;
+      this.pinch = undefined;
+    } else if (this.pointers.size === 1) {
+      // 两指降回一指：退掉缩放态，并把剩下那根手指的位移归零（它是继续拖拽的新起点，不是一次轻点）
+      this.pinch = undefined;
+      const only = [...this.pointers.values()][0];
+      if (only) only.moved = 0;
+    }
+    // 轻点（未拖动、时间短、且这整次手势只有一根手指）才是一次意图
+    if (!pinched && tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS) {
+      this.dispatchTap(pointer);
+    }
   }
 
   /**
@@ -593,6 +721,8 @@ class WorldScene extends Phaser.Scene {
       selfId: state.me?.id,
       residentId: bedNo !== undefined ? residentOf(state, bedNo) : undefined,
       bedNo,
+      ownedBedNo: state.me?.ownedBedNo,
+      switching: state.switching,
       walkTarget: nearestStreetPoint(point, bedCount),
     });
 
@@ -601,6 +731,8 @@ class WorldScene extends Phaser.Scene {
         this.handlers.onSelect(target.id);
         return;
       case 'lie': {
+        // 模式里那一下就是决定：发出躺下意图后立刻收起模式，下一次点击不再有换床含义
+        if (state.switching) setSwitching(false);
         // 「点床 = 走过去 + 躺下」也要立刻起步：服务端会先把我走到**床脚前那一点**再躺下，
         // 客户端用同一个 `frontPointOf` 当锚点，于是这一趟也不等插值滞后（同 `walk` 那条）
         const front = frontPointOf(target.bedNo);
@@ -608,9 +740,15 @@ class WorldScene extends Phaser.Scene {
         this.handlers.onLie(target.bedNo);
         return;
       }
+      case 'notice':
+        // 我有别的床、又不在换床模式里：**不发上行**，只指路（纯文字提示，不是操作目标）
+        showNotice('已经有一张床 · 换床在设置里');
+        return;
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
+        // 它也是换床模式最自然的「不搬了」：退出模式再走
         this.handlers.onClearSelection();
+        if (state.switching) setSwitching(false);
         // 外推**在发出意图的这一刻**登记：`findPath` 只算这一次，之后每帧只沿这条折线推进
         beginWalk({ x: target.x, y: target.y });
         this.handlers.onWalk({ x: target.x, y: target.y });
@@ -673,6 +811,14 @@ class WorldScene extends Phaser.Scene {
     const point = this.bedPoint(bedNo);
     if (point) this.centerOnUsable(point);
   }
+
+  /**
+   * HUD 的「看全厅 / 回到 1×」：一次性的相机命令，**不动相机焦点**（只改比例）。
+   * 不在下限就拉到下限，已在下限就回 1×——两个入口（捏合与这条）操作同一个状态。
+   */
+  toggleOverview(): void {
+    this.setZoom(this.zoom <= ZOOM_MIN + OVERVIEW_EPS ? 1 : ZOOM_MIN);
+  }
 }
 
 export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
@@ -690,8 +836,12 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
       width: Math.round(Math.max(rect.width, 1) * dpr),
       height: Math.round(Math.max(rect.height, 1) * dpr),
     },
-    // 手势交给相机（单指拖拽平移），不让浏览器把页面拽走
+    // 手势交给相机（单指拖拽平移、双指捏合拉远），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
+    // **必须显式申请 2 个触摸指针**：Phaser 默认 `input.activePointers = 1`（`core/Config.js`），而
+    // `InputManager.onTouchStart` 只在 `pointers[1..]` 里找空闲槽位、`pointers[0]` 归鼠标——默认配置下
+    // 第二根手指找不到槽位就被直接丢掉，双指捏合永远进不了缩放分支（首指还会被当成单指拖拽把相机平移）。
+    input: { activePointers: 2 },
     scene: [scene],
   });
 
@@ -704,6 +854,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     focusBed(bedNo: number): void {
       scene.focusBed(bedNo);
+    },
+    toggleOverview(): void {
+      scene.toggleOverview();
     },
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W } from '../../../shared/constants';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, ZOOM_MIN } from '../../../shared/constants';
 import { HALL_LEVELS, levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
 import type { Person } from '../../../shared/protocol';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
@@ -12,7 +12,9 @@ import {
   alignTargetOf,
   bedDirection,
   bedLook,
+  bedMarkerOf,
   cameraBounds,
+  clampZoom,
   cameraStep,
   followStep,
   isFaded,
@@ -27,7 +29,7 @@ import {
   usableView,
   usableCenterOffset,
 } from '../rules';
-import type { Occupant, PersonSpot } from '../rules';
+import type { Occupant, PersonSpot, TapInput } from '../rules';
 
 const sleeper: Person = { id: 'u_1', name: '小明', appearance: 'boy', state: 'asleep', bedNo: 7 };
 const walker: Person = { id: 'u_2', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 };
@@ -39,11 +41,11 @@ describe('床位贴图：占用走墨色三档、归属走填充（空芯 / 纸�
   const traceBoy: Occupant = { state: 'trace', appearance: 'boy' };
 
   it('无主空床是空芯：白填充映射成透明，地板直接透出来', () => {
-    expect(bedLook({ owned: false })).toEqual({ frame: 'bed_empty_hollow', alpha: 1, eyes: false });
+    expect(bedLook({ owned: false })).toEqual({ frame: 'bed_empty_hollow', alpha: 1, eyes: false, number: true });
   });
 
   it('有主空床是 claimed 轮廓 + paper 填充', () => {
-    expect(bedLook({ owned: true })).toEqual({ frame: 'bed_empty_owned', alpha: 1, eyes: false });
+    expect(bedLook({ owned: true })).toEqual({ frame: 'bed_empty_owned', alpha: 1, eyes: false, number: true });
   });
 
   it('床上有人换成 line 档的整图：男/女各一张，清醒与睡着共用那张闭眼的', () => {
@@ -57,8 +59,23 @@ describe('床位贴图：占用走墨色三档、归属走填充（空芯 / 纸�
       frame: 'bed_boy_trace',
       alpha: TRACE_ALPHA,
       eyes: false,
+      number: true,
     });
     expect(TRACE_ALPHA).toBeLessThan(1);
+  });
+
+  it('拉远到文字阈以下：贴图与不透明度照旧，床号与睭眼两点一起退役', () => {
+    const far = { detail: false } as const;
+    expect(bedLook({ owned: false, ...far })).toEqual({ frame: 'bed_empty_hollow', alpha: 1, eyes: false, number: false });
+    expect(bedLook({ owned: true, occupant: lyingBoy, ...far })).toEqual({
+      frame: 'bed_boy',
+      alpha: 1,
+      eyes: false,
+      number: false,
+    });
+    const trace = bedLook({ owned: true, occupant: traceBoy, ...far });
+    expect(trace.alpha).toBe(TRACE_ALPHA);
+    expect(trace.frame).toBe('bed_boy_trace');
   });
 
   it('只有清醒躺姿在脸上叠两个点（睡着的眼睛本来就是闭着的）', () => {
@@ -109,6 +126,27 @@ describe('名字、不透明度与睡痕淡出', () => {
     expect(isFaded(untilNow, 999)).toBe(false);
     expect(isFaded(untilNow, 1000)).toBe(true);
     expect(isFaded(trace, 10_000_000)).toBe(false); // 没有 traceUntil 的条目（在线者）不会被淡出
+  });
+});
+
+describe('床角那颗小点：我的床（暖灯色）优先，换床模式里给可搬的空床（`claimed` 色）', () => {
+  const marker = (extra: Partial<Parameters<typeof bedMarkerOf>[0]> = {}) =>
+    bedMarkerOf({ bedNo: 42, switching: false, owned: false, occupied: false, ...extra });
+
+  it('我的床永远是 `own`（模式内外都一样）', () => {
+    expect(marker({ mine: 42 })).toBe('own');
+    expect(marker({ mine: 42, switching: true, owned: true })).toBe('own');
+  });
+
+  it('不在换床模式里就不画标记：可搬与否不是给眼睛看的', () => {
+    expect(marker({ mine: 7 })).toBe('none');
+    expect(marker({ switching: false, owned: false, occupied: false })).toBe('none');
+  });
+
+  it('模式里只有**无主且无人**的床标可搬：有主、有人、睡痕都不是可搬目标', () => {
+    expect(marker({ mine: 7, switching: true })).toBe('selectable');
+    expect(marker({ mine: 7, switching: true, owned: true })).toBe('none');
+    expect(marker({ mine: 7, switching: true, occupied: true })).toBe('none');
   });
 });
 
@@ -165,14 +203,29 @@ describe('轻点命中（世界像素）', () => {
     });
   });
 
-  it('空床可以躺（不管有没有主）；床上有人时什么都不做且绝不落成 walk', () => {
-    expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], bedNo: 42 })).toEqual({ kind: 'lie', bedNo: 42 });
+  it('床上有人时什么都不做且绝不落成 walk', () => {
     expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], residentId: 'u_other', bedNo: 42 })).toEqual({
       kind: 'none',
     });
     expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], selfId: 'u_me', residentId: 'u_me', bedNo: 42 })).toEqual(
       { kind: 'none' },
     );
+  });
+
+  it('无主空床：我还没床 / 就是我那张 / 在模式里 → 躺下；我有别的床又不在模式里 → 只给提示', () => {
+    const tap = (extra: Partial<TapInput> = {}) => tapTargetFor({ point: { x: 812, y: 316 }, spots: [], bedNo: 42, ...extra });
+
+    // ① 我还没床（没有 ownedBedNo）：新人第一次点空床不会有任何额外步骤
+    expect(tap()).toEqual({ kind: 'lie', bedNo: 42 });
+    expect(tap({ ownedBedNo: undefined })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ② 目标就是我名下那张床：走回去躺下（在床上点它由服务端回 3004 静默）
+    expect(tap({ ownedBedNo: 42 })).toEqual({ kind: 'lie', bedNo: 42 });
+    expect(tap({ ownedBedNo: 42, switching: true })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ③ 我有别的床、在换床模式里：这才是换床
+    expect(tap({ ownedBedNo: 7, switching: true })).toEqual({ kind: 'lie', bedNo: 42 });
+    // ④ 我有别的床、不在模式里：不发上行，只给提示（换床会当场释放旧床归属）
+    expect(tap({ ownedBedNo: 7 })).toEqual({ kind: 'notice' });
+    expect(tap({ ownedBedNo: 7, switching: false })).toEqual({ kind: 'notice' });
   });
 
   it('没有可走的街网点（厅外、床缝）：什么都不做（服务端会回 3006，别发）', () => {
@@ -186,6 +239,29 @@ describe('轻点命中（世界像素）', () => {
       x: 1092.4,
       y: 128,
     });
+  });
+});
+
+describe('相机比例夹取（只缩不放）', () => {
+  it('区间内原样返回', () => {
+    expect(clampZoom(1)).toBe(1);
+    expect(clampZoom(0.4)).toBe(0.4);
+    expect(clampZoom(ZOOM_MIN)).toBe(ZOOM_MIN);
+  });
+
+  it('只缩不放：超过 1× 一律夹到 1×（放大必然被放大采样而糊）', () => {
+    expect(clampZoom(1.2)).toBe(1);
+    expect(clampZoom(8)).toBe(1);
+  });
+
+  it('拉到比下限更远也夹在下限：第 1 级厅正好占满屏宽', () => {
+    expect(clampZoom(0.05)).toBe(ZOOM_MIN);
+    expect(clampZoom(0)).toBe(ZOOM_MIN);
+  });
+
+  it('非有限值退回 1×：两指恰好重合时算出的 Infinity / NaN 不能让相机废掉', () => {
+    expect(clampZoom(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(clampZoom(Number.NaN)).toBe(1);
   });
 });
 

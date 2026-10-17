@@ -37,6 +37,8 @@ describe('HUD 派生视图', () => {
       online: 37,
       emptyBeds: BED_COUNT - 1,
       rttMs: undefined,
+      switching: false,
+      overview: false,
     });
   });
 
@@ -101,6 +103,20 @@ describe('HUD 派生视图', () => {
     expect(sameHudView(noSample, sampled)).toBe(false);
     expect(sameHudView(sampled, hudViewOf(stateWith({ rttMs: 121 })))).toBe(false);
     expect(sameHudView(sampled, hudViewOf(stateWith({ rttMs: 120 })))).toBe(true);
+  });
+
+  it('拉远档状态变了才算变化：它决定那颗按钮是「看全厅」还是「回到 1×」', () => {
+    const base = hudViewOf(stateWith());
+    expect(base.overview).toBe(false);
+    expect(sameHudView(base, hudViewOf(stateWith({ overview: false })))).toBe(true);
+    expect(sameHudView(base, hudViewOf(stateWith({ overview: true })))).toBe(false);
+  });
+
+  it('换床模式开关变了才算变化：它决定 HUD 下沿那一行与 `GO` 的存亡', () => {
+    const base = hudViewOf(stateWith());
+    expect(base.switching).toBe(false);
+    expect(sameHudView(base, hudViewOf(stateWith({ switching: false })))).toBe(true);
+    expect(sameHudView(base, hudViewOf(stateWith({ switching: true })))).toBe(false);
   });
 
   it('空床变了才算变化：归属集合大小变化会换视图对象', () => {

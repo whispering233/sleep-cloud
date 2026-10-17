@@ -194,7 +194,21 @@
     pointer-events: auto;
   }
 
-  /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击 */
+  /* 浮层里那一项：胶囊外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
+     只额外把它撑满浮层一行、与下面的版本号拉开一档 */
+  .hud-menu-action {
+    display: block;
+    width: 100%;
+    margin-block-end: var(--spacing-sm);
+  }
+
+  /* 版本号：浮层里唯一一行纯文字（排查用信息，不常驻版面） */
+  .hud-menu-version {
+    white-space: nowrap;
+  }
+
+  /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击。
+     两件事共用这一行：`GO` 的床号输入、换床模式的提示（两者互斥，不会同屏） */
   .hud-jump {
     margin-block-start: calc(-1 * var(--spacing-sm));
     padding-block-end: var(--spacing-sm);
@@ -224,6 +238,16 @@
     font-family: var(--font-label);
     font-size: var(--text-label);
     border: 0;
+  }
+
+  /* 换床提示行的那句话：与 HUD 的显示组同调（纯文字、不是按钮），剩余的宽度全吃掉 */
+  .hud-switch-hint {
+    flex: 1 1 auto;
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
   }
 
   .chat-panel {

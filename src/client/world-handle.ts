@@ -20,3 +20,11 @@ export function focusMyBed(): void {
 export function focusBed(bedNo: number): void {
   world?.focusBed(bedNo);
 }
+
+/**
+ * 拉开 / 收起整厅视角（HUD 的「看全厅 / 回到 1×」）。
+ * 它也是 WCAG 2.5.1 要的那个**单指入口**（多指手势必须有单指替代），所以不能只靠捏合。
+ */
+export function toggleOverview(): void {
+  world?.toggleOverview();
+}
