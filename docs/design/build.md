@@ -58,7 +58,7 @@
 | :--- | :--- | :--- |
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
-| `routes` | `[{ pattern: "sleep-cloud.<zone>", custom_domain: true }]` | 生产入口只有这一个域名（理由见 §4.2） |
+| `routes` | `[{ pattern: "sleep-cloud.whispering233.com", custom_domain: true }]` | 生产入口只有这一个域名（理由见 §4.2） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：忘了注入 `SESSION_SECRET`**
@@ -89,7 +89,11 @@
 | :--- | :--- |
 | `curl -s https://<worker>.workers.dev/api/health` 返回 `Recv failure: Connection reset by peer`，而 `curl -s http://<worker>.workers.dev/api/health`（同域名、明文 80）返回 `{"code":"0"}` | 部署是好的，被挡的是 `*workers.dev` 的 SNI |
 
-**本项目的生产入口**：`sleep-cloud.<zone>`（自定义域名，已实测 HTTPS 正常：HTTP/2 200 + `server: cloudflare`，证书 SAN 含该名字）。根域 `<zone>` 不使用，也不挂 Worker。
+**本项目的生产入口**：`sleep-cloud.whispering233.com`（自定义域名，已实测：HTTP/2 200 + `server: cloudflare`，证书 `CN=sleep-cloud.whispering233.com`、SAN 含该名字、签发者 Cloudflare TLS Issuing ECC CA 4）。根域 `whispering233.com` 不挂 Worker。
+
+**入口换过一次域名**（原 `sleep-cloud.<zone>`，已停用、解析不通）。换域名要改三处：`wrangler.jsonc` 的 `routes`（**配置是权威**，面板上改了下次 `deploy` 会被覆盖）、README 的线上入口链接、本节；然后 `npm run deploy` 会把自定义域名按新配置同步。
+
+**别把本机网络的假象当成生产故障**：实测本机到自定义域名会间歇性出现超时、以及 Chromium 的 `net::ERR_CERT_COMMON_NAME_INVALID`，而同一时刻 `curl` 能拿到 HTTP/2 200、`openssl s_client` 拿到的证书 `CN`/SAN 完全正确。排查顺序：先用 `curl -sI` 与 `openssl s_client -servername <域名>` 分开确认「证书对不对」与「响应通不通」，再怀疑应用。
 
 **做法**：给 Worker 加一个自己域名的**自定义域名**（域名需在同账号下），SNI 就变成自己的域名：
 
