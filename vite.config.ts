@@ -5,9 +5,17 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { BASE_PORT, readDevPort } from './tools/dev/dev-port.mjs';
 
-// 版本号从 package.json 读文件取，构建期注入成 `__APP_VERSION__`（浮层里显示 `v0.0.3`）。
+// 版本号从 package.json 读文件取，构建期注入成 `__APP_VERSION__`（齿轮浮层里显示，形如 `v0.0.4`）。
 // 客户端不 `import` package.json：那会把整个文件打进产物，而我们只要一个字符串。
-const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+const readVersion = (): string => {
+  try {
+    const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+    return version;
+  } catch (error) {
+    throw new Error(`读 package.json 的 version 失败：${String(error)}`);
+  }
+};
+const version = readVersion();
 
 // 前端产物交给 Worker 的静态资源托管（`wrangler.jsonc` 的 assets.directory）。
 // 静态资源请求免费且不计入每日接口请求额度。

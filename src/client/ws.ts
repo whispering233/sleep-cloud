@@ -82,7 +82,7 @@ export function connectHall(input: { layoutVersion: string }): () => void {
   };
 }
 
-/** 卡 3 的「尝试连接」按钮：打断退避等待、立即试一次；**不改退避序列**（进度只由失败推进）。 */
+/** 聊天面板提示条上的「尝试连接」按钮：打断退避等待、立即试一次；**不改退避序列**（进度只由失败推进）。 */
 export function retryNow(): void {
   const s = live();
   if (!s) return;
@@ -339,7 +339,7 @@ type Outgoing = UpstreamMessage | { t: 'rise' } | { t: 'sleep' };
 function sendRaw(s: Session, message: Outgoing): boolean {
   if (s.disposed || s.socket?.readyState !== WebSocket.OPEN) {
     // 重连后的位置可能是宽限恢复的原位、也可能是出生点，1 秒前点的那块地已经不代表用户现在想去的地方；
-    // 丢弃 + 一条常驻提示条（卡 3）比补发更诚实（见 `docs/api/20-api-ws.md` §5.1）
+    // 丢弃 + 一条常驻提示条比补发更诚实（见 `docs/api/20-api-ws.md` §5.1）
     ensureConnected();
     return false;
   }

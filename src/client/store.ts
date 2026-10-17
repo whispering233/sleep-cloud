@@ -226,7 +226,7 @@ export function applyPos(message: PosMessage): void {
   const motion = new Map(state.motion);
   const people = new Map(state.people);
   const me = state.me;
-  // 自己不在 `people` 里：位置再另存一份到 `me`（走动时渲染自己，卡 4 的外推以它为权威锚点）
+  // 自己不在 `people` 里：位置再另存一份到 `me`（走动时渲染自己；自身外推以它为回落锚点）
   let nextMe = me;
   // 自己的外推在这里**重锚**：权威点 + 该批的服务端时刻，沿同一条折线继续（路径不重算）；
   // 权威点跑得离外推位置太远（`hop` 传送 / 服务端换了目标）时重锚返回 `undefined`，外推一并作废

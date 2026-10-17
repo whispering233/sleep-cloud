@@ -81,6 +81,8 @@
 
 **为什么标签排在最后**：标签是公开且难撤的产物。部署失败或冒烟不过时还没有标签，仓库里不会留下一个「标了发布但没上线」的版本；推送 `main` 则可以早做（远端是事实来源）。`release.yml` 用推送的标签建 GitHub Release，正文取自 `CHANGELOG.md` 里对应的那一段 —— 所以那一段的版本号必须与标签逐字对应。
 
+**多账号的机器先切账号**：`gh auth status` 看当前是谁，`gh auth switch` 选对推送 `origin` 与建 Release 的那个账号（`gh` 与 `wrangler` 是两套凭据，平台侧用 `npx wrangler whoami` 核对）。
+
 ### 4.2 生产入口：自定义域名或路由（默认的 `workers.dev` 不能用）
 
 部署默认给出的 `*.workers.dev` 地址在部分网络里**整个域名的 SNI 被阻断**（本机实测：同一个 Cloudflare IP，SNI 换成 `cloudflare.com` 能握手，换成 `workers.dev` 系列直接收到 TCP RST）。

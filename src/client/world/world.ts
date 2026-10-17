@@ -798,7 +798,7 @@ class WorldScene extends Phaser.Scene {
     if (focus) this.centerOnUsable(focus);
   }
 
-  /** HUD 的「⇢」：一次性的相机跳转，对准指定床（与那一条 `hop` 配成一对，不依赖 500px/s 的跟随）。 */
+  /** HUD 的「GO」：一次性的相机跳转，对准指定床（与那一条 `hop` 配成一对，不依赖 500px/s 的跟随）。 */
   focusBed(bedNo: number): void {
     if (this.loadedBedCount === undefined) return;
     const point = this.bedPoint(bedNo);
