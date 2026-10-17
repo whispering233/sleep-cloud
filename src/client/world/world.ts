@@ -2,10 +2,9 @@ import * as Phaser from 'phaser';
 
 import { BED_H, BED_W, CELL_H, CELL_W, MAX_DPR, POOL_SIZE, WALL_WIDTH } from '../../shared/constants';
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
-import type { Point, Rect } from '../../shared/layout';
+import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
-import { ambienceColor, approachColor } from '../ambience';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection } from '../store';
 import type { ClientState } from '../store';
@@ -140,11 +139,6 @@ class WorldScene extends Phaser.Scene {
    * 传下去永远是「首次进厅」，重连对准我的小人那条分支会变成死代码。
    */
   private everOnline = false;
-  /** 地板与墙的矩形（氛围明暗要重画地板、相机夹取也用它） */
-  private floorGfx?: Phaser.GameObjects.Graphics;
-  private region: Rect = { x: 0, y: 0, width: 0, height: 0 };
-  /** 当前地板底色（困倦度的缓动值）：与目标色一致时整段跳过重画 */
-  private ambience = COLORS.floor;
   private observer: ResizeObserver | null = null;
   /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
   private insetElements: UiInsets = { top: null, bottom: null };
@@ -208,22 +202,6 @@ class WorldScene extends Phaser.Scene {
     this.follow(state, serverNow, delta, selfPoint);
     // 方位在相机这一帧动完之后算：拖拽/回中当帧就把字形换成对的
     this.syncBedDirection(state);
-    this.applyAmbience(state.drowsiness, delta);
-  }
-
-  /**
-   * 氛围明暗：全厅困倦度 → **地板**底色（`primary` ⇄ `primary-dim`），按时间常数缓动；
-   * 床与小人的墨色不动（线稿可读性恒定）；颜色没变就跳过重画。
-   * 厅外那块底是相机背景色（固定 `secondary`），**不跟困倦度缓动**（它不是厅里的地板）。
-   */
-  private applyAmbience(drowsiness: number, dtMs: number): void {
-    const next = approachColor(this.ambience, ambienceColor(COLORS.floor, COLORS.floorDim, drowsiness), dtMs);
-    if (next === this.ambience) return;
-    this.ambience = next;
-    if (!this.floorGfx) return;
-    this.floorGfx.clear();
-    this.floorGfx.fillStyle(next, 1);
-    this.floorGfx.fillRect(this.region.x, this.region.y, this.region.width, this.region.height);
   }
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
@@ -256,10 +234,9 @@ class WorldScene extends Phaser.Scene {
     if (this.loadedBedCount === undefined) return;
 
     const region = wallRegionOf(levelIndexOfBedCount(this.loadedBedCount));
-    this.region = region;
+    // 地板只画一次：它是一块固定色（明暗不在这里做，整屏减光那一层不在画布上）
     const floor = this.add.graphics().setDepth(DEPTH.floor);
-    this.floorGfx = floor;
-    floor.fillStyle(this.ambience, 1);
+    floor.fillStyle(COLORS.floor, 1);
     floor.fillRect(region.x, region.y, region.width, region.height);
     const bound = this.add.graphics().setDepth(DEPTH.bound);
     // 墙是墙带、画在墙矩形**之外**（不侵入地板）：描边路径外扩半个墙宽，带就跨 [x0−W, x0]

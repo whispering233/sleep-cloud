@@ -26,7 +26,6 @@ import type { Motion } from './motion';
 import { anchorPrediction, beginPrediction } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
-import { drowsinessOf } from './ambience';
 
 /**
  * 头顶那一个气泡：**只记「说了什么、到什么时候」**。
@@ -71,12 +70,6 @@ export interface ClientState {
   prediction?: Prediction;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
-  /**
-   * 全厅困倦度（0~1）：只由「人的显示态与在线人数」决定，驱动氛围明暗。
-   * **只在人的状态变化的消息里重算**（`setState` 按 patch 的字段判定），位置节拍不改变它。
-   * 空厅为 0（最亮档）。
-   */
-  drowsiness: number;
   /** 每个人头顶那一个气泡（发送者 id → 气泡）：同人后来的消息**覆盖**前一条，一条也不排队 */
   bubbles: Map<string, ChatBubble>;
   /**
@@ -105,7 +98,6 @@ const emptyState = (): ClientState => ({
   clockOffsetMs: 0,
   bubbles: new Map(),
   emotes: new Map(),
-  drowsiness: 0,
 });
 
 let state: ClientState = emptyState();
@@ -121,11 +113,7 @@ export function subscribe(listener: (state: ClientState) => void): () => void {
 }
 
 export function setState(patch: Partial<ClientState>): void {
-  const next = { ...state, ...patch };
-  // 困倦度只在「人的显示态 / 在线人数」变化时重算：位置节拍（只改 `motion`，或只挪 `me.x/y`）不改变它
-  const meStateChanged = 'me' in patch && patch.me?.state !== state.me?.state;
-  if ('people' in patch || 'hall' in patch || meStateChanged) next.drowsiness = drowsinessOf(next);
-  state = next;
+  state = { ...state, ...patch };
   for (const listener of listeners) listener(state);
 }
 

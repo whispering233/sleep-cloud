@@ -276,7 +276,7 @@ people    ：可见的人 Map<id, { name, appearance, state, x, y, bedNo?, trace
 | 推导 | 依据 | 为什么放客户端 |
 | :--- | :--- | :--- |
 | 睡痕过期 | 条目的 `traceUntil` 与自己的 `clockOffsetMs` | 让「睡痕消失」不需要任何定时器与广播 |
-| 困倦度（明暗氛围） | 在厅人物的显示态（`asleep` / `trace` 占比） | 只是画面氛围，不需要协议字段（见 `../ui/DESIGN.md`） |
+| 色调档位 | 自己的显示态（`roaming` / `lying` / `asleep`） | 只是画面氛围，不需要协议字段（见 `../ui/DESIGN.md`「三档色调」） |
 | 位置插值 | `pos.ts` | 位置不进前端框架的渲染循环（见下） |
 
 **床位视觉的派生规则**（两个维度各自独立，不要合并成一个「床位状态」）：

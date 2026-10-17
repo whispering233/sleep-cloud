@@ -435,31 +435,3 @@ describe('客户端表情', () => {
     expect(getState().emotes.has('u_other')).toBe(false);
   });
 });
-
-describe('困倦度（氛围明暗的输入）', () => {
-  it('我自己的显示态变化要重算：只有我一个人在线时，睡着 = 1', () => {
-    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 1 }, people: [] }));
-    expect(getState().drowsiness).toBe(0);
-
-    applyState({ t: 'state', id: 'u_me', state: 'asleep', bedNo: 7, online: 1 });
-    expect(getState().drowsiness).toBe(1);
-  });
-
-  it('别人的显示态变化要重算：两个人里一个睡着 = 0.5', () => {
-    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 2 }, people: [] }));
-    applyJoin({ t: 'join', id: 'u_other', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280, online: 2 });
-    expect(getState().drowsiness).toBe(0);
-
-    applyState({ t: 'state', id: 'u_other', state: 'asleep', bedNo: 3, online: 2 });
-    expect(getState().drowsiness).toBe(0.5);
-  });
-
-  it('位置节拍不算：只挪我自己的坐标时，这个值不动', () => {
-    applySnapshot(snapshot({ hall: { bedCount: BED_COUNT, online: 2 }, people: [] }));
-    const before = getState().drowsiness;
-
-    expect(applyPos({ t: 'pos', ts: 1_000_100, items: [['u_me', 900, 500]] })).toBeUndefined();
-    expect(getState().me).toMatchObject({ x: 900, y: 500 }); // 权威位置另存一份（卡 4 的外推锚点）
-    expect(getState().drowsiness).toBe(before);
-  });
-});

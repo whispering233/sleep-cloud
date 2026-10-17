@@ -6,6 +6,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
 import { Toast } from './components/Toast';
+import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
 import { connectHall } from './ws';
 
@@ -52,6 +53,9 @@ export function App() {
           </div>
 
           <ChatPanel />
+
+          {/* 三档减光：入场层不参与档位，所以只挂在 `entered` 之后 */}
+          <ToneLayer />
         </>
       ) : null}
 
