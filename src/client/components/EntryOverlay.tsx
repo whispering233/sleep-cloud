@@ -10,10 +10,12 @@ import { useState } from 'react';
 /** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
 const errorText = (code: string) => errorTextFor(code) ?? ERROR_FALLBACK_TEXT;
 
-/** 图集帧名（`public/sprites/frames.css`，坐标由素材管线生成，不手抄）与中文名。
+/** 图集帧名（`public/sprites/frames.css`，坐标由素材管线生成，不手抄）与可访问名。
+ * **选项只有预览图、不写可见文字**（写「男孩 / 女孩」是给画面加它没有的信息），所以这个名字只给屏幕阅读器；
+ * 它描述的是素材差异（发型），不是性别——素材换了就要跟着改。
  * 两个表都是 `Record<Appearance, …>`：枚举加第三种时这里会直接编译不过。 */
 const PREVIEW_FRAME: Record<Appearance, string> = { boy: 'boy_stand', girl: 'girl_stand' };
-const APPEARANCE_NAME: Record<Appearance, string> = { boy: '男孩', girl: '女孩' };
+const APPEARANCE_LABEL: Record<Appearance, string> = { boy: '侧边短发', girl: '双马尾' };
 
 export interface EntryOverlayProps {
   session: SessionView;
@@ -75,7 +77,7 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
           void continueEntry();
         }}
       >
-        <h1 className="entry-title">云上睡眠大厅</h1>
+        <h1 className="entry-title">失眠云</h1>
 
         <div className="entry-field">
           <label className="field-label" htmlFor="entry-nickname">
@@ -100,10 +102,10 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
                 type="button"
                 className={value === appearance ? 'appearance-option appearance-option-selected' : 'appearance-option'}
                 aria-pressed={value === appearance}
+                aria-label={APPEARANCE_LABEL[value]}
                 onClick={() => setAppearanceDraft(value)}
               >
                 <span className={`appearance-preview sprite-${PREVIEW_FRAME[value]}`} />
-                {APPEARANCE_NAME[value]}
               </button>
             ))}
           </div>
