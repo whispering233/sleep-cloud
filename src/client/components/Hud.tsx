@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { parseJumpTarget } from '../bed-jump';
 import { hudViewOf, sameHudView } from '../hud-view';
 import type { HudView } from '../hud-view';
-import { getState, showNotice, subscribe } from '../store';
+import { getState, setSwitching, showNotice, subscribe } from '../store';
 import { focusBed, focusMyBed } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -23,7 +23,7 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * 顶部的极简信息条，**三块固定顺序**：显示组（`在线 n` / `空床 n` / `延迟 n ms`）→ 可点击组
- * （`床号 n ↑` + `GO`）→ 设置齿轮（点开是一个只有版本号一行字的浮层）。**只吃 `HudView` 的字段**：
+ * （`床号 n ↑` + `GO`）→ 设置齿轮（点开是一个浮层：**更换床位** + 版本号）。**只吃 `HudView` 的字段**：
  * 位置节拍每 100 ms 通知一次 store，用不上的变化不能变成重渲染。不显示昵称（我知道我是谁）、
  * 不显示厅名（只有一个厅），版本号也不常驻（排查用的信息不该占常驻版面）。
  *
@@ -32,6 +32,10 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
  *
  * `GO` 点开后 **HUD 下沿展开一行输入床号**（`hop`）：输入的是**显示床号**（1 起），
  * 由 `parseJumpTarget` 按当前 `bedCount` 先拦一道——非法就给可见提示且**不发送**（可点击的界面不静默失败）。
+ *
+ * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO`**
+ * （`GO` 是「跳过去看」、换床是「搬过去」，摆在一起必混），HUD 下沿换成换床提示行。
+ * 模式的可见状态必须**常驻**：它跨聊天、跨起身活着，忘了自己在模式里的人点一张空床，代价与误点一样。
  */
 export function Hud() {
   const [view, setView] = useState<HudView>(() => hudViewOf(getState()));
@@ -122,16 +126,19 @@ export function Hud() {
               ) : null}
             </button>
           ) : null}
-          {/* 可见文案是 `GO`，屏读念中文（`aria-label`）：两个字母念出来没有意义 */}
-          <button
-            type="button"
-            className="hud-action"
-            aria-label="跳到指定床号"
-            aria-expanded={jumpOpen}
-            onClick={() => (jumpOpen ? closeJump() : setJumpOpen(true))}
-          >
-            GO
-          </button>
+          {/* 可见文案是 `GO`，屏读念中文（`aria-label`）：两个字母念出来没有意义。
+              换床模式里不显示：`GO` 是「跳过去看」（`hop`），换床是「搬过去」（`lie`），摆在一起必混 */}
+          {view.switching ? null : (
+            <button
+              type="button"
+              className="hud-action"
+              aria-label="跳到指定床号"
+              aria-expanded={jumpOpen}
+              onClick={() => (jumpOpen ? closeJump() : setJumpOpen(true))}
+            >
+              GO
+            </button>
+          )}
         </div>
 
         {/* 齿轮：与可点击组同一套描边胶囊外观，但是 44×44 的正方形（里面只有图标） */}
@@ -161,15 +168,43 @@ export function Hud() {
           </button>
 
           {/* 浮层：`position: absolute` 锚在齿轮下方右对齐（定位基准是 `position: relative` 的 `.hud`）。
-              版本号是构建期注入的，不存在于任何运行时请求里 */}
+              两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
+              ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
           {menuOpen ? (
-            <div className="hud-menu">v{__APP_VERSION__}</div>
+            <div className="hud-menu">
+              <button
+                type="button"
+                className="hud-action hud-menu-action"
+                aria-pressed={view.switching}
+                onClick={() => {
+                  setSwitching(!view.switching);
+                  setMenuOpen(false);
+                  closeJump();
+                }}
+              >
+                {view.switching ? '取消换床' : '更换床位'}
+              </button>
+              <div className="hud-menu-version">v{__APP_VERSION__}</div>
+            </div>
           ) : null}
         </div>
       </header>
 
+      {/* 换床模式的提示行：占 `GO` 那个输入行的位置（模式期间 `GO` 不显示，两者不会同屏）。
+          它必须常驻：模式跨聊天、跨起身活着，用户要能一眼看出「现在点一张空床会搬过去」 */}
+      {view.switching ? (
+        <div className="hud-jump">
+          <div className="hud-jump-row">
+            <p className="hud-switch-hint">点一张空床搬过去</p>
+            <button type="button" className="hud-jump-cancel" onClick={() => setSwitching(false)}>
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* HUD 下沿那一行：输入显示床号（1 起），回车或「确定」提交，Esc 或「取消」收起 */}
-      {jumpOpen ? (
+      {jumpOpen && !view.switching ? (
         <form
           className="hud-jump"
           onSubmit={(event) => {

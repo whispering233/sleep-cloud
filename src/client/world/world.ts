@@ -6,7 +6,7 @@ import type { Point, Rect } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { EMOTE_LABELS } from '../emotes';
 import { ambienceColor, approachColor } from '../ambience';
-import { getState, setBedDirection } from '../store';
+import { getState, setBedDirection, setSwitching } from '../store';
 import type { ClientState } from '../store';
 import {
   bedDirection,
@@ -34,7 +34,7 @@ import {
   setPersonEmote,
   setPersonName,
 } from './views';
-import type { BedView, PersonView } from './views';
+import type { BedMarker, BedView, PersonView } from './views';
 
 /**
  * 世界画布（Phaser 4）。**渲染层是一个纯函数**：状态快照 → 画出来（见 `docs/design/architecture.md` §2.3）。
@@ -99,13 +99,21 @@ function occupantsOf(state: ClientState): Map<number, Occupant> {
   return occupants;
 }
 
-/** 床号 → 占用者 id（含自己）：命中判定要区分「空床可躺」与「床上有人」。 */
-function residentOf(state: ClientState, bedNo: number): string | undefined {
+/** 床号 → 占用者 id（含自己）：命中判定要区分「空床可躺」与「床上有人」。 */function residentOf(state: ClientState, bedNo: number): string | undefined {
   for (const person of state.people.values()) {
     if (person.state !== 'roaming' && person.bedNo === bedNo) return person.id;
   }
   if (state.me && state.me.state !== 'roaming' && state.me.bedNo === bedNo) return state.me.id;
   return undefined;
+}
+
+/**
+ * 床角那颗小点该画哪种（见 `docs/ui/DESIGN.md` 的 `marker-own` / `bed-switch-mode`）：
+ * **我的床**（暖灯色）优先；换床模式里只给**无主且无人**的床标「可搬」（`claimed` 色）。
+ */
+function bedMarkerOf(input: { bedNo: number; mine: number | undefined; switching: boolean; owned: boolean; occupied: boolean }): BedMarker {
+  if (input.bedNo === input.mine) return 'own';
+  return input.switching && !input.owned && !input.occupied ? 'selectable' : 'none';
 }
 
 /** 按行分桶的床位（行内按 x 升序）：每帧只走可视窗口里的那几行，同屏对象数与厅规模无关。 */
@@ -287,11 +295,13 @@ class WorldScene extends Phaser.Scene {
           this.beds[used] = bedView;
         }
         used += 1;
+        const owned = state.ownedBeds.has(bed.bedNo);
+        const occupant = occupants.get(bed.bedNo);
         placeBed(
           bedView,
           bed,
-          bedLook({ owned: state.ownedBeds.has(bed.bedNo), occupant: occupants.get(bed.bedNo) }),
-          bed.bedNo === mine,
+          bedLook({ owned, occupant }),
+          bedMarkerOf({ bedNo: bed.bedNo, mine, switching: state.switching, owned, occupied: occupant !== undefined }),
         );
       }
     }
@@ -421,8 +431,10 @@ class WorldScene extends Phaser.Scene {
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
-    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下
-    const moving = me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0;
+    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下。
+    // 换床模式里不跟随：模式就是「拖着看全厅挑一张床」，镜头不该被拽回自己身上（见 `docs/ui/DESIGN.md`）
+    const moving =
+      me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0 && !state.switching;
     if (!moving || !point) return;
 
     const usable = usableView(this.viewRect(), this.insets);
@@ -606,11 +618,15 @@ class WorldScene extends Phaser.Scene {
         this.handlers.onSelect(target.id);
         return;
       case 'lie':
+        // 模式里那一下就是决定：发出躺下意图后立刻收起模式，下一次点击不再有换床含义
+        if (state.switching) setSwitching(false);
         this.handlers.onLie(target.bedNo);
         return;
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
+        // 它也是换床模式最自然的「不搬了」：退出模式再走
         this.handlers.onClearSelection();
+        if (state.switching) setSwitching(false);
         this.handlers.onWalk({ x: target.x, y: target.y });
         return;
       case 'recenter':

@@ -84,6 +84,12 @@ export interface ClientState {
   emotes: Map<string, { emoteId: EmoteId; expiresAt: number }>;
   /** 最近一次延迟样本（毫秒，HUD 显示用）；还没采到样本时是 `undefined`，那一项不占位 */
   rttMs?: number;
+  /**
+   * **换床模式**（客户端本地状态，不进协议、不进快照）：模式内点一张无主空床才是换床。
+   * 它必须常驻可见（HUD 提示行 + 齿轮浮层项），因为模式**跨聊天、跨起身**活着——
+   * 忘了自己在模式里的人点一张空床，代价与误点一样（旧床归属当场释放）。
+   */
+  switching: boolean;
 }
 
 const emptyState = (): ClientState => ({
@@ -95,6 +101,7 @@ const emptyState = (): ClientState => ({
   bubbles: new Map(),
   emotes: new Map(),
   drowsiness: 0,
+  switching: false,
 });
 
 let state: ClientState = emptyState();
@@ -191,6 +198,12 @@ export function clearSelection(): void {
 export function setBedDirection(direction: BedDirection | undefined): void {
   if (state.bedDirection === direction) return;
   setState({ bedDirection: direction });
+}
+
+/** 开 / 关换床模式（本地状态，见 `ClientState.switching`）。进出都只改这一个字段。 */
+export function setSwitching(on: boolean): void {
+  if (state.switching === on) return;
+  setState({ switching: on });
 }
 
 /**
