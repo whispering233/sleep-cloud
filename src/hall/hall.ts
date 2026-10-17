@@ -6,7 +6,6 @@ import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedC
 import type { Point } from '../shared/layout';
 import type {
   DownstreamMessage,
-  EmoteMessage,
   ErrorMessage,
   PongMessage,
   SnapshotMessage,
@@ -48,7 +47,6 @@ import {
 } from './connection';
 import type { ConnectionState } from './connection';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from './daily';
-import { emoteVerdictFor } from './emote';
 import { graceVerdict } from './grace';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from './level-rules';
 import type { GraceSession } from './grace';
@@ -456,14 +454,6 @@ export class Hall extends DurableObject<Env> {
         } satisfies WhisperMessage);
         this.send(ws, payload);
         if (target !== ws) this.send(target, payload);
-        return;
-      }
-      case 'emote': {
-        // 睡着时发表情：**自动醒**后处理
-        if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
-        const verdict = emoteVerdictFor(message.id);
-        if (!verdict.ok) return; // 非法枚举值：静默丢弃，不回错误码
-        this.broadcast({ t: 'emote', id: fresh.userId, emoteId: verdict.emoteId } satisfies EmoteMessage);
         return;
       }
       default:

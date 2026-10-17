@@ -267,8 +267,11 @@
     border-start-end-radius: var(--radius-md);
   }
 
+  /* 输入行 / 表情行合用的行容器：收起是 `输入框 + 😀 + 发送`，展开原地换成 `😀 + 5 个 emoji`。
+     两态都 44px 一行、不换行，所以面板高度与可用视口不变（表情不再是独立的一行） */
   .chat-composer {
     display: flex;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--spacing-sm);
   }
@@ -341,13 +344,7 @@
     border: 0;
   }
 
-  /* 表情按钮行：常驻在输入行上方，一次点击即发（窄屏放不下就换行） */
-  .emote-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
-  }
-
+  /* 表情按钮：一点即发一条只含该 emoji 的聊天消息（切换键也用它，见 `.chat-composer`） */
   .emote-button {
     min-width: 44px;
     min-height: 44px;

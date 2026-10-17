@@ -1,8 +1,6 @@
 import type {
   BedMessage,
   ChatMessage,
-  EmoteId,
-  EmoteMessage,
   HallInfo,
   JoinMessage,
   LeaveMessage,
@@ -15,7 +13,7 @@ import type {
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_BUBBLE_MS, EMOTE_MS } from '../shared/constants';
+import { CHAT_BUBBLE_MS } from '../shared/constants';
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
@@ -84,8 +82,6 @@ export interface ClientState {
    * 由**世界层每帧算、只在变化时写**——逐帧写会让位置节拍变成 React 的重渲染。
    */
   bedDirection?: BedDirection;
-  /** 人物 id → 表情。过期只靠渲染时比较 `expiresAt`，**不挂定时器** */
-  emotes: Map<string, { emoteId: EmoteId; expiresAt: number }>;
   /** 最近一次延迟样本（毫秒，HUD 显示用）；还没采到样本时是 `undefined`，那一项不占位 */
   rttMs?: number;
   /**
@@ -108,7 +104,6 @@ const emptyState = (): ClientState => ({
   motion: new Map(),
   clockOffsetMs: 0,
   bubbles: new Map(),
-  emotes: new Map(),
   switching: false,
   overview: false,
 });
@@ -146,7 +141,6 @@ export function applySnapshot(message: SnapshotMessage): void {
     bubbles: new Map(),
     selectedId: undefined,
     bedDirection: undefined,
-    emotes: new Map(),
     rttMs: undefined,
     // 重连以新快照为准：新位置可能是宽限恢复的原位、也可能是出生点，旧的外推没有意义
     prediction: undefined,
@@ -170,23 +164,13 @@ export function applyWhisper(message: WhisperMessage): void {
 }
 
 /**
- * 写一个气泡：与表情同一条约定——只写「到什么时候为止」，同一个人后来的覆盖前一条。
+ * 写一个气泡：只写「到什么时候为止」，同一个人后来的覆盖前一条。
  * 过期由渲染侧比较 `expiresAt` 推导，**不挂 `setTimeout`/`setInterval`**（内存定时器会让页面无法休眠）。
  */
 function setBubble(id: string, text: string, kind: ChatBubble['kind']): void {
   const bubbles = new Map(state.bubbles);
   bubbles.set(id, { text, kind, expiresAt: Date.now() + CHAT_BUBBLE_MS });
   setState({ bubbles });
-}
-
-/**
- * 表情：只写「到什么时候为止」，同一个人后来的表情覆盖前一条。
- * 过期由渲染侧比较 `expiresAt` 推导——**不挂 `setTimeout`/`setInterval`**，内存定时器会让页面无法休眠。
- */
-export function applyEmote(message: EmoteMessage): void {
-  const emotes = new Map(state.emotes);
-  emotes.set(message.id, { emoteId: message.emoteId, expiresAt: Date.now() + EMOTE_MS });
-  setState({ emotes });
 }
 
 /** 选中某个人：同一时刻只有一个选中对象（所以只有一个名字气泡、一个私聊目标）。 */
@@ -388,12 +372,6 @@ export function applyLeave(message: LeaveMessage): void {
     const bubbles = new Map(state.bubbles);
     bubbles.delete(message.id);
     patch.bubbles = bubbles;
-  }
-  // 走了就不该再留着他的表情：同一个 id 在 EMOTE_MS 内重连会带着旧气泡复现
-  if (state.emotes.has(message.id)) {
-    const emotes = new Map(state.emotes);
-    emotes.delete(message.id);
-    patch.emotes = emotes;
   }
   setState(patch);
 }

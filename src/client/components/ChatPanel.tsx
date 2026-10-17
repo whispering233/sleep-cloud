@@ -3,19 +3,23 @@ import { useEffect, useState } from 'react';
 import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
-import { EMOTE_LABELS, EMOTE_LIST } from '../emotes';
+import { EMOTE_SHORTCUTS } from '../emotes';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
-import { sendChat, sendEmote, sendRise, sendSleep, sendWhisper } from '../ws';
+import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
 
 /**
- * 底部常驻的面板（见 `docs/ui/DESIGN.md`）：私聊目标行 + 表情按钮行 + 床上动作行 + 输入行，
+ * 底部常驻的面板（见 `docs/ui/DESIGN.md`）：私聊目标行 + 床上动作行 + 输入行，
  * 窄屏也不收进菜单。**没有消息列表**——聊天只在世界里（头顶那一格气泡，见 `world.ts`），
  * 所以面板高度只跟这几行控件有关。私聊目标就是**唯一选中对象**——点 × 取消选中，
  * 目标离开大厅时选中已被清掉。
+ *
+ * **表情面板与输入行共用同一行**（`emoteOpen` 一个开关、`.chat-composer` 一个行容器）：
+ * 收起是 `输入框 + 😀 + 发送`，展开原地换成 `😀 + 5 个 emoji`——不新增行、不做浮层，
+ * 所以两态都是 44px 一行，面板高度与可用视口不变。`draft` 在组件里，展开收起不动它。
  */
 interface PanelView {
   selectedId?: string;
@@ -38,6 +42,7 @@ const sameView = (a: PanelView, b: PanelView): boolean =>
 export function ChatPanel() {
   const [view, setView] = useState<PanelView>(() => viewOf(getState()));
   const [draft, setDraft] = useState('');
+  const [emoteOpen, setEmoteOpen] = useState(false);
 
   useEffect(() => {
     setView(viewOf(getState()));
@@ -49,6 +54,19 @@ export function ChatPanel() {
 
   const { selectedId, targetName, meState } = view;
   const hint = bubbleHintOf(draft);
+
+  // 表情切换键：两态共用同一个按钮（收起时在输入框右边，展开时排在最左）
+  const emoteToggle = (
+    <button
+      type="button"
+      className="emote-button"
+      aria-label="表情"
+      aria-expanded={emoteOpen}
+      onClick={() => setEmoteOpen((open) => !open)}
+    >
+      😀
+    </button>
+  );
 
   return (
     <section className="chat-panel" aria-label="聊天">
@@ -70,21 +88,6 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* 表情常驻一行：一次点击即发，不进二级菜单 */}
-      <div className="emote-bar" role="group" aria-label="表情">
-        {EMOTE_LIST.map((id) => (
-          <button
-            key={id}
-            type="button"
-            className="emote-button"
-            aria-label={EMOTE_LABELS[id]}
-            onClick={() => sendEmote(id)}
-          >
-            {EMOTE_LABELS[id]}
-          </button>
-        ))}
-      </div>
-
       {/* 床上动作只在床上出现：不躺着的时候这些按钮没有对象，就不占位 */}
       {meState !== undefined && meState !== 'roaming' && (
         <div className="bed-actions">
@@ -105,6 +108,7 @@ export function ChatPanel() {
       {/* 输入行上方的弱提示：草稿放不进气泡两行时提前说一声（估算，宁可保守；不拦发送） */}
       {hint !== undefined && <p className="chat-hint">{hint}</p>}
 
+      {/* 输入行 / 表情行：同一行、同一位置，由 `emoteOpen` 切换（展开时输入框与发送都不出现） */}
       <form
         className="chat-composer"
         onSubmit={(event) => {
@@ -115,16 +119,38 @@ export function ChatPanel() {
           setDraft('');
         }}
       >
-        <TextInput
-          value={draft}
-          placeholder="说点什么…"
-          aria-label="聊天输入框"
-          enterKeyHint="send"
-          // 只是免得到服务端才吃 4001，**不是**气泡的显示容量（见 `docs/design/config.md` 的 `CHAT_MAX_LEN`）
-          maxLength={CHAT_MAX_LEN}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <PrimaryAction type="submit">发送</PrimaryAction>
+        {emoteOpen ? (
+          <>
+            {emoteToggle}
+            {EMOTE_SHORTCUTS.map(({ glyph, label }) => (
+              <button
+                key={glyph}
+                type="button"
+                className="emote-button"
+                aria-label={label}
+                onClick={() =>
+                  selectedId !== undefined ? sendWhisper(selectedId, glyph) : sendChat(glyph)
+                }
+              >
+                {glyph}
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            <TextInput
+              value={draft}
+              placeholder="说点什么…"
+              aria-label="聊天输入框"
+              enterKeyHint="send"
+              // 只是免得到服务端才吃 4001，**不是**气泡的显示容量（见 `docs/design/config.md` 的 `CHAT_MAX_LEN`）
+              maxLength={CHAT_MAX_LEN}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            {emoteToggle}
+            <PrimaryAction type="submit">发送</PrimaryAction>
+          </>
+        )}
       </form>
     </section>
   );

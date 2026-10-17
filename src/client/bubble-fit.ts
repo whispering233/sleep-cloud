@@ -25,20 +25,48 @@ export const BUBBLE_TEXT_PX = CHAT_BUBBLE_MAX_PX - BUBBLE_PAD * 2;
 
 /**
  * 13px 本机 Chromium 的**实测**字符宽（世界像素）：中文/全角 `13.00`、拉丁 `7.69`（量 `x`）、空格与 `·` `4.13`。
+ * emoji 另有一档：👋 💗 🤗 ❤️ 👨‍👩‍👧‍👦 1️⃣ 量到 `16.22`，最宽的 😴 量到 `20.85`，所以取 `21`（估多不估少）。
  * 量法：字体栈 `13px ui-sans-serif, system-ui, 'Noto Sans SC', sans-serif`，`ctx.measureText`。
  * （旧注释写的拉丁 `7.35` 在本机复现不出来：同一环境量 `x`@12px 是 `7.10`。）
- * 表外的字符（emoji、其它标点…）一律按最宽的中文档算——估多不估少。
+ * 表外的字符（其它标点…）一律按最宽的中文档算——估多不估少。
  * shortcut: ASCII 里 @ / W / m / % 实测最宽 13.00（与中文同宽），按 x（7.69）估对它们偏乐观；
  * 真机反馈「提示说放得下、实际被截断」时，就把拉丁档换成 ASCII 实测最宽值
  */
 const WIDTH_CJK_PX = 13;
 const WIDTH_LATIN_PX = 7.69;
 const WIDTH_NARROW_PX = 4.13;
+const WIDTH_EMOJI_PX = 21;
+
+/**
+ * 零宽组合字符：自己不吃宽度（宽度已经算在基字符上），否则一家人 👨‍👩‍👧‍👦 会被数成 4 倍宽。
+ * shortcut: 键帽序列 `1️⃣` 的基字符是 ASCII `1`（7.69），这一类会**估少**（实测 16.22）；
+ * 键帽在聊天里少见，真出现「提示说放得下、实际被截断」时再给它的基字符补一档。
+ */
+function isZeroWidth(codePoint: number): boolean {
+  return (
+    codePoint === 0x200d || // ZWJ
+    codePoint === 0xfe0f || // 变体选择符
+    codePoint === 0x20e3 || // 组合用键帽
+    (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff) // 肤色修饰符
+  );
+}
+
+/** emoji 码点：范围保守取宽的那边（`1F1E6` 区域指示符落在 `1F000–1FAFF` 里）。 */
+function isEmoji(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x1f000 && codePoint <= 0x1faff) ||
+    (codePoint >= 0x2600 && codePoint <= 0x27bf) ||
+    (codePoint >= 0x2b00 && codePoint <= 0x2bff)
+  );
+}
 
 function charWidthPx(char: string): number {
   if (char === ' ' || char === '·') return WIDTH_NARROW_PX;
+  const codePoint = char.codePointAt(0) ?? 0;
+  if (isZeroWidth(codePoint)) return 0;
+  if (isEmoji(codePoint)) return WIDTH_EMOJI_PX;
   // ASCII 可打印字符按拉丁算；其余（CJK、全角、表外）都按最宽的一档
-  return (char.codePointAt(0) ?? 0) <= 0x7e ? WIDTH_LATIN_PX : WIDTH_CJK_PX;
+  return codePoint <= 0x7e ? WIDTH_LATIN_PX : WIDTH_CJK_PX;
 }
 
 /** 折行：按字符宽度累加，装不下就换行（换行符算一次硬换行）；返回每行各装了几个字。 */

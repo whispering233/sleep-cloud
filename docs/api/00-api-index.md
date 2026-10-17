@@ -24,8 +24,8 @@
 
 | 方向 | 消息类型 |
 | :--- | :--- |
-| 上行（意图） | `hello` / `walk` / `lie` / `rise` / `sleep` / `chat` / `whisper` / `emote` |
-| 下行（事实） | **描述人**：`snapshot` / `join` / `leave` / `state` / `pos`；**描述厅与床**：`bed` / `resize`；**消息与错误**：`chat` / `whisper` / `emote` / `error` |
+| 上行（意图） | `hello` / `ping` / `walk` / `hop` / `lie` / `rise` / `sleep` / `chat` / `whisper` |
+| 下行（事实） | **描述人**：`snapshot` / `join` / `leave` / `state` / `pos`；**描述厅与床**：`bed` / `resize`；**消息与错误**：`chat` / `whisper` / `error`；**探活**：`pong` |
 
 详见 `20-api-ws.md`。
 

@@ -12,7 +12,6 @@ import {
   CHAT_MAX_LEN,
   CHAT_BUBBLE_MS,
   DAILY_WAKE_UTC_HOUR,
-  EMOTE_MS,
   GRACE_MS,
   HALL_ID,
   MAX_DPR,
@@ -62,7 +61,6 @@ describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
     expect(DAILY_WAKE_UTC_HOUR).toBe(20);
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
     expect(BED_SWITCH_COOLDOWN_MS).toBe(10_000);
-    expect(EMOTE_MS).toBe(2500);
     expect(CHAT_BUBBLE_MS).toBe(8_000);
   });
 

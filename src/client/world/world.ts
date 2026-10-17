@@ -14,7 +14,6 @@ import {
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
-import { EMOTE_LABELS } from '../emotes';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setOverview, setSwitching, showNotice } from '../store';
 import type { ClientState } from '../store';
@@ -44,7 +43,6 @@ import {
   paintPerson,
   placeBed,
   setPersonChat,
-  setPersonEmote,
   setPersonName,
 } from './views';
 import type { BedView, PersonView } from './views';
@@ -373,11 +371,10 @@ class WorldScene extends Phaser.Scene {
 
       const selected = person.id === state.selectedId;
       const named = shouldDrawName(person, state.me?.id) || selected;
-      const emote = state.emotes.get(person.id);
       // 气泡的过期在这里比较（**不挂定时器**）：到点就不再画，人不在视野里则整个视图被销毁
       const bubble = state.bubbles.get(person.id);
       const chat = bubble && bubble.expiresAt > now ? bubble : undefined;
-      // 头顶只有一个槽位：**聊天 > 表情 > 选中名字**。床上那条常显的裸标签在床下方，不跟着让位。
+      // 头顶只有一个槽位：**聊天 > 选中名字**。床上那条常显的裸标签在床下方，不跟着让位。
       // 名字在渲染时从 `people` 现取，**别人的消息单独占一行名字，自己的不画**（自己知道是自己）。
       setPersonChat(
         personView,
@@ -390,10 +387,6 @@ class WorldScene extends Phaser.Scene {
         detail && named && !(chat !== undefined && selected) ? person.name : '',
         person.state === 'trace',
         selected,
-      );
-      setPersonEmote(
-        personView,
-        detail && chat === undefined && emote && emote.expiresAt > now ? EMOTE_LABELS[emote.emoteId] : '',
       );
     }
 
