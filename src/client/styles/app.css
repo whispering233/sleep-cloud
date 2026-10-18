@@ -45,7 +45,7 @@
   }
 
   /* 三档减光层：整屏一层中性黑，`opacity` 跟着我自己的显示态（漫游 / 躺下 / 睡下，α 在 `src/client/tone.ts`）。
-     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在 HUD 遮罩 / 浮层 / 齿轮的 1/2/3 之上；
+     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在面板里遮罩 / 浮层 / 齿轮的 1/2/3 之上；
      `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡（`docs/ui/DESIGN.md` 的 `tone-layer` 行） */
   .tone-layer {
     position: fixed;
@@ -68,14 +68,12 @@
     pointer-events: none;
   }
 
+  /* 显示条：只有一行纯文字，左对齐。块方向只留 `spacing.xs`（上下各 4px）——显示组没有触击尺寸
+     要求，12px 字上下各 4px 就是全部余量（`docs/ui/DESIGN.md` 的 `hud` 行） */
   .hud {
-    /* 浮层（`.hud-menu`）的定位基准：铺在齿轮下方右对齐，不用 `getBoundingClientRect` 算坐标 */
-    position: relative;
     display: flex;
     align-items: center;
-    /* 组间间距大于组内间距：分组靠间距读出来，不画分隔线（`docs/ui/DESIGN.md` 的 `hud` 行） */
-    gap: var(--spacing-md);
-    padding-block: calc(env(safe-area-inset-top) + var(--spacing-sm)) var(--spacing-sm);
+    padding-block: calc(env(safe-area-inset-top) + var(--spacing-xs)) var(--spacing-xs);
     padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
       calc(env(safe-area-inset-right) + var(--spacing-md));
     color: var(--color-neutral-muted);
@@ -85,8 +83,7 @@
     letter-spacing: var(--tracking-caption);
   }
 
-  /* 显示组：纯文字，与右边的胶囊按钮靠外观区分。`flex:1 1 auto` 把它剩下的宽度全吃掉，
-     可点击组就被钉在最右；窄屏放不下时它自己折行（`flex-wrap`），不去挤压按钮 */
+  /* 显示组：纯文字，不带任何可点击外观。单行是设计目标，`flex-wrap` 只作兜底 */
   .hud-info {
     flex: 1 1 auto;
     min-width: 0;
@@ -96,15 +93,25 @@
     gap: var(--spacing-sm);
   }
 
-  /* 可点击组：不参与伸缩（宽度就是按钮的宽度），垂直居中跟随 HUD 高度 */
-  .hud-actions {
+  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 齿轮，
+     中间由齿轮那一格的 `margin-inline-start: auto` 拉开；不换行、高 44px */
+  .action-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--spacing-md);
+    min-height: 44px;
+  }
+
+  /* 可点击组：不参与伸缩（宽度就是按钮的宽度） */
+  .action-row-actions {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
   }
 
-  /* HUD 里的数值（床号、在线人数、空床、延迟）用等宽：数字跳动时不推挤旁边的文字 */
+  /* 界面里的数值（床号、在线人数、空床、延迟）用等宽：数字跳动时不推挤旁边的文字 */
   .hud-numeric {
     font-family: var(--font-numeric);
     font-size: var(--text-numeric);
@@ -113,12 +120,12 @@
     letter-spacing: var(--tracking-numeric);
   }
 
-  /* 可点击组的按钮外观：描边胶囊，与 `.emote-button` 同规格——项目里「这是个按钮」的既有答案，
-     HUD 沿用而不发明第二套。底透明：衬在 `primary` 通栏上，不写第二层底色。
-     高 44px 是触击尺寸（`touch-target-min`），不再用负外边距把它吃掉 */
+  /* 动作行里的按钮外观：描边胶囊，与 `.emote-toggle` 同规格——项目里「这是个按钮」的既有答案，
+     沿用而不发明第二套。底透明：衬在面板的 `secondary` 上，不写第二层底色。
+     描边仍用 `claimed`：`claimed` 压在 `secondary` 上是 **3.57:1**（压在 `primary` 上 3.12），
+     已经满足 WCAG 1.4.11 对非文本控件 3:1 的下限——搬进面板不需要换墨色。
+     高 44px 是触击尺寸（`touch-target-min`） */
   .hud-action {
-    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
-    pointer-events: auto;
     min-height: 44px;
     padding: 0 var(--spacing-md);
     color: var(--color-neutral);
@@ -131,18 +138,18 @@
     border-radius: var(--radius-full);
   }
 
-  /* 设置齿轮：钉在最右、垂直居中。与可点击组只靠 `.hud` 的组间间距（12px）分开，不画分隔线 */
+  /* 设置齿轮：钉在动作行右端（`margin-inline-start: auto` 把中间拉开），也是浮层的定位基准 */
   .hud-settings {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
+    margin-inline-start: auto;
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
      图标颜色吃 `neutral-muted`（齿轮是次要入口，与 `GO` 的 `neutral` 拉开一档） */
   .hud-settings-button {
-    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
-    pointer-events: auto;
     /* 齿轮自己也在遮罩之上（层级 3 > 浮层 2 > 遮罩 1）：「再点齿轮也关」就是按钮自己的 `onClick`，
        而不是碰巧被遮罩吃掉那一下 */
     position: relative;
@@ -163,13 +170,14 @@
     height: 20px;
   }
 
-  /* 齿轮浮层：右对齐到齿轮所在侧（右内边距与 `.hud` 的 `padding-inline-end` 同一个算式，
-     否则会在安全区手机上错开一截）、贴在 HUD 通栏下沿之下。宽度就一行字，不设上限也不会被右边缘裁掉。
-     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud` 本身不是层叠上下文） */
+  /* 齿轮浮层：**向上**展开（`inset-block-end: 100%`，定位基准是齿轮那一格 `.hud-settings`）、
+     右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
+     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud-settings` / `.chat-panel` 都不是层叠上下文） */
   .hud-menu {
     position: absolute;
-    inset-block-start: 100%;
-    inset-inline-end: calc(env(safe-area-inset-right) + var(--spacing-md));
+    inset-block-end: 100%;
+    inset-inline-end: 0;
+    margin-block-end: var(--spacing-xs);
     z-index: 2;
     padding: var(--spacing-sm);
     color: var(--color-neutral-muted);
@@ -207,30 +215,20 @@
     white-space: nowrap;
   }
 
-  /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击。
-     两件事共用这一行：`GO` 的床号输入、换床模式的提示（两者互斥，不会同屏） */
-  .hud-jump {
-    margin-block-start: calc(-1 * var(--spacing-sm));
-    padding-block-end: var(--spacing-sm);
-    padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
-      calc(env(safe-area-inset-right) + var(--spacing-md));
-    background-color: var(--color-primary);
-    pointer-events: auto;
-  }
-
-  .hud-jump-row {
+  /* 门控行（`GO` 的床号输入 / 换床提示）：面板里的普通一行，不再需要负外边距与自绘底色 */
+  .gate-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
   }
 
   /* 床号输入：与聊天框同一规格（`.input-field` 已是 44px / 16px），宽度上封一个数（桌面上不该拉成一整条） */
-  .hud-jump-input {
+  .gate-input {
     flex: 0 1 auto;
     max-width: 120px;
   }
 
-  .hud-jump-cancel {
+  .gate-cancel {
     min-width: 44px;
     min-height: 44px;
     color: var(--color-neutral-muted);
@@ -240,8 +238,8 @@
     border: 0;
   }
 
-  /* 换床提示行的那句话：与 HUD 的显示组同调（纯文字、不是按钮），剩余的宽度全吃掉 */
-  .hud-switch-hint {
+  /* 换床提示行的那句话（门控行）：与顶部显示条同调（纯文字、不是按钮），剩余的宽度全吃掉 */
+  .gate-hint {
     flex: 1 1 auto;
     margin: 0;
     color: var(--color-neutral);
@@ -344,17 +342,34 @@
     border: 0;
   }
 
-  /* 表情按钮：一点即发一条只含该 emoji 的聊天消息（切换键也用它，见 `.chat-composer`） */
-  .emote-button {
+  /* 表情切换键：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
+     `margin-inline-start: auto` 把它钉在行尾——与收起态的「发送」键同一个位置，两态不必重新找 */
+  .emote-toggle {
     min-width: 44px;
     min-height: 44px;
-    padding: 0 var(--spacing-sm);
+    margin-inline-start: auto;
+    padding: 0 var(--spacing-md);
     color: var(--color-neutral);
-    background-color: var(--color-secondary);
+    background-color: transparent;
     font-family: var(--font-label);
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
+  }
+
+  /* 5 个 emoji：纯字形、无描边无底色——靠**形状**跟切换键分开，不靠字形。
+     触击区仍是 44×44，只是看不见那条边 */
+  .emote-item {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    color: var(--color-neutral);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    border: 0;
     border-radius: var(--radius-full);
   }
 
@@ -411,11 +426,12 @@
 
   .input-field:focus-visible,
   .action-primary:focus-visible,
-  .emote-button:focus-visible,
+  .emote-toggle:focus-visible,
+  .emote-item:focus-visible,
   .conn-banner-retry:focus-visible,
   .hud-action:focus-visible,
   .hud-settings-button:focus-visible,
-  .hud-jump-cancel:focus-visible,
+  .gate-cancel:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;
@@ -525,6 +541,7 @@
   }
 
   .appearance-option {
+    position: relative;
     display: grid;
     justify-items: center;
     gap: var(--spacing-xs);
@@ -539,14 +556,39 @@
     letter-spacing: var(--tracking-label);
   }
 
+  /* 选中读作 2px 墨线，但边框本身留在 1px：改成 2px 会把预览图挤动 1px。
+     多出来的那 1px 用内阴影花在内侧，所以 :focus-visible 的外描边不会被它盖住。 */
   .appearance-option-selected {
     color: var(--color-neutral);
     border-color: var(--color-neutral);
+    box-shadow: inset 0 0 0 1px var(--color-neutral);
+  }
+
+  /* 角标只是装饰、不在 a11y 树里（可访问名走 aria-label）：绝对定位不参与网格排版，也不吃点击。 */
+  .appearance-option-selected::after {
+    content: '✓';
+    position: absolute;
+    inset-block-start: var(--spacing-xs);
+    inset-inline-end: var(--spacing-sm);
+    color: var(--color-neutral);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    pointer-events: none;
   }
 
   .appearance-option:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;
+  }
+
+  /* 两张素材等高不同宽（`boy_stand` 67、`girl_stand` 97，见 `public/sprites/frames.css`）：
+     统一放进 97×113 的框里居中，宽度差就不会被读成「两种尺寸的东西」。不缩放——113 就是素材原高。 */
+  .appearance-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 97px;
+    height: 113px;
   }
 
   /* 图集的帧是背景图，行内元素吃不到宽高（`sprites/frames.css` 只给 width/height/background-position） */

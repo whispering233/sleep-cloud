@@ -183,7 +183,7 @@ export function bedCountOf(index: number): number {
  * 内部床号 → **显示床号**（用户看到的第一张床是「1 号床」）。
  *
  * 内部编号一律 **0 起**（协议、归属位图、数据库、`bedNoAt` 的入参与返回值、`cellOf` 全都不动），
- * 这里是**唯一**一处显示换算：只有画在床角的数字与 HUD 那条「床号 N」吃它
+ * 这里是**唯一**一处显示换算：只有画在床角的数字与动作行那条「床号 N」吃它
  * （`docs/ui/DESIGN.md` 的 `bed-number`）。
  */
 export function displayBedNoOf(bedNo: number): number {

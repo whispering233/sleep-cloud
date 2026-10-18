@@ -10,6 +10,7 @@ import {
   PERSON_HIT_PX,
   TRACE_ALPHA,
   alignTargetOf,
+  anchorScroll,
   bedDirection,
   bedLook,
   bedMarkerOf,
@@ -19,10 +20,12 @@ import {
   followStep,
   isFaded,
   isMoving,
+  keyboardOf,
   personAlpha,
   personFrame,
   personHit,
   personPoint,
+  revealShift,
   shouldDrawName,
   tapTargetFor,
   truncateToLines,
@@ -387,6 +390,57 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
   });
 });
 
+describe('软键盘的相机锚点补偿（`anchorScroll`）：键盘前的左上角世界点不动', () => {
+  // 视口顶是调用方在同一个滚屏值下量的 `viewRect().y`：1× 下它随画布高一起变（393×852 → 键盘吃掉 352）
+  it('变矮（键盘弹起）：滚屏往上补同样的量，补完视口顶回到原位', () => {
+    const anchored = anchorScroll({ oldTop: 852, newTop: 500, scrollX: 0, scrollY: 0 });
+    expect(anchored).toEqual({ x: 0, y: 352 });
+    // 新视口顶 500 + 补偿 352 = 旧视口顶 852：那个世界点仍在屏幕左上角
+    expect(anchored.y + 500).toBe(852);
+  });
+
+  it('变高（键盘收起）：补偿量反向，正好抵掉弹起那一次', () => {
+    expect(anchorScroll({ oldTop: 500, newTop: 852, scrollX: 0, scrollY: 352 })).toEqual({ x: 0, y: 0 });
+  });
+
+  it('同一高度：幂等，滚屏一动不动（与键盘无关的 resize 不该让世界漂）', () => {
+    const same = { oldTop: 812.5, newTop: 812.5, scrollX: -37, scrollY: 640 };
+    expect(anchorScroll(same)).toEqual({ x: -37, y: 640 });
+  });
+
+  it('横向不变：键盘只吃掉底部', () => {
+    expect(anchorScroll({ oldTop: 900, newTop: 400, scrollX: 123, scrollY: 456 }).x).toBe(123);
+  });
+});
+
+describe('被键盘 / 面板遮住时的最小位移（`revealShift`）：只推到「刚好露出」', () => {
+  // 可用视口：393 宽、顶 60、高 663 → 底边 723（与「可用视口」那一组同一组数）
+  const usable = { x: 0, y: 60, width: 393, height: 663 };
+  const at = (y: number) => ({ x: 200, y });
+
+  it('在可用视口里（含正好压在两条边界上）：0，镜头一点不动', () => {
+    expect(revealShift({ self: at(400), usable })).toBe(0);
+    expect(revealShift({ self: at(usable.y), usable })).toBe(0);
+    expect(revealShift({ self: at(usable.y + usable.height), usable })).toBe(0);
+  });
+
+  it('被底部吃掉：只推到边界（往上露出那一点点），不把整条带抬上来', () => {
+    expect(revealShift({ self: at(783), usable })).toBe(60);
+    expect(revealShift({ self: at(723.5), usable })).toBeCloseTo(0.5, 6);
+  });
+
+  it('被顶部吃掉：往负推，只推回边界', () => {
+    expect(revealShift({ self: at(20), usable })).toBe(-40);
+    expect(revealShift({ self: at(59.5), usable })).toBeCloseTo(-0.5, 6);
+  });
+
+  it('推完之后人正好在边界上（不多推一像素）', () => {
+    const shift = revealShift({ self: at(900), usable });
+    expect(shift).toBe(177);
+    expect(usable.y + usable.height + shift).toBe(900);
+  });
+});
+
 describe('我的床的方位（离屏时的 8 方位字形）', () => {
   // 393×852 竖屏：顶部 HUD 60px、底部聊天面板 129px（与「可用视口」那一组同一组数）
   const view = { x: 0, y: 0, width: 393, height: 852 };
@@ -527,5 +581,59 @@ describe('进厅 / 重连时相机对准谁', () => {
   it('两个都没有时返回 undefined（调用方退回厅中心）', () => {
     expect(alignTargetOf({ reconnected: false })).toBeUndefined();
     expect(alignTargetOf({ reconnected: true })).toBeUndefined();
+  });
+});
+
+/**
+ * 键盘状态的纯函数：`visualViewport` 是视口缩小的唯一来源（`docs/ui/DESIGN.md`「软键盘」）。
+ * 面板抬升与画布缩小吃的是同一份 `shrink`，所以这里的每个数都得说清楚。
+ */
+describe('软键盘状态：缩小量、pan 与「算不算打开」', () => {
+  it('没有 visualViewport（桌面 / 老浏览器）：不开、不缩、不 pan', () => {
+    expect(keyboardOf(852, null)).toEqual({ open: false, shrink: 0, pan: 0 });
+  });
+
+  it('键盘打开：缩小量 = innerHeight − 视觉视口高；iOS 聚焦时的 pan 取 offsetTop', () => {
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 0 });
+    expect(keyboardOf(852, { height: 516, offsetTop: 100, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 100 });
+  });
+
+  it('地址栏收放：两个高度同步变、差 ≈ 0，所以判成「不是键盘」', () => {
+    expect(keyboardOf(852, { height: 852, offsetTop: 0, scale: 1 }).open).toBe(false);
+    expect(keyboardOf(744, { height: 744, offsetTop: 0, scale: 1 }).open).toBe(false);
+    expect(keyboardOf(800, { height: 802, offsetTop: 0, scale: 1 }).open).toBe(false);
+  });
+
+  it('门槛在 80px：正好 80 不算，81 算（手写条 / 小键盘不至于反复开合）', () => {
+    expect(keyboardOf(852, { height: 772, offsetTop: 0, scale: 1 }).open).toBe(false);
+    expect(keyboardOf(852, { height: 771, offsetTop: 0, scale: 1 }).open).toBe(true);
+  });
+
+  it('取整抖动：视觉视口比布局视口还高、或 offsetTop 为负时不留负数', () => {
+    expect(keyboardOf(852, { height: 853, offsetTop: 0, scale: 1 }).shrink).toBe(0);
+    expect(keyboardOf(852, { height: 516, offsetTop: -3, scale: 1 }).pan).toBe(0);
+  });
+
+  it('两个数都取整：不到一个 CSS 像素的抖动不该让画布与面板逐帧重排', () => {
+    expect(keyboardOf(852, { height: 515.6, offsetTop: 0.4, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 0 });
+    expect(keyboardOf(852, { height: 515.4, offsetTop: 0.6, scale: 1 })).toEqual({ open: true, shrink: 337, pan: 1 });
+  });
+});
+
+describe('键盘判据的护栏：页面被捏合放大时一律不算键盘', () => {
+  it('scale > 1 时不进键盘态（否则手指捏一下就把整屏 UI 塌成半截）', () => {
+    // 852 / 2 = 426 → shrink 426，破门槛；但只要 scale 是 2 就必须判「没开」
+    expect(keyboardOf(852, { height: 426, offsetTop: 0, scale: 2 })).toEqual({
+      open: false,
+      shrink: 426,
+      pan: 0,
+    });
+    // 放大一点点也算：852 ×（1 − 1/1.2）≈ 142 > 80
+    expect(keyboardOf(852, { height: 710, offsetTop: 0, scale: 1.2 }).open).toBe(false);
+  });
+
+  it('scale 的取整抖动（1.001 / 正好 1）仍照常判键盘', () => {
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 }).open).toBe(true);
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1.001 }).open).toBe(true);
   });
 });

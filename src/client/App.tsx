@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
@@ -8,6 +8,7 @@ import { Hud } from './components/Hud';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
+import { trackKeyboard } from './keyboard';
 import { connectHall } from './ws';
 
 /**
@@ -15,6 +16,7 @@ import { connectHall } from './ws';
  * 入场层每次进厅前都出现；进厅之后才建连——昵称只在建连之前改变，所以协议里不需要「改名」消息。
  */
 export function App() {
+  const shellRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<SessionView | null>(null);
   /** 入场前的厅满判定（`/api/me` 的 `2002`）：厅满了就不让人建连再被踢 */
   const [full, setFull] = useState(false);
@@ -35,13 +37,19 @@ export function App() {
 
   const layoutVersion = session?.layoutVersion;
 
+  // 软键盘：视口缩小量与 pan 写到 `.app-shell` 上（画布与面板同吃这一份，见 `./keyboard.ts`）
+  useEffect(() => {
+    const shell = shellRef.current;
+    return shell ? trackKeyboard(shell) : undefined;
+  }, []);
+
   useEffect(() => {
     if (!entered || !layoutVersion) return;
     return connectHall({ layoutVersion });
   }, [entered, layoutVersion]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={shellRef}>
       <WorldCanvas />
 
       {entered ? (

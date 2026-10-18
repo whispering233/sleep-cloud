@@ -5,7 +5,7 @@ import { parseJumpTarget } from '../bed-jump';
 const BED_COUNT = 117; // 第 1 档容量：显示床号 1 ~ 117
 const RANGE_ERROR = { error: `床号要在 1~${BED_COUNT} 之间` };
 
-describe('HUD 的床号输入（显示床号 → 内部床号）', () => {
+describe('动作行的床号输入（显示床号 → 内部床号）', () => {
   it('合法输入换算成内部值：显示 1 = 内部 0，显示 13 = 内部 12', () => {
     expect(parseJumpTarget('1', BED_COUNT)).toEqual({ bedNo: 0 });
     expect(parseJumpTarget('13', BED_COUNT)).toEqual({ bedNo: 12 });
