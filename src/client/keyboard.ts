@@ -10,7 +10,7 @@
 import { keyboardOf } from './world/rules';
 import type { KeyboardState } from './world/rules';
 
-/** 此刻的键盘状态：世界层每帧读它（键盘期间不夹取、不 follow）。 */
+/** 此刻的键盘状态：`trackKeyboard` 每吃一次视口事件就重算一遍，`shrink` 决定面板抬多高。 */
 let current: KeyboardState = { open: false, shrink: 0, pan: 0 };
 
 export function keyboardNow(): KeyboardState {

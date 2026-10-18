@@ -10,7 +10,6 @@ import {
   PERSON_HIT_PX,
   TRACE_ALPHA,
   alignTargetOf,
-  anchorScroll,
   bedDirection,
   bedLook,
   bedMarkerOf,
@@ -25,7 +24,6 @@ import {
   personFrame,
   personHit,
   personPoint,
-  revealShift,
   shouldDrawName,
   tapTargetFor,
   truncateToLines,
@@ -401,57 +399,6 @@ describe('可用视口（相机取景、夹取与死区都按它算）', () => {
     expect(bounds.height).toBe(region.height);
     expect(bounds.x).toBeCloseTo(region.x);
     expect(bounds.y).toBeCloseTo(region.y);
-  });
-});
-
-describe('软键盘的相机锚点补偿（`anchorScroll`）：键盘前的左上角世界点不动', () => {
-  // 视口顶是调用方在同一个滚屏值下量的 `viewRect().y`：1× 下它随画布高一起变（393×852 → 键盘吃掉 352）
-  it('变矮（键盘弹起）：滚屏往上补同样的量，补完视口顶回到原位', () => {
-    const anchored = anchorScroll({ oldTop: 852, newTop: 500, scrollX: 0, scrollY: 0 });
-    expect(anchored).toEqual({ x: 0, y: 352 });
-    // 新视口顶 500 + 补偿 352 = 旧视口顶 852：那个世界点仍在屏幕左上角
-    expect(anchored.y + 500).toBe(852);
-  });
-
-  it('变高（键盘收起）：补偿量反向，正好抵掉弹起那一次', () => {
-    expect(anchorScroll({ oldTop: 500, newTop: 852, scrollX: 0, scrollY: 352 })).toEqual({ x: 0, y: 0 });
-  });
-
-  it('同一高度：幂等，滚屏一动不动（与键盘无关的 resize 不该让世界漂）', () => {
-    const same = { oldTop: 812.5, newTop: 812.5, scrollX: -37, scrollY: 640 };
-    expect(anchorScroll(same)).toEqual({ x: -37, y: 640 });
-  });
-
-  it('横向不变：键盘只吃掉底部', () => {
-    expect(anchorScroll({ oldTop: 900, newTop: 400, scrollX: 123, scrollY: 456 }).x).toBe(123);
-  });
-});
-
-describe('被键盘 / 面板遮住时的最小位移（`revealShift`）：只推到「刚好露出」', () => {
-  // 可用视口：393 宽、顶 60、高 663 → 底边 723（与「可用视口」那一组同一组数）
-  const usable = { x: 0, y: 60, width: 393, height: 663 };
-  const at = (y: number) => ({ x: 200, y });
-
-  it('在可用视口里（含正好压在两条边界上）：0，镜头一点不动', () => {
-    expect(revealShift({ self: at(400), usable })).toBe(0);
-    expect(revealShift({ self: at(usable.y), usable })).toBe(0);
-    expect(revealShift({ self: at(usable.y + usable.height), usable })).toBe(0);
-  });
-
-  it('被底部吃掉：只推到边界（往上露出那一点点），不把整条带抬上来', () => {
-    expect(revealShift({ self: at(783), usable })).toBe(60);
-    expect(revealShift({ self: at(723.5), usable })).toBeCloseTo(0.5, 6);
-  });
-
-  it('被顶部吃掉：往负推，只推回边界', () => {
-    expect(revealShift({ self: at(20), usable })).toBe(-40);
-    expect(revealShift({ self: at(59.5), usable })).toBeCloseTo(-0.5, 6);
-  });
-
-  it('推完之后人正好在边界上（不多推一像素）', () => {
-    const shift = revealShift({ self: at(900), usable });
-    expect(shift).toBe(177);
-    expect(usable.y + usable.height + shift).toBe(900);
   });
 });
 
