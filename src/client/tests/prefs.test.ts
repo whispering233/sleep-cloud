@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest';
+
+import { PREFS, readZoomMode } from '../prefs';
+import type { PrefStorage } from '../prefs';
+import { getState, setZoomMode } from '../store';
+
+/** 假 storage：单测跑在 Node（没有 `localStorage`），读写都走这张表。 */
+const fakeStorage = (): PrefStorage & { data: Map<string, string> } => {
+  const data = new Map<string, string>();
+  return {
+    data,
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => {
+      data.set(key, value);
+    },
+    removeItem: (key) => {
+      data.delete(key);
+    },
+  };
+};
+
+describe('缩放档位偏好（sc.zoom.mode）', () => {
+  it('缺键 → 默认值（自由缩放）', () => {
+    expect(readZoomMode(fakeStorage())).toEqual({ kind: 'free' });
+  });
+
+  it('坏 JSON → 默认值，且该键已被删（不删就永久循环判废）', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.zoomMode, '{不是 JSON');
+    expect(readZoomMode(storage)).toEqual({ kind: 'free' });
+    expect(storage.data.has(PREFS.zoomMode)).toBe(false);
+  });
+
+  it('版本不符 → 默认值，且该键已被删（旧值不写迁移代码，自动判废）', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.zoomMode, JSON.stringify({ v: 2, mode: 0.75 }));
+    expect(readZoomMode(storage)).toEqual({ kind: 'free' });
+    expect(storage.data.has(PREFS.zoomMode)).toBe(false);
+  });
+
+  it('非法 mode → 默认值，且该键已被删（白名单：free 或恰好等于 ZOOM_TIERS 里某一档）', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.zoomMode, JSON.stringify({ v: 1, mode: '9x' }));
+    expect(readZoomMode(storage)).toEqual({ kind: 'free' });
+    expect(storage.data.has(PREFS.zoomMode)).toBe(false);
+
+    // 连续比例（0.6 不在档位表里）同样不是合法偏好
+    storage.data.set(PREFS.zoomMode, JSON.stringify({ v: 1, mode: 0.6 }));
+    expect(readZoomMode(storage)).toEqual({ kind: 'free' });
+    expect(storage.data.has(PREFS.zoomMode)).toBe(false);
+
+    // 合法档照常读回来
+    storage.data.set(PREFS.zoomMode, JSON.stringify({ v: 1, mode: 0.75 }));
+    expect(readZoomMode(storage)).toEqual({ kind: 'fixed', z: 0.75 });
+  });
+
+  it('setItem 抛错（配额满 / 隐私模式）不抛出去，内存里的档位照常生效', () => {
+    const storage = fakeStorage();
+    storage.setItem = () => {
+      throw new Error('quota');
+    };
+    (globalThis as { localStorage?: PrefStorage }).localStorage = storage;
+    try {
+      expect(() => setZoomMode({ kind: 'fixed', z: 0.75 })).not.toThrow();
+      expect(getState().zoomMode).toEqual({ kind: 'fixed', z: 0.75 });
+      // 切回 `自由缩放` 走的是同一条写入路径（不做「free 就删键」的第二条分支）
+      expect(() => setZoomMode({ kind: 'free' })).not.toThrow();
+      expect(getState().zoomMode).toEqual({ kind: 'free' });
+    } finally {
+      delete (globalThis as { localStorage?: PrefStorage }).localStorage;
+    }
+  });
+});

@@ -574,8 +574,9 @@ class WorldScene extends Phaser.Scene {
   }
 
   private alignCamera(state: ClientState, reconnected: boolean): void {
-    // 首次进厅先回 1×：拉远是当下的临时视角，不该跨会话带着（重连保留用户当时的视角）
-    if (!reconnected) this.setZoom(1);
+    // 首次进厅按本地偏好取比例：显式锁定的档整页重载后还在（读自 `sc.zoom.mode`），
+    // 而 `自由缩放` 下的连续比例不跨会话（这时的初值就是 `1×`）。重连保留用户当时的视角
+    if (!reconnected) this.setZoom(state.zoomMode.kind === 'fixed' ? state.zoomMode.z : 1);
     const focus = alignTargetOf({
       reconnected,
       bedPoint: this.ownBedPoint(state),

@@ -1,7 +1,9 @@
 import { ZOOM_TIERS } from '../shared/constants';
 
 /**
- * 世界缩放档位（**客户端本地状态、会话内、不持久化**，见 `docs/ui/DESIGN.md` 的世界相机）。
+ * 世界缩放档位（**客户端本地状态**，见 `docs/ui/DESIGN.md` 的世界相机）。
+ * **显式锁定的档持久化**（键 `sc.zoom.mode`，见 `docs/design/40-client-storage.md`）；`自由缩放`
+ * 下的连续比例是当场操作、不是偏好，不持久化（整页加载后回 `1×`）。
  *
  * 界面层与世界层共用这一个纯模块（界面层只 `import type` 世界层，所以档位不能落在 `world/rules.ts`），
  * 它**不依赖 Phaser**——动作行那颗胶囊的文案与选项都从这里取，界面不自己写档位的数。

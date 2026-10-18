@@ -21,6 +21,7 @@ import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
+import { readZoomMode, writeZoomMode } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
@@ -98,7 +99,9 @@ export interface ClientState {
    */
   switching: boolean;
   /**
-   * **世界缩放档位**（客户端本地状态，不进协议、不进快照、不持久化）：`自由缩放` 或锁死在某一档。
+   * **世界缩放档位**（客户端本地状态，不进协议、不进快照）：`自由缩放` 或锁死在某一档。
+   * **显式锁定的档持久化**（键 `sc.zoom.mode`，见 `docs/design/40-client-storage.md`）；`自由缩放`
+   * 下的连续比例是当场操作、不是偏好，不持久化（整页加载后回 `1×`）。
    * 它与 `switching` 无关：缩放是视角，不是模式，两个可以同时开。
    */
   zoomMode: ZoomMode;
@@ -112,7 +115,8 @@ const emptyState = (): ClientState => ({
   clockOffsetMs: 0,
   bubbles: new Map(),
   switching: false,
-  zoomMode: { kind: 'free' },
+  // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
+  zoomMode: readZoomMode(),
 });
 
 let state: ClientState = emptyState();
@@ -207,10 +211,14 @@ export function setSwitching(on: boolean): void {
   setState({ switching: on });
 }
 
-/** 写世界缩放档位（见 `ClientState.zoomMode`）：同值不写（档位是低频状态，不需要白重渲染一次）。 */
+/**
+ * 写世界缩放档位（见 `ClientState.zoomMode`）：同值不写（档位是低频状态，不需要白重渲染一次）。
+ * 改档位（含切回 `自由缩放`）**只走这一条写入路径**，落到本地偏好——整页重载后显式锁定的档还在。
+ */
 export function setZoomMode(mode: ZoomMode): void {
   if (sameZoomMode(state.zoomMode, mode)) return;
   setState({ zoomMode: mode });
+  writeZoomMode(mode);
 }
 
 /**
