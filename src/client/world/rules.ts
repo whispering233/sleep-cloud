@@ -257,71 +257,33 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
 
 /**
  * 软键盘吃掉的视口（`docs/ui/DESIGN.md`「软键盘」）：只算两个数，不碰 DOM。
- * 键盘是否打开 = 底部被吃掉的高度超过一个门槛：**地址栏收放时** `innerHeight` 与
- * `visualViewport.height` 同步变化（差 ≈ 0），所以这个判据不会被地址栏骗到；
- * 真键盘（iOS / Android）的差都在两百像素以上。
+ * `shrink` = `innerHeight − visualViewport.height`：**地址栏收放时两者同步变、差 ≈ 0**，所以这个判据
+ * 不会被地址栏饵到；真键盘（iOS / Android）的差都在两百像素以上。
  *
- * **页面被捏合放大时必须直接判「没开」**：不禁用户缩放（`AGENTS.md` 硬纪律 18），而放大后
- * `visualViewport.height ≈ innerHeight / scale`，`scale` 只要超过 1.1 差额就破门槛——不拦的话，
- * 用户在面板上捏一下页面就会把整屏 UI 塌成上半截、还顺手涞把相机冻住。缩小（`scale < 1`，部分浏览器
- * 允许）不在此列：它让视觉视口比布局视口还高，`shrink` 本来就是 0。
- *
- * shortcut: 键盘滑入时跨过门槛之前的几帧仍走「尺寸变化」那条路（基线晚一点才记下），
- * 那几帧的偏差小于真键盘高度的一小截，等真机实测说它看得见再收紧口径。
+ * **页面被捏合放大时一律判「没吃视口」**（`shrink = 0`）：不禁用户缩放（`AGENTS.md` 硬纪律 18），
+ * 而放大后 `visualViewport.height ≈ innerHeight / scale`——不拦的话，在输入行上捏一下就会把整个外壳
+ * 抬到半屏高。缩小（`scale < 1`，部分浏览器允许）不在此列：它让视觉视口比布局视口还高，`shrink`
+ * 本来就是 0。
  */
-export const KEYBOARD_OPEN_PX = 80;
-
 export interface KeyboardState {
-  /** 键盘是否打开 */
-  open: boolean;
-  /** 底边被吃掉的高度（CSS px）= `innerHeight − visualViewport.height` */
+  /** 底边被吃掉的高度（CSS px）= `innerHeight − visualViewport.height`；页面放大期间恒为 0 */
   shrink: number;
   /** 视觉视口被往下 pan 的量（`visualViewport.offsetTop`）：iOS 聚焦输入框时会 pan */
   pan: number;
 }
 
-/** 纯函数：两个视口高度 → 键盘状态。`viewport` 为 `null`（桌面 / 老浏览器）与「视觉视口比布局视口还高」（取整抖动）都退回「没开、没缩」。 */
+/** 纯函数：两个视口高度 → 键盘状态。`viewport` 为 `null`（桌面 / 老浏览器）与「视觉视口比布局视口还高（取整抖动）」都退回「没吃、没 pan」。 */
 export function keyboardOf(
   innerHeight: number,
   viewport: { height: number; offsetTop: number; scale: number } | null,
 ): KeyboardState {
-  if (!viewport) return { open: false, shrink: 0, pan: 0 };
-  const shrink = Math.max(0, Math.round(innerHeight - viewport.height));
-  // 放大过的页面不是键盘（见上面那段）：宁可退回「尺寸变化」那条路，也不能把 UI 塌成半屏
+  if (!viewport) return { shrink: 0, pan: 0 };
+  // 放大过的页面不是键盘（见上面那段）：宁可当成没吃视口，也不能把外壳抬成半屏
   const zoomed = viewport.scale > 1.01;
   return {
-    open: !zoomed && shrink > KEYBOARD_OPEN_PX,
-    shrink,
+    shrink: zoomed ? 0 : Math.max(0, Math.round(innerHeight - viewport.height)),
     pan: Math.max(0, Math.round(viewport.offsetTop)),
   };
-}
-
-/**
- * 软键盘的相机锚点补偿（`docs/ui/DESIGN.md`「软键盘」的相机锚点行）：
- * **键盘前视口左上角那一个世界点不动**——滚屏只按「旧视口顶 − 新视口顶」平移一遍。
- * 不重算取景中心：重算中心的表现就是人被推上去，收起时再弹回来。
- * 横向不变（键盘只吃掉底部）。
- *
- * 两个「视口顶」是同一个滚屏值之下量出来的 `viewRect().y`（变尺寸前后各量一次）。
- */
-export function anchorScroll(input: {
-  oldTop: number;
-  newTop: number;
-  scrollX: number;
-  scrollY: number;
-}): { x: number; y: number } {
-  return { x: input.scrollX, y: input.scrollY + (input.oldTop - input.newTop) };
-}
-
-/**
- * 自己被键盘 / 面板吃掉时的**最小位移**（世界像素）：`0` = 一点不动；正数 = 镜头往下推（人往上露出来）；
- * 负数 = 往上拉回。推到「刚好露出」为止，不多推一像素——多推就是在重新取景。
- */
-export function revealShift(input: { self: { x: number; y: number }; usable: Rect }): number {
-  const bottom = input.usable.y + input.usable.height;
-  if (input.self.y > bottom) return input.self.y - bottom;
-  if (input.self.y < input.usable.y) return input.self.y - input.usable.y;
-  return 0;
 }
 
 /** 八个方位（世界像素的罗盘：上 = 北）。动作行的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';

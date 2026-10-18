@@ -14,14 +14,12 @@ import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positi
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { errorTextFor } from '../error-text';
-import { keyboardNow } from '../keyboard';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
 import type { ClientState } from '../store';
 import type { ZoomMode } from '../zoom';
 import {
   alignTargetOf,
-  anchorScroll,
   bedDirection,
   bedLook,
   bedMarkerOf,
@@ -31,7 +29,6 @@ import {
   isFaded,
   isMoving,
   personPoint,
-  revealShift,
   shouldDrawName,
   tapTargetFor,
   usableView,
@@ -83,6 +80,11 @@ export interface WorldHandle {
   focusBed(bedNo: number): void;
   /** 设世界缩放档位（动作行那颗胶囊；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
+  /**
+   * 插槽面板打开 / 关闭（`docs/design/50-slot-panel.md` §4）：打开期间**画布尺寸与相机冻结**
+   * （键盘动画逐帧触发才会逐帧重建绘制缓冲），关闭时**先解冻、立即重建一次**、然后才淡出。
+   */
+  setSlotOpen(open: boolean): void;
 }
 
 /**
@@ -98,13 +100,6 @@ export interface UiInsets {
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
 const TAP_MS = 350;
-
-/** 焦点还在可编辑元素上就收掉它：画布上的指针事件被 Phaser preventDefault，浏览器默认的「点别处 = 失焦」不会发生（见 `docs/ui/DESIGN.md` 的「软键盘 · 轻点画布」）。 */
-function blurFocusedEditable(): void {
-  const active = document.activeElement;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
-  else if (active instanceof HTMLElement && active.isContentEditable) active.blur();
-}
 
 /** 跟随的匀速速度：约 0.5 秒追上 250px（跟得上，又不像镜头被硬拖）。 */
 const CAMERA_FOLLOW_PX_PER_S = 500;
@@ -177,12 +172,11 @@ class WorldScene extends Phaser.Scene {
   private insets: ViewInsets = { top: 0, bottom: 0 };
   private insetsObserver: ResizeObserver | null = null;
   /**
-   * 键盘前的滚屏与视口顶（`undefined` = 键盘没开）：键盘期间相机只由它现算，
-   * 收起时原样写回（`docs/ui/DESIGN.md`「软键盘」的收起行）。它同时是「夹取冻结」的标记。
+   * 插槽面板开着（`docs/design/50-slot-panel.md` §4）：画布尺寸与相机整体冻结。
+   * 画布尺寸由 `resizeToHost` 早退守住（保留打开前的像素尺寸，只被 `.app-shell` 裁掉底部），
+   * 相机由「夹取与 `follow` 都不跑」守住。
    */
-  private baseline: { x: number; y: number; viewTop: number } | undefined;
-  /** 键盘期间用户自己动了镜头：不再推「露出自己」——新位置就是新基线 */
-  private keyboardMoved = false;
+  private slotOpen = false;
 
   constructor(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets) {
     super('world');
@@ -227,8 +221,6 @@ class WorldScene extends Phaser.Scene {
     }
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
-    // 键盘的打开 / 收起要在相机这一帧的任何动作之前收口（补偿、冻结夹取、写回基线）
-    this.syncKeyboard();
 
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
     const online = state.connection === 'online';
@@ -433,81 +425,6 @@ class WorldScene extends Phaser.Scene {
     this.applyCameraBounds();
   }
 
-  // ——— 软键盘（`docs/ui/DESIGN.md`「软键盘」） ———
-
-  /**
-   * 键盘的每帧收口：打开就记基线并冻结夹取（`beginKeyboard`），关闭就写回基线再夹一次。
-   * 视口高度与面板位置由 `visualViewport` 那一层统一驱动（`../keyboard.ts`），这里只管相机。
-   */
-  private syncKeyboard(): void {
-    if (keyboardNow().open) {
-      this.beginKeyboard();
-      this.keyboardCamera();
-      return;
-    }
-    this.endKeyboard();
-  }
-
-  /**
-   * 记下键盘前的滚屏与视口顶，并 **摘掉 bounds**：Phaser 每帧 `preRender` 会在 `useBounds` 下
-   * 再夹一次滚屏，留着就把锚点补偿与最小位移一起打回去了。
-   */
-  private beginKeyboard(): void {
-    if (this.baseline) return;
-    const camera = this.cameras.main;
-    this.baseline = { x: camera.scrollX, y: camera.scrollY, viewTop: this.viewRect().y };
-    this.keyboardMoved = false;
-    camera.removeBounds();
-  }
-
-  /**
-   * 收起：滚屏**写回基线**（不重新取景，所以第二次位移为 0），然后夹取一次把 bounds 装回去。
-   * 顺序不能倒、也不能分两帧：基线那个位置在键盘前的 bounds 下本来就合法，先写回再夹不会被 clamp 打回。
-   */
-  private endKeyboard(): void {
-    const base = this.baseline;
-    if (!base) return;
-    this.baseline = undefined;
-    this.cameras.main.scrollX = base.x;
-    this.cameras.main.scrollY = base.y;
-    this.applyCameraBounds();
-  }
-
-  /**
-   * 键盘期间**唯一**的相机算法：锚点由基线现算（视口左上角那个世界点不动），只有自己被面板 / 键盘
-   * 吃掉时才补一次「刚好露出」。每一步都不读上一帧的结果，所以键盘动画逐帧触发也不累积误差。
-   */
-  private keyboardCamera(): void {
-    const base = this.baseline;
-    if (!base) return;
-    const camera = this.cameras.main;
-    camera.scrollX = base.x;
-    camera.scrollY = base.y;
-    // 先摆回基线滚屏，再看同一个世界点在新的视口高度下躲到哪去了：差多少补多少
-    const anchored = anchorScroll({
-      oldTop: base.viewTop,
-      newTop: this.viewRect().y,
-      scrollX: base.x,
-      scrollY: base.y,
-    });
-    camera.scrollX = anchored.x;
-    camera.scrollY = anchored.y;
-    if (this.keyboardMoved) return;
-    this.measureInsets();
-    const usable = usableView(this.viewRect(), this.insetsWorld());
-    const state = getState();
-    const self = this.selfPoint(state, Date.now() + state.clockOffsetMs);
-    if (self) camera.scrollY += revealShift({ self, usable });
-  }
-
-  /** 键盘期间用户自己动了镜头（拖拽 / 捏合）：当前滚屏就是新基线，之后不再推「露出自己」。 */
-  private rebaseKeyboard(): void {
-    if (!this.baseline) return;
-    const camera = this.cameras.main;
-    this.baseline = { x: camera.scrollX, y: camera.scrollY, viewTop: this.viewRect().y };
-    this.keyboardMoved = true;
-  }
-
   /**
    * 我的床在**可用视口**里的方位 → store（`undefined` = 在视野内）。
    * 算在这里而不是 React 里：这是逐帧的活，进框架的渲染循环会把几百个小人拖死（`AGENTS.md` 硬纪律）。
@@ -530,8 +447,8 @@ class WorldScene extends Phaser.Scene {
    * 取位点由 `update` 取一次后传进来（与那一帧渲染用的小人位置是同一个点）。
    */
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
-    // 键盘期间不 follow（`docs/ui/DESIGN.md`「软键盘」的冻结行）：镜头只在遮住时补一次最小位移
-    if (this.baseline) return;
+    // 插槽面板开着：相机整体冻结，打开前的滚屏值就是最终值（`docs/design/50-slot-panel.md` §4）
+    if (this.slotOpen) return;
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
     // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下。
@@ -604,8 +521,6 @@ class WorldScene extends Phaser.Scene {
     // **减**偏移：可用带中心在视口中心**之上**（底部界面占位通常更大），所以焦点要跟着往上挑
     const offset = usableCenterOffset(view, this.insetsWorld());
     this.cameras.main.centerOn(point.x - offset.x, point.y - offset.y);
-    // 键盘期间的一次性跳转（回我的床 / `GO` / 点自己）也是「用户接管」：不把它拉回基线
-    this.rebaseKeyboard();
   }
 
   /**
@@ -618,8 +533,8 @@ class WorldScene extends Phaser.Scene {
    */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
-    // 键盘期间不夹取：夹取会把锚点补偿与最小位移打回（bounds 也已经被 `beginKeyboard` 摘掉）
-    if (this.baseline) return;
+    // 插槽面板开着：夹取不跑（冻结期间相机不动）
+    if (this.slotOpen) return;
     const outer = scrollRegionOf(levelIndexOfBedCount(this.loadedBedCount));
     const view = this.viewRect();
     // 夹取前先按 DOM 的最新实占刷新 insets，再换成世界像素（拉远后视角里「屏幕 1px」不再是「世界 1px」）
@@ -659,29 +574,22 @@ class WorldScene extends Phaser.Scene {
    * 画布像素 = CSS 像素 × DPR，而相机 `zoom = DPR × 拉远比例` 把世界像素换回 CSS 像素（1× 下 1 世界像素 = 1 CSS 像素）。
    */
   private resizeToHost(): void {
+    // 插槽面板开着：画布像素尺寸冻结——保留打开前的尺寸（只被 `.app-shell` 裁掉底部）。
+    // 否则键盘动画会让这里逐帧重建绘制缓冲、每帧清空内容，就是那些闪烁（`50-slot-panel.md` §4）
+    if (this.slotOpen) return;
     const rect = this.host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const keyboard = keyboardNow().open;
-    // 记基线必须在 resize **之前**：那才是键盘前的滚屏与视口顶
-    if (keyboard) this.beginKeyboard();
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     this.dpr = dpr;
     this.scale.zoom = 1 / dpr;
     this.scale.resize(Math.round(rect.width * dpr), Math.round(rect.height * dpr));
     this.applyZoom();
-    // 键盘期间：宿主变高变矮只做「锚点补偿 + 一次最小位移」；收起则写回基线。
-    // 两者都必须在**这一帧**内（ResizeObserver 的回调就落在上屏前）：留到下一次 `update` 会闪一下。
-    if (keyboard) this.keyboardCamera();
-    else this.endKeyboard();
   }
 
   /** 把拉远比例推给相机（相机 zoom = 画布 DPR × 拉远比例）：比例变了可见范围也变，夹取跟着重算。 */
   private applyZoom(): void {
     this.cameras.main.setZoom(this.dpr * this.zoom);
     this.applyCameraBounds();
-    // 键盘期间夹取是冻结的（上面早退），但 zoom 变了视口顶也会变：不补这一下，那一帧就按
-    // 「游戏视口中心」缩放，下一帧才被拉回左上角锚点——一次单帧闪跳（1× → 0.175 约 352px）
-    if (this.baseline) this.keyboardCamera();
   }
 
   /**
@@ -706,8 +614,6 @@ class WorldScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.pruneReleasedPointers();
-    // 键盘没开时任何按下（含拖拽 / 捏合）都顺手收焦点：那时没有键盘基线，收焦点不会打回用户的拖拽
-    if (!keyboardNow().open) blurFocusedEditable();
     // 两根手指同时按着 = 缩放；第三根起直接忽略（多出来的手指不改变什么，也不会把平移带成两倍速）
     if (this.pointers.size >= 2) return;
     this.pointers.set(pointer.id, { x: pointer.x, y: pointer.y, moved: 0 });
@@ -748,8 +654,6 @@ class WorldScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.scrollX += pinch.worldX - now.x;
     camera.scrollY += pinch.worldY - now.y;
-    // 键盘期间捏合 = 用户接管了镜头：当前位置成为新基线
-    this.rebaseKeyboard();
   }
 
   /**
@@ -782,8 +686,6 @@ class WorldScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.scrollX -= dx / camera.zoomX;
     camera.scrollY -= dy / camera.zoomY;
-    // 键盘期间拖拽 = 用户接管了镜头：当前位置成为新基线（收起时写回的就是它）
-    this.rebaseKeyboard();
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
@@ -802,12 +704,6 @@ class WorldScene extends Phaser.Scene {
     }
     // 轻点（未拖动、时间短、且这整次手势只有一根手指）才是一次意图
     if (!pinched && tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS) {
-      // 键盘弹着时的轻点 = 只收键盘与焦点，那一下不发意图
-      // （落点按收缩后的视口算，随即键盘收起、相机回基线——看着就是点歪了）
-      if (keyboardNow().open) {
-        blurFocusedEditable();
-        return;
-      }
       this.dispatchTap(pointer);
     }
   }
@@ -940,6 +836,19 @@ class WorldScene extends Phaser.Scene {
     writeZoomMode(mode);
     if (mode.kind === 'fixed') this.setZoom(mode.z);
   }
+
+  /**
+   * 插槽面板的打开 / 关闭（`docs/design/50-slot-panel.md` §4）。打开是**什么都不做**：
+   * 冻结靠上面那几处早退，当前像素尺寸与滚屏值原样保留。关闭要**先清标志再立即重建一次**
+   * （顺序不能倒：那一次全屏缓冲重建必须落在面板仍然不透明的时刻——退场动画在它之后）。
+   * 旋转屏幕 / 真实尺寸变化在冻结期间被丢弃，解冻时按当时的尺寸重建。
+   */
+  setSlotOpen(open: boolean): void {
+    if (open === this.slotOpen) return;
+    this.slotOpen = open;
+    if (open) return;
+    this.resizeToHost();
+  }
 }
 
 export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
@@ -978,6 +887,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     setZoomMode(mode: ZoomMode): void {
       scene.setZoomMode(mode);
+    },
+    setSlotOpen(open: boolean): void {
+      scene.setSlotOpen(open);
     },
   };
 }

@@ -262,6 +262,40 @@
     line-height: var(--text-label--line-height);
   }
 
+  /* 插槽面板（`docs/ui/DESIGN.md` 的 `slot-panel` 行、`../design/50-slot-panel.md`）：挂在聊天面板**整块**上沿
+     （`inset-block-end: 100%` 的定位基准是 `.chat-panel` 的 padding box），跟随输入行一起抬到键盘上沿。
+     **不写固定高度**——高度由 `SlotPanel` 量出来写成 inline px；绝对定位不撑开父容器，可用视口不受影响。
+     层级在世界层之上、`tone-layer`(4) 之下（不写 `z-index`：DOM 里它在 `.world-layer` 之后、且 `.chat-panel`
+     不是层叠上下文）。描边 / 底色与 `.chat-panel` 同族，上沿圆角、下沿不画边——两块拼成一整块 */
+  .slot-panel {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: var(--color-neutral);
+    background-color: var(--color-secondary);
+    border: 1px solid var(--color-claimed);
+    border-block-end: 0;
+    border-start-start-radius: var(--radius-md);
+    border-start-end-radius: var(--radius-md);
+  }
+
+  /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：竖排、每条一整个 44px 描边胶囊。
+     胶囊外观直接沿用 `.hud-action`（项目里「这是个按钮」的既有答案，连 `focus-visible` 那圈也在），
+     这里只补「撑满一行」这一条，不再抄一遍描边 / 墨色 / 圆角。内边距是面板贴边留白：
+     `.slot-panel` 自己不带 padding（高度由框架给），内容的留白归内容 */
+  .quick-phrases {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+  }
+
+  .quick-phrase {
+    width: 100%;
+  }
+
   .chat-panel {
     position: absolute;
     inset-block-end: 0;
