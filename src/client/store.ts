@@ -272,14 +272,16 @@ export function beginWalk(to: Point): void {
   const started = beginPrediction(from, to, bedCount, serverNow);
   if (!started) return;
   // 领先量 = 画面上那一点在**新折线上的投影弧长** / v（`30-movement-sync.md` §3.3）。用弧长不用直线
-  // 距离：躺在床上点地面时画面在床心、锚点在床脚前，两者相距 78px 是横向偏移，拿它当领先量会把画面
-  // 凭空前推。站着不动（没有外推）→ 0，于是「点击即起步」；改目标时画面在切换那一刻一动不动。
-  // 旧外推**已经冻结**（`PREDICTION_STALE_MS` 内没有关于自己的 `pos`）→ 不带领先量：那个画面点是
-  // 幻影，带上它等于把新外推的锚点时刻往前挪、白占保鲜期（`30-movement-sync.md` §3.7）。
+  // 距离：改目标时新旧折线可能**垂直**（画面点偏在新路径的侧方），直线距离会把侧向偏移当成前进量、
+  // 把画面凭空前推。站着不动（没有外推）→ 0，于是「点击即起步」；改目标时画面沿新折线不跳。
+  // 旧外推**已经冻结**（真值陈旧度 ≥ 保鲜期，恰好等于也算）→ 不带领先量：那个画面点是幻影，带上它
+  // 等于把新外推的锚点时刻往前挪、白占保鲜期（§3.7）。携带的量另**封顶半个保鲜期**，否则陈旧画面点
+  // 会让下一条 `pos` 超出传送门槛、整条外推作废（画面成段后跳）。
   const old = state.prediction;
-  const leadMs = old && serverNow - old.ts <= PREDICTION_STALE_MS
+  const carriedMs = old && serverNow - old.ts < PREDICTION_STALE_MS
     ? (arcLengthAhead(from, started.path, predictionPointAt(old, serverNow)) / WALK_SPEED_PX_PER_S) * 1000
     : 0;
+  const leadMs = Math.min(carriedMs, PREDICTION_STALE_MS / 2);
   setState({ prediction: { ...started, anchorTs: serverNow - leadMs } });
 }
 

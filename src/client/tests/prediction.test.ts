@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AISLE, BED_H, BED_W, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../../shared/constants';
+import { BED_H, BED_W, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../../shared/constants';
 import {
   HALL_LEVELS,
   LAYOUT_VERSION,
@@ -515,6 +515,8 @@ describe('自身外推：登记与清除（store）', () => {
 
 /** 与 `TO` 共用第一段（同一条街行往东）的另一个目标：改目标时画面上那一点正好落在共享的段上。 */
 const RETARGET = streetPointAt(0, COLS, ROWS);
+/** `RETARGET` 正南的那个街网节点（同列最下一行）：`RETARGET` 方向的折线与它**垂直**。 */
+const SOUTH = streetPointAt(ROWS, 0, ROWS);
 
 describe('自身外推：意图锚点取真值 + 领先量（store）', () => {
   it('站定起步：登记那一刻的画面点 = 真值点；首条关于自己的 pos 到达后画面不倒退', () => {
@@ -537,30 +539,34 @@ describe('自身外推：意图锚点取真值 + 领先量（store）', () => {
     expect(travelled(FROM, started.path, after)).toBeGreaterThanOrEqual(travelled(FROM, started.path, before) - 1e-9);
   });
 
-  it('走路中途改目标：切换那一刻画面不动（< 10px），之后沿新折线单调不减', () => {
+  it('走路中途改为**垂直**的目标：侧向偏移不算领先量，画面沿新折线的进度不跳', () => {
     applySnapshot(snapshot());
-    beginWalk(TO);
+    beginWalk(RETARGET);
     const first = getState().prediction;
     if (!first) throw new Error('外推应当已登记');
 
-    // 走出 55px（= 领先量名义 250ms）时改目标；锚点仍是静止的真值点（`me.x/y` = FROM）
+    // 走出 55px（= 领先量名义 250ms）时改目标：画面在正东 (83,128)
     vi.setSystemTime(LOCAL_NOW + 250);
     const serverNow = SNAPSHOT_TS + 250;
     const before = predictionPointAt(first, serverNow);
     expect(Math.hypot(before.x - FROM.x, before.y - FROM.y)).toBeCloseTo(55, 6);
 
-    beginWalk(RETARGET);
+    beginWalk(SOUTH);
     const second = getState().prediction;
     if (!second) throw new Error('外推应当已登记');
-    expect(second.path).not.toEqual(first.path);
-    expect(second).toMatchObject({ x: FROM.x, y: FROM.y });
-    expect(second.path).toEqual(findPath(FROM, RETARGET, BED_COUNT));
-    // 那 55px 进的是**锚点时刻**（提前 250ms），不是画面：切换那一刻画面一动不动
-    expect(second.anchorTs).toBeCloseTo(SNAPSHOT_TS, 6);
-    const after = predictionPointAt(second, serverNow);
-    expect(Math.abs(after.x - before.x)).toBeLessThan(10);
-    expect(Math.abs(after.y - before.y)).toBeLessThan(10);
+    expect(second.path).toEqual(findPath(FROM, SOUTH, BED_COUNT));
+    // 前提（可证伪的那一点）：旧画面点落在新折线的**侧方**——直线距离 55px，折线上的弧长只有 0。
+    // 拿直线距离当领先量 → 锚点时刻凭空前推 250ms → 下面画面就向南多走 55px（变红）。
+    const lateral = Math.hypot(before.x - FROM.x, before.y - FROM.y);
+    expect(lateral).toBeGreaterThan(travelled(FROM, second.path, before) + 50);
 
+    // 侧向偏移不进领先量：锚点时刻 = 真值时刻，画面沿新折线的进度一点没动
+    expect(second.anchorTs).toBeCloseTo(serverNow, 6);
+    const after = predictionPointAt(second, serverNow);
+    expect(Math.abs(travelled(FROM, second.path, after) - travelled(FROM, second.path, before))).toBeLessThanOrEqual(1);
+    expect(Math.hypot(after.x - FROM.x, after.y - FROM.y)).toBeLessThanOrEqual(1);
+
+    // 之后沿新折线单调不减
     let last = travelled(FROM, second.path, after);
     for (let t = serverNow + 16; t <= serverNow + 1_000; t += 16) {
       const position = travelled(FROM, second.path, predictionPointAt(second, t));
@@ -569,24 +575,17 @@ describe('自身外推：意图锚点取真值 + 领先量（store）', () => {
     }
   });
 
-  it('躺在床上点地面：锚点取床脚前那一点，画面点不被 78px 的横向偏移前推', () => {
+  it('躺在床上点地面：锚点时刻 = 真值时刻（离床那一下的位移不进领先量）', () => {
     applySnapshot(snapshot());
     applyState({ t: 'state', id: 'u_me', state: 'lying', bedNo: 42, online: 1 });
     beginWalk(TO);
     const started = getState().prediction;
     if (!started) throw new Error('外推应当已登记');
 
-    const front = frontPointOf(42) as Point;
-    const bed = { x: (positionOf(42) as Point).x + BED_W / 2, y: (positionOf(42) as Point).y + BED_H / 2 };
-    // 起床那一下确实要移动 78px（床心 → 床脚前，服务端 `standUp` 就落在那儿），而且它在画面上是
-    // 一步到位（世界层在床上画的是床心，见 `world.selfPoint`）……
-    expect(Math.hypot(bed.x - front.x, bed.y - front.y)).toBeCloseTo(BED_H / 2 + AISLE / 2, 6);
-
-    // ……但它是**横向偏移**、不是领先量：锚点时刻就是真值时刻，画面点就在锚点上
+    // 床上没有旧外推可带（`applyState` 已经清掉），于是领先量 0、画面就在床脚前
     expect(started.anchorTs).toBe(SNAPSHOT_TS);
-    const render = predictionPointAt(started, SNAPSHOT_TS);
-    expect(Math.abs(render.x - front.x)).toBeLessThan(10);
-    expect(Math.abs(render.y - front.y)).toBeLessThan(10);
+    expect(started.ts).toBe(SNAPSHOT_TS);
+    expect(predictionPointAt(started, SNAPSHOT_TS)).toMatchObject(frontPointOf(42) as Point);
   });
 });
 
@@ -654,18 +653,55 @@ describe('自身外推：保鲜期按「最后一条关于自己的 pos」起算
     expect(last).toBeCloseTo((WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 1000, 6);
   });
 
-  it('重锚把真值时刻换成那条 `pos` 的时刻（`ts === pos.ts`）', () => {
+  it('陈旧判据取严格：真值陈旧度 1999ms 带领先量（封顶半个保鲜期），2000 / 2001ms 不带', () => {
+    // 快照只取一次：假时钟钉在 `LOCAL_NOW` 那一刻，此后 `serverNow = SNAPSHOT_TS + 经过的毫秒数`
     applySnapshot(snapshot());
-    beginWalk(TO);
-    const started = getState().prediction;
-    if (!started) throw new Error('外推应当已登记');
-    expect(started.ts).toBe(SNAPSHOT_TS);
+    for (const [age, fresh] of [[1_999, true], [2_000, false], [2_001, false]] as const) {
+      clearPrediction();
+      vi.setSystemTime(LOCAL_NOW);
+      beginWalk(RETARGET);
+      const old = getState().prediction;
+      if (!old) throw new Error('外推应当已登记');
 
+      vi.setSystemTime(LOCAL_NOW + age);
+      const serverNow = SNAPSHOT_TS + age;
+      expect(serverNow - old.ts).toBe(age);
+      beginWalk(TO);
+      const prediction = getState().prediction;
+      if (!prediction) throw new Error('外推应当已登记');
+
+      const render = predictionPointAt(prediction, serverNow);
+      if (!fresh) {
+        // 恰好等于保鲜期也算陈旧：不携带那个画面点（它冻在 440px 处），画面回到真值点
+        expect(serverNow - prediction.anchorTs).toBe(0);
+        expect(Math.hypot(render.x - FROM.x, render.y - FROM.y)).toBeLessThanOrEqual(1);
+        continue;
+      }
+      // 带：但那 439.8px（≈1999ms）是幻影，只带到半个保鲜期为止
+      expect(serverNow - prediction.anchorTs).toBeCloseTo(PREDICTION_STALE_MS / 2, 6);
+      expect(serverNow - prediction.anchorTs).toBeLessThanOrEqual(PREDICTION_STALE_MS / 2);
+      expect(travelled(FROM, prediction.path, render)).toBeCloseTo((WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 2_000, 6);
+    }
+  });
+
+  it('重锚把真值时刻换成那条 `pos` 的时刻：冻结点跟着后移', () => {
+    const started = beginPrediction(FROM, TO, BED_COUNT, 1_000);
+    if (!started) throw new Error('折线应当存在');
     const authority = along(FROM, started.path, 60);
-    applyPos({ t: 'pos', ts: 1_000_200, items: [['u_me', authority.x, authority.y]] });
-    const anchored = getState().prediction;
-    if (!anchored) throw new Error('同一条折线上的一拍，不该作废');
-    expect(anchored.ts).toBe(1_000_200);
-    expect(anchored.anchorTs).toBeLessThanOrEqual(anchored.ts);
+    const anchored = anchorPrediction(started, authority.x, authority.y, 1_200);
+    if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
+
+    // 未重锚的那条在 1000 + 2000 冻死；重锚到 1200 的那一拍到同一时刻还在走
+    expect(predictionPointAt(started, 1_000 + PREDICTION_STALE_MS + 30_000)).toEqual(
+      predictionPointAt(started, 1_000 + PREDICTION_STALE_MS),
+    );
+    const at = predictionPointAt(anchored, 1_000 + PREDICTION_STALE_MS);
+    const next = predictionPointAt(anchored, 1_000 + PREDICTION_STALE_MS + 16);
+    expect(Math.hypot(next.x - at.x, next.y - at.y)).toBeCloseTo((WALK_SPEED_PX_PER_S * 16) / 1000, 6);
+
+    // 冻结点后移到 `pos.ts + 保鲜期`：之前还在动，之后一动不动
+    const late = predictionPointAt(anchored, 1_200 + PREDICTION_STALE_MS);
+    expect(predictionPointAt(anchored, 1_200 + PREDICTION_STALE_MS - 1)).not.toEqual(late);
+    expect(predictionPointAt(anchored, 1_200 + PREDICTION_STALE_MS + 30_000)).toEqual(late);
   });
 });
