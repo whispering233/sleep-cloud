@@ -63,6 +63,15 @@
 | `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。路由带着 zone 名，所以**不写在入库的 `wrangler.jsonc` 里**，而写在未入库的 `wrangler.local.jsonc`（部署命令已改为 `--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
+**典型症状：`wrangler` 报「Not logged in … the Cloudflare auth server could not be reached」**
+凭据没过期，是**这台机器的 IPv6 不可达**（实测 `ENETUNREACH`）而 Node 的 happy-eyeballs 把 `dash.cloudflare.com` 卡在超时（`curl` 走 IPv4 正常，`node -e "fetch(...)"` 报 `ETIMEDOUT`）。给 wrangler 加两个开关即可（已实测部署成功）：
+
+```text
+NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" npm run deploy
+```
+
+只加 `--dns-result-order=ipv4first` **不够**（实测仍旧失败），关键是 `--no-network-family-autoselection`。
+
 **典型症状：忘了注入 `SESSION_SECRET`**
 `/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
 `Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
