@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BED_H, BED_W, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../../shared/constants';
+import { AISLE, BED_H, BED_W, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../../shared/constants';
 import {
   HALL_LEVELS,
   LAYOUT_VERSION,
@@ -21,6 +21,22 @@ import type { Prediction } from '../prediction';
 import { applyError, applyLeave, applyPos, applySnapshot, applyState, beginWalk, clearPrediction, getState, setState } from '../store';
 
 const BED_COUNT = (HALL_LEVELS[0] as HallLevel).capacity;
+
+/**
+ * 假时钟的本地「现在」：`applySnapshot` 之后 `clockOffsetMs = serverTs − 这个数`，于是一旦把系统时间
+ * 钉在这里，`Date.now() + clockOffsetMs` 就**精确等于** `1_000_000`（快照的服务端时刻）——意图锚点
+ * 因此可以逐位断言，不必留容差。
+ */
+const LOCAL_NOW = 500_000;
+const SNAPSHOT_TS = 1_000_000;
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: LOCAL_NOW });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /** 街网的左上角与右下角节点：两点一定不在同一条走道上 → 折线有拐点（重锚的剪枝才有戏看）。 */
 const region = wallRegionOf(levelIndexOfBedCount(BED_COUNT));
@@ -79,7 +95,7 @@ function travelled(from: Point, path: Point[], point: Point): number {
 const snapshot = (): SnapshotMessage => ({
   t: 'snapshot',
   layoutVersion: LAYOUT_VERSION,
-  serverTs: 1_000_000,
+  serverTs: SNAPSHOT_TS,
   hall: { bedCount: BED_COUNT, online: 1 },
   me: { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: FROM.x, y: FROM.y },
   ownedBeds: encodeOwnedBeds([], BED_COUNT),
@@ -391,6 +407,8 @@ describe('自身外推：登记与清除（store）', () => {
     if (!started) throw new Error('外推应当已登记');
     expect(started.x).toBe(FROM.x);
     expect(started.y).toBe(FROM.y);
+    // 站着不动 → 领先量 0 → 锚点时刻就是真值时刻（假时钟：逐位确定）
+    expect(started.anchorTs).toBe(SNAPSHOT_TS);
     expect(started.path).toEqual(findPath(FROM, TO, BED_COUNT));
 
     // 我的权威位置到了：重锚到该批的时刻
@@ -492,5 +510,82 @@ describe('自身外推：登记与清除（store）', () => {
     expect(getState().prediction).toBeUndefined();
     clearPrediction();
     expect(getState().prediction).toBeUndefined();
+  });
+});
+
+/** 与 `TO` 共用第一段（同一条街行往东）的另一个目标：改目标时画面上那一点正好落在共享的段上。 */
+const RETARGET = streetPointAt(0, COLS, ROWS);
+
+describe('自身外推：意图锚点取真值 + 领先量（store）', () => {
+  it('站定起步：登记那一刻的画面点 = 真值点；首条关于自己的 pos 到达后画面不倒退', () => {
+    applySnapshot(snapshot());
+    beginWalk(TO);
+    const started = getState().prediction;
+    if (!started) throw new Error('外推应当已登记');
+    expect(predictionPointAt(started, SNAPSHOT_TS)).toEqual(FROM);
+
+    const ts = SNAPSHOT_TS + 100;
+    const authority = along(FROM, started.path, (WALK_SPEED_PX_PER_S * 100) / 1000);
+    const before = predictionPointAt(started, ts);
+    applyPos({ t: 'pos', ts, items: [['u_me', authority.x, authority.y]] });
+    const anchored = getState().prediction;
+    if (!anchored) throw new Error('同一条折线上的一拍，不该作废');
+
+    const after = predictionPointAt(anchored, ts);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
+    expect(travelled(FROM, started.path, after)).toBeGreaterThanOrEqual(travelled(FROM, started.path, before) - 1e-9);
+  });
+
+  it('走路中途改目标：切换那一刻画面不动（< 10px），之后沿新折线单调不减', () => {
+    applySnapshot(snapshot());
+    beginWalk(TO);
+    const first = getState().prediction;
+    if (!first) throw new Error('外推应当已登记');
+
+    // 走出 55px（= 领先量名义 250ms）时改目标；锚点仍是静止的真值点（`me.x/y` = FROM）
+    vi.setSystemTime(LOCAL_NOW + 250);
+    const serverNow = SNAPSHOT_TS + 250;
+    const before = predictionPointAt(first, serverNow);
+    expect(Math.hypot(before.x - FROM.x, before.y - FROM.y)).toBeCloseTo(55, 6);
+
+    beginWalk(RETARGET);
+    const second = getState().prediction;
+    if (!second) throw new Error('外推应当已登记');
+    expect(second.path).not.toEqual(first.path);
+    expect(second).toMatchObject({ x: FROM.x, y: FROM.y });
+    expect(second.path).toEqual(findPath(FROM, RETARGET, BED_COUNT));
+    // 那 55px 进的是**锚点时刻**（提前 250ms），不是画面：切换那一刻画面一动不动
+    expect(second.anchorTs).toBeCloseTo(SNAPSHOT_TS, 6);
+    const after = predictionPointAt(second, serverNow);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(10);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(10);
+
+    let last = travelled(FROM, second.path, after);
+    for (let t = serverNow + 16; t <= serverNow + 1_000; t += 16) {
+      const position = travelled(FROM, second.path, predictionPointAt(second, t));
+      expect(position).toBeGreaterThanOrEqual(last - 1e-9);
+      last = position;
+    }
+  });
+
+  it('躺在床上点地面：锚点取床脚前那一点，画面点不被 78px 的横向偏移前推', () => {
+    applySnapshot(snapshot());
+    applyState({ t: 'state', id: 'u_me', state: 'lying', bedNo: 42, online: 1 });
+    beginWalk(TO);
+    const started = getState().prediction;
+    if (!started) throw new Error('外推应当已登记');
+
+    const front = frontPointOf(42) as Point;
+    const bed = { x: (positionOf(42) as Point).x + BED_W / 2, y: (positionOf(42) as Point).y + BED_H / 2 };
+    // 起床那一下确实要移动 78px（床心 → 床脚前，服务端 `standUp` 就落在那儿），而且它在画面上是
+    // 一步到位（世界层在床上画的是床心，见 `world.selfPoint`）……
+    expect(Math.hypot(bed.x - front.x, bed.y - front.y)).toBeCloseTo(BED_H / 2 + AISLE / 2, 6);
+
+    // ……但它是**横向偏移**、不是领先量：锚点时刻就是真值时刻，画面点就在锚点上
+    expect(started.anchorTs).toBe(SNAPSHOT_TS);
+    const render = predictionPointAt(started, SNAPSHOT_TS);
+    expect(Math.abs(render.x - front.x)).toBeLessThan(10);
+    expect(Math.abs(render.y - front.y)).toBeLessThan(10);
   });
 });

@@ -13,7 +13,7 @@ import type {
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_BUBBLE_MS } from '../shared/constants';
+import { CHAT_BUBBLE_MS, WALK_SPEED_PX_PER_S } from '../shared/constants';
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
@@ -21,7 +21,7 @@ import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
-import { anchorPrediction, beginPrediction } from './prediction';
+import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
 import { sameZoomMode } from './zoom';
@@ -267,9 +267,17 @@ export function beginWalk(to: Point): void {
   // `standUp` 保留的就是那个位置（`frontPointOf`）。不等「起身」那条消息回来，这一步才能也立刻起步。
   const from = me.state === 'roaming' ? { x: me.x, y: me.y } : frontPointOf(me.bedNo);
   if (!from) return;
-  // 锚点时刻用服务端时间轴（= 世界层读外推点的同一把尺），起步的提前量因此与插值口径一致
-  const prediction = beginPrediction(from, to, bedCount, Date.now() + state.clockOffsetMs);
-  if (prediction) setState({ prediction });
+  // 锚点时刻用服务端时间轴（= 世界层读外推点的同一把尺）
+  const serverNow = Date.now() + state.clockOffsetMs;
+  const started = beginPrediction(from, to, bedCount, serverNow);
+  if (!started) return;
+  // 领先量 = 画面上那一点在**新折线上的投影弧长** / v（`30-movement-sync.md` §3.3）。用弧长不用直线
+  // 距离：躺在床上点地面时画面在床心、锚点在床脚前，两者相距 78px 是横向偏移，拿它当领先量会把画面
+  // 凭空前推。站着不动（没有外推）→ 0，于是「点击即起步」；改目标时画面在切换那一刻一动不动。
+  const leadMs = state.prediction
+    ? (arcLengthAhead(from, started.path, predictionPointAt(state.prediction, serverNow)) / WALK_SPEED_PX_PER_S) * 1000
+    : 0;
+  setState({ prediction: { ...started, anchorTs: serverNow - leadMs } });
 }
 
 /**
