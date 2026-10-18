@@ -76,6 +76,11 @@ export class Hall extends DurableObject<Env> {
    * 它是内存循环的工作集，而「有移动者 ⇒ 有循环 ⇒ 对象无法休眠」保证它不会被驱逐（见 `10-hall-runtime.md` §5.3）。
    */
   private readonly movers = new Map<string, MoverState>();
+  /**
+   * 每个移动者的起步时刻（与 `movers` 同生共死）：推进量只从它起算，
+   * 节拍已在跑时新起步的人不会被按「上一拍到现在」整段推进（见 `30-movement-sync.md` §5.2）。
+   */
+  private readonly moverStartedAt = new Map<string, number>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private lastTickAt = 0;
 
@@ -519,7 +524,7 @@ export class Hall extends DurableObject<Env> {
       return;
     }
 
-    this.movers.set(connection.userId, { x: connection.x, y: connection.y, path });
+    this.startMover(connection.userId, { x: connection.x, y: connection.y, path });
     this.writeConnection(ws, { ...connection, target: spot, arrivalAction: 'lie', arrivalBedNo: bedNo });
     this.startTicking();
     // 走路开始（复合意图）：与 `startWalking` 一样立即补发起点
@@ -665,7 +670,7 @@ export class Hall extends DurableObject<Env> {
       return;
     }
 
-    this.movers.set(connection.userId, { x: from.x, y: from.y, path });
+    this.startMover(connection.userId, { x: from.x, y: from.y, path });
     this.writeConnection(ws, retarget(connection, target));
     this.startTicking();
     // 走路开始：立即补发起点（客户端据此开一个新鲜的插值窗口，起步那一帧因此不瞬移）
@@ -678,9 +683,24 @@ export class Hall extends DurableObject<Env> {
     return [userId, mover.x, mover.y];
   }
 
+  /**
+   * 登记一个移动者：起步时刻取此刻。被驱逐后重建工作集也走这里，所以重建按「现在起步」算，
+   * 不会把他昏过去那段时间补成位移。
+   */
+  private startMover(userId: string, mover: MoverState): void {
+    this.movers.set(userId, mover);
+    this.moverStartedAt.set(userId, Date.now());
+  }
+
+  /** 移出移动者集合：位置状态与起步时刻一起丢，不留到下一趟。 */
+  private dropMover(userId: string): void {
+    this.movers.delete(userId);
+    this.moverStartedAt.delete(userId);
+  }
+
   private stopWalking(userId: string): MoverState | undefined {
     const mover = this.movers.get(userId);
-    this.movers.delete(userId);
+    this.dropMover(userId);
     if (this.movers.size === 0) this.stopTicking();
     return mover;
   }
@@ -715,7 +735,7 @@ export class Hall extends DurableObject<Env> {
         this.writeConnection(ws, { ...connection, target: undefined });
         continue;
       }
-      this.movers.set(connection.userId, { x: connection.x, y: connection.y, path });
+      this.startMover(connection.userId, { x: connection.x, y: connection.y, path });
     }
   }
 
@@ -729,7 +749,7 @@ export class Hall extends DurableObject<Env> {
   private tick(): void {
     const now = Date.now();
     this.refreshDerivedStates();
-    const elapsed = Math.max(0, now - this.lastTickAt);
+    const previousTickAt = this.lastTickAt;
     this.lastTickAt = now;
 
     const updates: PositionUpdate[] = [];
@@ -738,11 +758,13 @@ export class Hall extends DurableObject<Env> {
     for (const [userId, mover] of [...this.movers]) {
       const ws = this.socketOf(userId);
       if (!ws) {
-        this.movers.delete(userId); // 断线：close 里已删，这里兜底
+        this.dropMover(userId); // 断线：close 里已删，这里兜底
         continue;
       }
 
-      const result = advanceMover(mover, elapsed);
+      // 推进量只从「上一拍」与「本人起步时刻」中较晚的那个起算：新起步的人不补走一拍
+      const since = Math.max(previousTickAt, this.moverStartedAt.get(userId) ?? previousTickAt);
+      const result = advanceMover(mover, now - since);
       if (result.moved) {
         const connection = readConnection(ws);
         if (connection) this.writeConnection(ws, { ...connection, x: mover.x, y: mover.y });
@@ -752,7 +774,7 @@ export class Hall extends DurableObject<Env> {
 
       if (result.arrived) {
         const connection = readConnection(ws);
-        this.movers.delete(userId);
+        this.dropMover(userId);
         // 到达：本拍的这一条位置就是端点（与所有人合并成同一条）
         if (connection) arrived.push({ ws, connection: { ...connection, target: undefined } });
       }
