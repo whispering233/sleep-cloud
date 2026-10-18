@@ -3,7 +3,7 @@ import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 
 /**
- * HUD 的**派生视图**（纯函数，可单测）。
+ * 界面的**派生视图**（纯函数，可单测）：顶部显示条与动作行共用这一份。
  *
  * 只吃这几个字段：位置节拍每 100 ms 通知一次 store，用不上的变化不该触发渲染
  * （与 `ChatPanel` 的 `viewOf` / `sameView` 同一模式，见 `AGENTS.md` 硬纪律 17）。
@@ -22,7 +22,7 @@ export interface HudView {
   emptyBeds?: number;
   /** 最近一次延迟样本（毫秒）；还没有样本时不知道，那一项不占位 */
   rttMs?: number;
-  /** 换床模式是否开着：开着时 HUD 下沿换成换床提示行、可点击组收起 `GO`（见 `docs/ui/DESIGN.md`） */
+  /** 换床模式是否开着：开着时门控行换成换床提示、可点击组收起 `GO`（见 `docs/ui/DESIGN.md`） */
   switching: boolean;
   /** 相机是否已拉到下限：决定那颗按钮是「看全厅」还是「回到 1×」 */
   overview: boolean;

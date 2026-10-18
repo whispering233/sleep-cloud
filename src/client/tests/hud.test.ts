@@ -112,7 +112,7 @@ describe('HUD 派生视图', () => {
     expect(sameHudView(base, hudViewOf(stateWith({ overview: true })))).toBe(false);
   });
 
-  it('换床模式开关变了才算变化：它决定 HUD 下沿那一行与 `GO` 的存亡', () => {
+  it('换床模式开关变了才算变化：它决定门控行与 `GO` 的存亡', () => {
     const base = hudViewOf(stateWith());
     expect(base.switching).toBe(false);
     expect(sameHudView(base, hudViewOf(stateWith({ switching: false })))).toBe(true);

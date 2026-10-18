@@ -176,9 +176,9 @@ export function ActionRow() {
           ——模式期间 `GO` 不显示，两者不会同屏。它必须常驻：模式跨聊天、跨起身活着，
           用户要能一眼看出「现在点一张空床会搬过去」 */}
       {view.switching ? (
-        <div className="hud-jump-row">
-          <p className="hud-switch-hint">点一张空床搬过去</p>
-          <button type="button" className="hud-jump-cancel" onClick={() => setSwitching(false)}>
+        <div className="gate-row">
+          <p className="gate-hint">点一张空床搬过去</p>
+          <button type="button" className="gate-cancel" onClick={() => setSwitching(false)}>
             取消
           </button>
         </div>
@@ -187,14 +187,14 @@ export function ActionRow() {
       {/* `GO` 展开的门控行：输入显示床号（1 起），回车或「确定」提交，Esc 或「取消」收起 */}
       {jumpOpen && !view.switching ? (
         <form
-          className="hud-jump-row"
+          className="gate-row"
           onSubmit={(event) => {
             event.preventDefault();
             jump();
           }}
         >
           <TextInput
-            className="hud-jump-input"
+            className="gate-input"
             value={draft}
             inputMode="numeric"
             enterKeyHint="go"
@@ -209,7 +209,7 @@ export function ActionRow() {
           <button type="submit" className="action-primary">
             确定
           </button>
-          <button type="button" className="hud-jump-cancel" aria-label="取消" onClick={closeJump}>
+          <button type="button" className="gate-cancel" aria-label="取消" onClick={closeJump}>
             取消
           </button>
         </form>

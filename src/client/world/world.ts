@@ -76,11 +76,11 @@ export interface WorldHandlers {
 
 export interface WorldHandle {
   destroy(): void;
-  /** 相机跳到我的床（HUD 的床号条）；还没有床时按进厅对准的退路（`focusPoint`）。 */
+  /** 相机跳到我的床（动作行的床号条）；还没有床时按进厅对准的退路（`focusPoint`）。 */
   focusMyBed(): void;
-  /** 相机跳到指定床（HUD 输入床号的 `GO`）。 */
+  /** 相机跳到指定床（动作行的 `GO`）。 */
   focusBed(bedNo: number): void;
-  /** 拉开 / 收起整厅视角（HUD 的「看全厅 / 回到 1×」；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
+  /** 拉开 / 收起整厅视角（动作行的「看全厅 / 回到 1×」；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   toggleOverview(): void;
 }
 
@@ -96,7 +96,7 @@ export interface UiInsets {
 
 /**
  * 「已拉到下限」的容差：比例是浮点乘积（起点比例 × 距离比），不会正好等于 `ZOOM_MIN`。
- * 它只用于 HUD 那颗按钮的文案，不参与夹取（夹取是 `clampZoom` 的严格边界）。
+ * 它只用于动作行那颗按钮的文案，不参与夹取（夹取是 `clampZoom` 的严格边界）。
  */
 const OVERVIEW_EPS = 0.005;
 
@@ -509,7 +509,7 @@ class WorldScene extends Phaser.Scene {
    * 我的床在**可用视口**里的方位 → store（`undefined` = 在视野内）。
    * 算在这里而不是 React 里：这是逐帧的活，进框架的渲染循环会把几百个小人拖死（`AGENTS.md` 硬纪律）。
    * 写 store 前先比一次**当前值**（`state` 是这一帧开头的快照，这个字段只有世界层写）：同值不通知，
-   * HUD 才不会因为位置节拍重渲染。
+   * 顶部显示条与动作行才不会因为位置节拍重渲染。
    */
   private syncBedDirection(state: ClientState): void {
     const bedNo = state.me?.ownedBedNo;
@@ -681,7 +681,7 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 设拉远比例（捏合与 HUD 那条都走这里）：**只缩不放**，越界由 `clampZoom` 夹住；
+   * 设拉远比例（捏合与动作行那条都走这里）：**只缩不放**，越界由 `clampZoom` 夹住；
    * 不动相机焦点——锚点由调用方负责（捏合锚在两指中点，按钮锚在当前中心）。
    */
   private setZoom(next: number): void {
@@ -690,7 +690,7 @@ class WorldScene extends Phaser.Scene {
       this.zoom = clamped;
       this.applyZoom();
     }
-    // 已在下限 → HUD 那颗按钮改文案（同值不通知）；浮点乘积不会正好等于下限，所以留一点容差
+    // 已在下限 → 动作行那颗按钮改文案（同值不通知）；浮点乘积不会正好等于下限，所以留一点容差
     setOverview(clamped <= ZOOM_MIN + OVERVIEW_EPS);
   }
 
@@ -897,7 +897,7 @@ class WorldScene extends Phaser.Scene {
     return this.ownBedPoint(state) ?? this.selfPoint(state, Date.now() + state.clockOffsetMs);
   }
 
-  /** HUD 的床号条：一次性的相机跳转，对准我的床（还没有床时的退路与进厅对准同一条，见 `focusPoint`）。 */
+  /** 动作行的床号条：一次性的相机跳转，对准我的床（还没有床时的退路与进厅对准同一条，见 `focusPoint`）。 */
   focusMyBed(): void {
     // 几何还没建好（场景还在 boot / 快照没到）：相机与夹取都还没准备好，这一跳没有意义
     if (this.loadedBedCount === undefined) return;
@@ -905,7 +905,7 @@ class WorldScene extends Phaser.Scene {
     if (focus) this.centerOnUsable(focus);
   }
 
-  /** HUD 的「GO」：一次性的相机跳转，对准指定床（与那一条 `hop` 配成一对，不依赖 500px/s 的跟随）。 */
+  /** 动作行的「GO」：一次性的相机跳转，对准指定床（与那一条 `hop` 配成一对，不依赖 500px/s 的跟随）。 */
   focusBed(bedNo: number): void {
     if (this.loadedBedCount === undefined) return;
     const point = this.bedPoint(bedNo);
@@ -913,7 +913,7 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * HUD 的「看全厅 / 回到 1×」：一次性的相机命令，**不动相机焦点**（只改比例）。
+   * 动作行的「看全厅 / 回到 1×」：一次性的相机命令，**不动相机焦点**（只改比例）。
    * 不在下限就拉到下限，已在下限就回 1×——两个入口（捏合与这条）操作同一个状态。
    */
   toggleOverview(): void {

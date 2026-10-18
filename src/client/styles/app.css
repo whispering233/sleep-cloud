@@ -45,7 +45,7 @@
   }
 
   /* 三档减光层：整屏一层中性黑，`opacity` 跟着我自己的显示态（漫游 / 躺下 / 睡下，α 在 `src/client/tone.ts`）。
-     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在 HUD 遮罩 / 浮层 / 齿轮的 1/2/3 之上；
+     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在面板里遮罩 / 浮层 / 齿轮的 1/2/3 之上；
      `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡（`docs/ui/DESIGN.md` 的 `tone-layer` 行） */
   .tone-layer {
     position: fixed;
@@ -216,19 +216,19 @@
   }
 
   /* 门控行（`GO` 的床号输入 / 换床提示）：面板里的普通一行，不再需要负外边距与自绘底色 */
-  .hud-jump-row {
+  .gate-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
   }
 
   /* 床号输入：与聊天框同一规格（`.input-field` 已是 44px / 16px），宽度上封一个数（桌面上不该拉成一整条） */
-  .hud-jump-input {
+  .gate-input {
     flex: 0 1 auto;
     max-width: 120px;
   }
 
-  .hud-jump-cancel {
+  .gate-cancel {
     min-width: 44px;
     min-height: 44px;
     color: var(--color-neutral-muted);
@@ -238,8 +238,8 @@
     border: 0;
   }
 
-  /* 换床提示行的那句话：与 HUD 的显示组同调（纯文字、不是按钮），剩余的宽度全吃掉 */
-  .hud-switch-hint {
+  /* 换床提示行的那句话（门控行）：与顶部显示条同调（纯文字、不是按钮），剩余的宽度全吃掉 */
+  .gate-hint {
     flex: 1 1 auto;
     margin: 0;
     color: var(--color-neutral);
@@ -431,7 +431,7 @@
   .conn-banner-retry:focus-visible,
   .hud-action:focus-visible,
   .hud-settings-button:focus-visible,
-  .hud-jump-cancel:focus-visible,
+  .gate-cancel:focus-visible,
   .whisper-target-clear:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;

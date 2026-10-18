@@ -324,7 +324,7 @@ export function revealShift(input: { self: { x: number; y: number }; usable: Rec
   return 0;
 }
 
-/** 八个方位（世界像素的罗盘：上 = 北）。HUD 的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+/** 八个方位（世界像素的罗盘：上 = 北）。动作行的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 /** 45° 一个扇区，从「东」起按屏幕顺时针排（`atan2` 的正方向在屏幕上朝下 = 南）。 */
 const COMPASS: readonly BedDirection[] = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];

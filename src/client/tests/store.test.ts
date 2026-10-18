@@ -326,7 +326,7 @@ describe('选中态', () => {
   });
 });
 
-describe('我的床的方位（HUD 的方向字形）', () => {
+describe('我的床的方位（动作行的方向字形）', () => {
   it('同值不写：世界层每帧都算一次方位，守卫挡住位置节拍变成每帧一次渲染', () => {
     let notices = 0;
     const unsubscribe = subscribe(() => {

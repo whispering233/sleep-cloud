@@ -78,7 +78,7 @@ export interface ClientState {
   /** **全局唯一的选中对象**：同时决定名字气泡与私聊目标（见 `docs/ui/DESIGN.md`） */
   selectedId?: string;
   /**
-   * 我的床在**可用视口**里的方位（`undefined` = 在视野内 / 还没有床）：HUD 靠它补方向字形。
+   * 我的床在**可用视口**里的方位（`undefined` = 在视野内 / 还没有床）：动作行靠它补方向字形。
    * 由**世界层每帧算、只在变化时写**——逐帧写会让位置节拍变成 React 的重渲染。
    */
   bedDirection?: BedDirection;
@@ -86,12 +86,12 @@ export interface ClientState {
   rttMs?: number;
   /**
    * **换床模式**（客户端本地状态，不进协议、不进快照）：模式内点一张无主空床才是换床。
-   * 它必须常驻可见（HUD 提示行 + 齿轮浮层项），因为模式**跨聊天、跨起身**活着——
+   * 它必须常驻可见（门控行的提示 + 齿轮浮层项），因为模式**跨聊天、跨起身**活着——
    * 忘了自己在模式里的人点一张空床，代价与误点一样（旧床归属当场释放）。
    */
   switching: boolean;
   /**
-   * 相机已拉到下限（拉远档）。**只在翻越时写**（世界层逐帧算、同值不通知），HUD 那颗按钮的文案吃它。
+   * 相机已拉到下限（拉远档）。**只在翻越时写**（世界层逐帧算、同值不通知），动作行那颗按钮的文案吃它。
    * 它与 `switching` 无关：拉远是视角，不是模式，两个可以同时开。
    */
   overview: boolean;
@@ -185,7 +185,7 @@ export function clearSelection(): void {
 
 /**
  * 我的床的方位（世界层每帧算一次）：**同值不写**。位置节拍每 100 ms 来一次，
- * 每次写都会通知所有订阅者——HUD 的「不因位置节拍重渲染」就靠这道守卫。
+ * 每次写都会通知所有订阅者——显示条与动作行的「不因位置节拍重渲染」就靠这道守卫。
  */
 export function setBedDirection(direction: BedDirection | undefined): void {
   if (state.bedDirection === direction) return;

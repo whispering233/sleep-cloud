@@ -358,12 +358,12 @@ export class Hall extends DurableObject<Env> {
         return;
       }
       case 'hop': {
-        // 不带床号 = 我自己那张床（HUD 那条）；带床号时**只看床号，不看归属与占用**——跳到别人床脚站着是合法的
+        // 不带床号 = 我自己那张床（动作行那条）；带床号时**只看床号，不看归属与占用**——跳到别人床脚站着是合法的
         const bedNo =
           message.bedNo === undefined
             ? findOwnedBed(this.ctx.storage.sql, fresh.userId, now)?.bedNo
             : Number(message.bedNo);
-        // 没带床号、我也没有归属：静默忽略（HUD 那一条在没有床时本来就不显示）
+        // 没带床号、我也没有归属：静默忽略（动作行那一条在没有床时本来就不显示）
         if (bedNo === undefined) return;
         // 床号越界：静默类错误（客户端已按 `bedCount` 先拦一道并给可见提示，这条只是兜底）
         if (!Number.isInteger(bedNo) || bedNo < 0 || bedNo >= this.bedCount()) {
