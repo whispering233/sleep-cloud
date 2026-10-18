@@ -2,7 +2,7 @@ import type { WorldHandle } from './world/world';
 import type { ZoomMode } from './zoom';
 
 /**
- * 世界层 → DOM 界面的**唯一一根反向线**（动作行的「回我的床」与 `GO` 跳床号）：世界层建起来时注册自己，
+ * 世界层 → DOM 界面的**唯一一根反向线**（动作行的「回我的床」、`GO` 跳床号、缩放档位）：世界层建起来时注册自己，
  * 界面层只调方法，不去 import 世界层——只 `import type` 才不会把 Phaser 拖进界面层的包
  * （世界层是懒加载块，入场层不该等它下载完）。
  */

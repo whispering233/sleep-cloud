@@ -62,7 +62,7 @@ export function ActionRow() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [menuOpen, gate]);
 
-  const closeJump = (): void => {
+  const closeGate = (): void => {
     setGate('none');
     setDraft('');
   };
@@ -77,7 +77,7 @@ export function ActionRow() {
     }
     sendHop(target.bedNo);
     focusBed(target.bedNo);
-    closeJump();
+    closeGate();
   };
 
   return (
@@ -115,7 +115,7 @@ export function ActionRow() {
               className="hud-action"
               aria-label="跳到指定床号"
               aria-expanded={gate === 'jump'}
-              onClick={() => (gate === 'jump' ? closeJump() : setGate('jump'))}
+              onClick={() => (gate === 'jump' ? closeGate() : setGate('jump'))}
             >
               GO
             </button>
@@ -175,12 +175,12 @@ export function ActionRow() {
                 onClick={() => {
                   setSwitching(!view.switching);
                   setMenuOpen(false);
-                  closeJump();
+                  closeGate();
                 }}
               >
                 {view.switching ? '取消换床' : '更换床位'}
               </button>
-              {/* pi-lens-ignore: 2304 —— 构建期注入的全局量，声明在 src/globals.d.ts（两个 tsconfig 都 include 它） */}
+              {/* pi-lens-ignore: ts:2304 —— 构建期注入的全局量，声明在 src/globals.d.ts（两个 tsconfig 都 include 它） */}
               <div className="hud-menu-version">v{__APP_VERSION__}</div>
             </div>
           ) : null}
@@ -218,13 +218,13 @@ export function ActionRow() {
             autoFocus
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') closeJump();
+              if (event.key === 'Escape') closeGate();
             }}
           />
           <button type="submit" className="action-primary">
             确定
           </button>
-          <button type="button" className="gate-cancel" aria-label="取消" onClick={closeJump}>
+          <button type="button" className="gate-cancel" aria-label="取消" onClick={closeGate}>
             取消
           </button>
         </form>

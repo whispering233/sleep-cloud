@@ -235,7 +235,7 @@ export function placeBed(view: BedView, bed: BedPlacement, look: BedLook, marker
   if (view.numberOn !== look.number) {
     view.numberOn = look.number;
     view.number.setVisible(look.number);
-    // 从退役档回到 1×：文字得从当前绑定的床号重写（退役期间它被清空了）
+    // 从退役档回到可用档（跨过 `ZOOM_TEXT_MIN`）：文字得从当前绑定的床号重写（退役期间它被清空了）
     view.number.setText(look.number ? String(displayBedNoOf(view.bedNo)) : '');
   }
   if (view.marker !== marker) {
