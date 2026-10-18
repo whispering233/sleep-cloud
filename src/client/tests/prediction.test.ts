@@ -16,7 +16,7 @@ import type { HallLevel, Point } from '../../shared/layout';
 import { findPath } from '../../shared/pathfinding';
 import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
-import { anchorPrediction, beginPrediction, predictionPointAt } from '../prediction';
+import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from '../prediction';
 import { applyError, applyLeave, applyPos, applySnapshot, applyState, beginWalk, clearPrediction, getState, setState } from '../store';
 
 const BED_COUNT = (HALL_LEVELS[0] as HallLevel).capacity;
@@ -57,6 +57,24 @@ function pathLength(from: Point, path: Point[]): number {
   return total;
 }
 
+/** `point` 在折线上的弧长（离起点多远；落在折线外取最近点）：用来把「画面倒退」变成可比较的标量。 */
+function travelled(from: Point, path: Point[], point: Point): number {
+  let previous = from;
+  let total = 0;
+  let best = { distance: Infinity, arc: 0 };
+  for (const next of path) {
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const length = Math.hypot(dx, dy);
+    const ratio = length === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - previous.x) * dx + (point.y - previous.y) * dy) / (length * length)));
+    const distance = Math.hypot(point.x - (previous.x + dx * ratio), point.y - (previous.y + dy * ratio));
+    if (distance < best.distance) best = { distance, arc: total + length * ratio };
+    total += length;
+    previous = next;
+  }
+  return best.arc;
+}
+
 const snapshot = (): SnapshotMessage => ({
   t: 'snapshot',
   layoutVersion: LAYOUT_VERSION,
@@ -95,40 +113,159 @@ describe('自身外推：沿共享折线推进', () => {
   });
 });
 
+describe('自身外推：弧长（重锚量 `ahead` 的那把尺）', () => {
+  /** 起于 (0,0)：先向东 100，再向南 100。 */
+  const PATH = [
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+  ];
+  const ORIGIN = { x: 0, y: 0 };
+
+  it('Q 在折线上 → 弧长 = 从 P 沿折线走过的距离', () => {
+    expect(arcLengthAhead(ORIGIN, PATH, { x: 40, y: 0 })).toBeCloseTo(40, 6);
+    expect(arcLengthAhead(ORIGIN, PATH, { x: 100, y: 30 })).toBeCloseTo(130, 6);
+  });
+
+  it('Q 在折线外 → 取最近点', () => {
+    expect(arcLengthAhead(ORIGIN, PATH, { x: 40, y: 50 })).toBeCloseTo(40, 6);
+    expect(arcLengthAhead(ORIGIN, PATH, { x: 130, y: 60 })).toBeCloseTo(160, 6);
+  });
+
+  it('Q 投影落在 P 之前，或折线为空 → 0（不靠负弧长吸收）', () => {
+    expect(arcLengthAhead(ORIGIN, PATH, { x: -80, y: 0 })).toBe(0);
+    expect(arcLengthAhead(ORIGIN, [], { x: 50, y: 50 })).toBe(0);
+  });
+});
+
 describe('自身外推：重锚', () => {
   it('重锚到权威点与该批时刻，沿**同一条**折线继续（路径不重算）', () => {
     const prediction = beginPrediction(FROM, TO, BED_COUNT, 1_000);
     if (!prediction) throw new Error('折线应当存在');
     const first = prediction.path[0] as Point;
-    const second = prediction.path[1] as Point;
 
-    // 权威点已经越过了第一个拐点（服务端说我在那一段里）
+    // 权威点已在第一个拐点之后 30px
     const authority = along(FROM, prediction.path, Math.hypot(first.x - FROM.x, first.y - FROM.y) + 30);
+    const renderBefore = predictionPointAt(prediction, 1_350);
     const anchored = anchorPrediction(prediction, authority.x, authority.y, 1_350);
     if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
 
-    expect(anchored.anchorTs).toBe(1_350);
-    expect(predictionPointAt(anchored, 1_350)).toEqual(authority);
     // 走过的拐点被剪掉：剩下的仍是原折线的尾巴（没有重算、也没有回头）
     expect(anchored.path).toEqual(prediction.path.slice(1));
     expect(prediction.path.slice(prediction.path.length - anchored.path.length)).toEqual(anchored.path);
 
-    const ahead = predictionPointAt(anchored, 1_450);
-    expect(Math.hypot(ahead.x - first.x, ahead.y - first.y)).toBeGreaterThan(Math.hypot(authority.x - first.x, authority.y - first.y));
-    expect(ahead).toEqual(along(authority, anchored.path, WALK_SPEED_PX_PER_S / 10));
-    expect(second).toBeDefined();
+    // 画面在权威点前方 47px（350ms 走出 77px）→ 锚点时刻回拨 47/220s，画面一动不动
+    expect(anchored.anchorTs).toBeCloseTo(1_350 - (47 / WALK_SPEED_PX_PER_S) * 1000, 6);
+    expect(predictionPointAt(anchored, 1_350).x).toBeCloseTo(renderBefore.x, 6);
+    expect(predictionPointAt(anchored, 1_350).y).toBeCloseTo(renderBefore.y, 6);
+    // 锚点时刻那一刻就是权威点
+    expect(predictionPointAt(anchored, anchored.anchorTs).x).toBeCloseTo(authority.x, 6);
+    expect(predictionPointAt(anchored, anchored.anchorTs).y).toBeCloseTo(authority.y, 6);
+    // 之后照旧按 WALK_SPEED_PX_PER_S 走
+    expect(travelled(FROM, prediction.path, predictionPointAt(anchored, 1_450))).toBeCloseTo(
+      (WALK_SPEED_PX_PER_S * 450) / 1000,
+      6,
+    );
   });
 
-  it('重锚只是换个锚点与时刻（锚点原地不动时折线一个字不变，时钟重新起算）', () => {
+  it('权威点就是我发出的起点（服务端还没起步）→ 锚点时刻与画面一个字不变', () => {
     const prediction = beginPrediction(FROM, TO, BED_COUNT, 1_000);
     if (!prediction) throw new Error('折线应当存在');
     const anchored = anchorPrediction(prediction, FROM.x, FROM.y, 1_100);
     if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
 
+    expect(anchored.anchorTs).toBeCloseTo(prediction.anchorTs, 6);
     expect(anchored.path).toEqual(prediction.path);
-    expect(predictionPointAt(anchored, 1_300)).toEqual(along(FROM, anchored.path, WALK_SPEED_PX_PER_S / 5));
-    // 重锚把「推进的起点」也挪到了新时刻：推进量只算重锚之后的那一段
-    expect(predictionPointAt(anchored, 1_300)).not.toEqual(along(FROM, anchored.path, (WALK_SPEED_PX_PER_S * 300) / 1000));
+    const later = predictionPointAt(prediction, 1_300);
+    expect(predictionPointAt(anchored, 1_300).x).toBeCloseTo(later.x, 6);
+    expect(predictionPointAt(anchored, 1_300).y).toBeCloseTo(later.y, 6);
+  });
+
+  it('权威点在我身后：重锚前后同一时刻的画面点相等（倒退 0px），且 16 拍跨拐点仍单调不减', () => {
+    // 短折线（全程 ~3s）：两个拐点、第一段只有 346px，1.5s 就能跨过
+    const goal = streetPointAt(2, 2, ROWS);
+    const prediction = beginPrediction(FROM, goal, BED_COUNT, 1_000);
+    if (!prediction) throw new Error('折线应当存在');
+    const path = prediction.path;
+    const oneWay = 300;
+
+    let current = prediction;
+    let last = 0;
+    const frame = (t: number): number => {
+      const position = travelled(FROM, path, predictionPointAt(current, t));
+      expect(position).toBeGreaterThanOrEqual(last - 1e-9);
+      last = position;
+      return position;
+    };
+
+    // 服务端还在路上（没有 pos）：画面自己往前走
+    for (let t = 1_000; t < 1_000 + oneWay; t += 10) frame(t);
+
+    for (let tick = 0; tick < 16; tick += 1) {
+      const ts = 1_000 + oneWay + tick * 100;
+      const authority = along(FROM, path, (WALK_SPEED_PX_PER_S * (ts - 1_000 - oneWay)) / 1000);
+      const before = predictionPointAt(current, ts);
+      const anchored = anchorPrediction(current, authority.x, authority.y, ts);
+      if (!anchored) throw new Error('同一条折线上的一拍，不该作废');
+      const after = predictionPointAt(anchored, ts);
+      expect(after.x).toBeCloseTo(before.x, 6);
+      expect(after.y).toBeCloseTo(before.y, 6);
+      current = anchored;
+      for (let t = ts; t < ts + 100; t += 10) frame(t);
+    }
+
+    // 跨过了第一个拐点（证明剪枝之后仍然单调）
+    expect(last).toBeGreaterThan(346);
+  });
+
+  it('权威点在我身前（服务端换了目标 / 领先）→ 前向跳到权威点，之后每帧都不小于改前', () => {
+    const prediction = beginPrediction(FROM, TO, BED_COUNT, 1_000);
+    if (!prediction) throw new Error('折线应当存在');
+    const ahead = along(FROM, prediction.path, 120);
+    const anchored = anchorPrediction(prediction, ahead.x, ahead.y, 1_100);
+    if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
+
+    expect(anchored.anchorTs).toBeCloseTo(1_100, 6);
+    expect(predictionPointAt(anchored, 1_100)).toEqual(ahead);
+    for (let t = 1_100; t <= 1_400; t += 10) {
+      const before = travelled(FROM, prediction.path, predictionPointAt(prediction, t));
+      const after = travelled(FROM, prediction.path, predictionPointAt(anchored, t));
+      expect(after).toBeGreaterThanOrEqual(before - 1e-9);
+    }
+  });
+
+  it('假时间轴（单向时延 0 / 150 / 250 / 500ms）：全程不倒退，稳态领先量 ≈ 单向时延', () => {
+    for (const oneWay of [0, 150, 250, 500]) {
+      const prediction = beginPrediction(FROM, TO, BED_COUNT, 1_000);
+      if (!prediction) throw new Error('折线应当存在');
+      const path = prediction.path;
+
+      let current = prediction;
+      let last = 0;
+      const frame = (t: number): void => {
+        const position = travelled(FROM, path, predictionPointAt(current, t));
+        expect(position).toBeGreaterThanOrEqual(last - 1e-9);
+        last = position;
+      };
+
+      // 意图在路上：画面已经自己起步（lead 的名义值就是这一段）
+      for (let t = 1_000; t < 1_000 + oneWay; t += 10) frame(t);
+
+      // 服务端在 t0 + oneWay 起步并回一条起点 pos，此后每 100ms 一条
+      for (let tick = 0; tick <= 10; tick += 1) {
+        const ts = 1_000 + oneWay + tick * 100;
+        const authority = along(FROM, path, (WALK_SPEED_PX_PER_S * (ts - 1_000 - oneWay)) / 1000);
+        const anchored = anchorPrediction(current, authority.x, authority.y, ts);
+        if (!anchored) throw new Error(`oneWay=${oneWay} 第 ${tick} 拍不该作废`);
+        current = anchored;
+        for (let t = ts; t < ts + 100; t += 10) frame(t);
+      }
+
+      const end = 1_000 + oneWay + 1_000;
+      const truth = along(FROM, path, (WALK_SPEED_PX_PER_S * (end - 1_000 - oneWay)) / 1000);
+      const lead = ((travelled(FROM, path, predictionPointAt(current, end)) - travelled(FROM, path, truth)) / WALK_SPEED_PX_PER_S) * 1000;
+      const tolerance = oneWay === 0 ? 1 : oneWay * 0.2;
+      expect(Math.abs(lead - oneWay)).toBeLessThanOrEqual(tolerance);
+    }
   });
 });
 

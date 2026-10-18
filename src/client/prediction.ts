@@ -1,4 +1,4 @@
-import { PREDICTION_STALE_MS, TELEPORT_SNAP_PX } from '../shared/constants';
+import { PREDICTION_STALE_MS, TELEPORT_SNAP_PX, WALK_SPEED_PX_PER_S } from '../shared/constants';
 import type { Point } from '../shared/layout';
 import { advanceMover } from '../shared/movement';
 import type { MoverState } from '../shared/movement';
@@ -38,6 +38,10 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
  * 收到关于自己的 `pos`：用权威点与该批的服务端时刻**重锚**（不重锚就一路分叉，而且再也回不来）。
  * 路径不必重算——服务端与客户端走的是同一条折线，只是锚点往后挪了一拍。
  *
+ * 重锚**只许向前收敛**：画面在权威点前方多少（`ahead`），锚点时刻就往前挪多少，于是画面在
+ * 那一刻一动不动、`lead` 保持（`docs/design/30-movement-sync.md` §3.2）。权威点反而在我身前时
+ * `ahead = 0` → 画面当场前跳到权威点，仍不倒退。
+ *
  * 权威点离我外推的位置太远时返回 `undefined`（**外推作废**，渲染回落到权威值）：`hop` 传送、
  * 或服务端换了目标。判据用 `TELEPORT_SNAP_PX`——与插值判「位置跳变」是同一个阈值，
  * 客户端对「传送」只有这一种口径。
@@ -48,7 +52,32 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
 export function anchorPrediction(prediction: Prediction, x: number, y: number, ts: number): Prediction | undefined {
   const predicted = predictionPointAt(prediction, ts);
   if (Math.hypot(x - predicted.x, y - predicted.y) > TELEPORT_SNAP_PX) return undefined;
-  return { x, y, anchorTs: ts, path: dropPassed(prediction.path, { x, y }) };
+  const path = dropPassed(prediction.path, { x, y });
+  const ahead = arcLengthAhead({ x, y }, path, predicted);
+  return { x, y, anchorTs: ts - (ahead / WALK_SPEED_PX_PER_S) * 1000, path };
+}
+
+/**
+ * `from` 沿折线走到 `to`（投影到折线上的最近点）的弧长：重锚用它量「画面在权威点前方多少个像素」。
+ * `to` 在折线外时取最近点；投影落在 `from` 之前（或折线为空）时为 0——那一段不该由锚点时刻吸收。
+ */
+export function arcLengthAhead(from: Point, path: Point[], to: Point): number {
+  let previous = from;
+  let travelled = 0;
+  let best = { distance: Infinity, arc: 0 };
+  for (const point of path) {
+    const dx = point.x - previous.x;
+    const dy = point.y - previous.y;
+    const length = Math.hypot(dx, dy);
+    const ratio = length === 0 ? 0 : Math.min(1, Math.max(0, ((to.x - previous.x) * dx + (to.y - previous.y) * dy) / (length * length)));
+    const x = previous.x + dx * ratio;
+    const y = previous.y + dy * ratio;
+    const distance = Math.hypot(to.x - x, to.y - y);
+    if (distance < best.distance) best = { distance, arc: travelled + length * ratio };
+    travelled += length;
+    previous = point;
+  }
+  return best.arc;
 }
 
 /**
