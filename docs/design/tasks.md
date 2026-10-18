@@ -13,6 +13,6 @@
 
 ---
 
-**当前没有进行中的卡片。** 位置同步这一轮的规格在 `30-movement-sync.md`，全部落地；下一批候选见 `backlog.md`（广播折线替代采样、`lead` 前向收敛）。
+**当前没有进行中的卡片。** 位置同步的规格在 `30-movement-sync.md`，全部落地；下一批候选见 `backlog.md`（广播折线替代采样、`lead` 前向收敛）。
 
-真机验收清单在 `build.md` §7，本轮新增两项待验：**走到床边 → 躺下的站立等待 ≈ RTT**（`30-movement-sync.md` §3.9）、**`?debug=1` 下走一趟 `regressPx max` 必须为 0**（§6.2）。
+真机验收清单在 `build.md` §7，两项待验：**走到床边 → 躺下的站立等待 ≈ RTT**（`30-movement-sync.md` §3.9）、**`?debug=1` 下走一趟 `regressPx max` 必须为 0**（§6.2）。

@@ -124,14 +124,6 @@ export function summarizeWindow(window: ProbeWindow): string | undefined {
 }
 
 /**
- * `?debug=1` 的观测探针：每 10s 打一行自身外推与位置同步的聚合指标（§6.2 的四个字段）。
- * **只在带参数时调用**——它订阅 store、挂一个内存定时器，不调用就没有任何开销；
- * 探针只读状态、不参与任何判定，坏了也不影响走动。
- *
- * 画面点与 `leadMs` 现算（外推点本就不进 React 状态，见 `prediction.ts`），
- * 所以这里采到的就是世界层画的那个点。
- */
-/**
  * 画面点：有外推时是外推点，站在走道上时是权威点 `me.x/y`；躺在床上时没有画面点（没有可比轨迹）。
  * 与世界层画的是同一个点（`world.ts` 的 `selfPoint`），只是采样时刻不同。
  */
@@ -140,6 +132,14 @@ function selfPointOf(state: ClientState, serverNow: number): Point | undefined {
   return state.me?.state === 'roaming' ? { x: state.me.x, y: state.me.y } : undefined;
 }
 
+/**
+ * `?debug=1` 的观测探针：每 10s 打一行自身外推与位置同步的聚合指标（§6.2 的四个字段）。
+ * **只在带参数时调用**——它订阅 store、挂一个内存定时器，不调用就没有任何开销；
+ * 探针只读状态、不参与任何判定，坏了也不影响走动。
+ *
+ * 画面点与 `leadMs` 现算（外推点本就不进 React 状态，见 `prediction.ts`），
+ * 所以这里采到的就是世界层画的那个点。
+ */
 export function startMoveProbe(): void {
   const accumulator = createAccumulator();
 
