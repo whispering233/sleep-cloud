@@ -11,20 +11,6 @@
 - 文档已先改好（`docs/` 是本次三张卡的规格来源）：**worker 不改 `docs/`**，只在卡里注明「已落地」时补 `CHANGELOG.md` 的 `## [Unreleased]` 条目。
 - 干净环境先跑一次 `npm run tokens`（typecheck 与 test 依赖生成物 `src/client/styles/tokens.*`）。
 
-## 卡片 B：快捷用语（插槽面板的第一个内容）
-
-**规格**：`50-slot-panel.md` §5、§附。
-
-| 文件 | 做什么 |
-| :--- | :--- |
-| `src/client/quick-phrases.ts`（新） | 8 条静态常量（文案见 §附），带上限常量 `QUICK_PHRASE_MAX = 8` |
-| `src/client/components/QuickPhrases.tsx`（新） | 竖排列表、每条 44px、点 = 把文本**填进输入框**（替换草稿）；`pointerdown` 里 `preventDefault()` 保住焦点 |
-| `src/client/components/ChatPanel.tsx` | 把 `QuickPhrases` 作为 `SlotPanel` 的 children |
-| `src/client/styles/app.css` | `.quick-phrase`：44px 触击、`hud-action` 同族外观（**沿用既有胶囊，不发明第二套**） |
-
-**红线**：点条目**不发消息**、**不 blur**、**不 focus**、面板不退场。
-**本地验收**：§10 第 3 条 + 点 8 条各一次，输入框内容逐条对上。
-
 ## 卡片 C：清理键盘相机旧逻辑（**仅在卡 A 真机验过后**）
 
 删除 `world.ts` 的 `beginKeyboard` / `endKeyboard` / `keyboardCamera` / `rebaseKeyboard` / `keyboardMoved` / `baseline`，`rules.ts` 的 `anchorScroll` / `revealShift` 与其单测；同步 `DESIGN.md`「软键盘」那四条不变量与 `AGENTS.md` 硬纪律 32 的措辞。**前置条件**：卡 A 在真机上验过（否则没有回滚基线）。
