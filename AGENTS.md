@@ -17,6 +17,7 @@
 | 运行时：唤醒恢复、三种时间机制、广播、睡痕、每日唤醒、级表升降级、出生点 | `docs/design/10-hall-runtime.md` |
 | 厅的空间模型、床位与格子规格、级表与厅的边界、布局契约 | `docs/design/20-layout.md` |
 | 端云位置同步：时延归属、重锚公式、别人滞后、验收口径与已知代价 | `docs/design/30-movement-sync.md` |
+| 客户端本地持久化：准入判据、键协议、键登记表 | `docs/design/40-client-storage.md` |
 | 时间常量、限制、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、额度监控、**真机验收清单** | `docs/design/build.md` |
 | 数据模型 | `docs/db/schema.md` |
