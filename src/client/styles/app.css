@@ -523,6 +523,7 @@
   }
 
   .appearance-option {
+    position: relative;
     display: grid;
     justify-items: center;
     gap: var(--spacing-xs);
@@ -537,14 +538,39 @@
     letter-spacing: var(--tracking-label);
   }
 
+  /* 选中读作 2px 墨线，但边框本身留在 1px：改成 2px 会把预览图挤动 1px。
+     多出来的那 1px 用内阴影花在内侧，所以 :focus-visible 的外描边不会被它盖住。 */
   .appearance-option-selected {
     color: var(--color-neutral);
     border-color: var(--color-neutral);
+    box-shadow: inset 0 0 0 1px var(--color-neutral);
+  }
+
+  /* 角标只是装饰、不在 a11y 树里（可访问名走 aria-label）：绝对定位不参与网格排版，也不吃点击。 */
+  .appearance-option-selected::after {
+    content: '✓';
+    position: absolute;
+    inset-block-start: var(--spacing-xs);
+    inset-inline-end: var(--spacing-sm);
+    color: var(--color-neutral);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    pointer-events: none;
   }
 
   .appearance-option:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;
+  }
+
+  /* 两张素材等高不同宽（`boy_stand` 67、`girl_stand` 97，见 `public/sprites/frames.css`）：
+     统一放进 97×113 的框里居中，宽度差就不会被读成「两种尺寸的东西」。不缩放——113 就是素材原高。 */
+  .appearance-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 97px;
+    height: 113px;
   }
 
   /* 图集的帧是背景图，行内元素吃不到宽高（`sprites/frames.css` 只给 width/height/background-position） */

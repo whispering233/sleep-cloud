@@ -105,7 +105,9 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
                 aria-label={APPEARANCE_LABEL[value]}
                 onClick={() => setAppearanceDraft(value)}
               >
-                <span className={`appearance-preview sprite-${PREVIEW_FRAME[value]}`} />
+                <span className="appearance-frame">
+                  <span className={`appearance-preview sprite-${PREVIEW_FRAME[value]}`} />
+                </span>
               </button>
             ))}
           </div>
