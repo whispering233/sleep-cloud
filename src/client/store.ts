@@ -70,6 +70,11 @@ export interface ClientState {
   prediction?: Prediction;
   /** 本地时钟 + 这个偏移 = 服务端时间 */
   clockOffsetMs: number;
+  /**
+   * 最近一批 `pos` 的服务端时刻（`pos.ts`）。只给 `?debug=1` 的观测探针量 `posAge` / `tickSpan` 用
+   * （见 `move-probe.ts`），不参与任何判定；快照后清空（跨快照算节拍差没有意义）。
+   */
+  lastPosTs?: number;
   /** 每个人头顶那一个气泡（发送者 id → 气泡）：同人后来的消息**覆盖**前一条，一条也不排队 */
   bubbles: Map<string, ChatBubble>;
   /**
@@ -146,6 +151,8 @@ export function applySnapshot(message: SnapshotMessage): void {
     rttMs: undefined,
     // 重连以新快照为准：新位置可能是宽限恢复的原位、也可能是出生点，旧的外推没有意义
     prediction: undefined,
+    // 探针的 `posAge` / `tickSpan` 也跟着重置：跨快照算出来的「节拍差」是两次连接的空档
+    lastPosTs: undefined,
   });
 }
 
@@ -249,7 +256,7 @@ export function applyPos(message: PosMessage): void {
     if (person) people.set(id, { ...person, x, y });
   }
 
-  const patch: Partial<ClientState> = { motion, people };
+  const patch: Partial<ClientState> = { motion, people, lastPosTs: message.ts };
   if (nextMe !== me) patch.me = nextMe;
   if (prediction !== state.prediction) patch.prediction = prediction;
   setState(patch);
