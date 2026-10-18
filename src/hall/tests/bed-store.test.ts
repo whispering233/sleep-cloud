@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { BED_OWNERSHIP_TTL_MS, TRACE_TTL_MS } from '../../shared/constants';
 import { HALL_LEVELS } from '../../shared/layout';
 import {
-  bedBusy,
   effectivelyOwned,
   findOwnedBed,
   findTraceBed,

@@ -188,7 +188,7 @@ describe('不变式 ②：墙四侧各距格网 56px，且四侧互相相等', (
 describe('取景范围：地板区 + 墙带 + 墙外一圈（比厅大，多出来的那圈不可走）', () => {
   it('逐档：四边各外扩 WALL_WIDTH + OUTSIDE_MARGIN，且取景范围比地板区大', () => {
     const bad: string[] = [];
-    HALL_LEVELS.forEach((level, index) => {
+    HALL_LEVELS.forEach((_level, index) => {
       const wall = wallRegionOf(index);
       const scroll = scrollRegionOf(index);
       const margin = WALL_WIDTH + OUTSIDE_MARGIN;
@@ -243,7 +243,6 @@ describe('不变式 ③：每张床左右各有 56px（一侧走道、一侧预�
   it('逐档逐床：床紧贴房间里的一侧、另一侧正好留下一个预留位，旁边那条竖走道可走', () => {
     const bad: string[] = [];
     everyBed((level, bedNo) => {
-      const cell = cellOf(bedNo) as Cell;
       const position = positionOf(bedNo) as Point;
       const room = roomOf(bedNo) as Rect;
       const reserve = reserveOf(bedNo) as Rect;

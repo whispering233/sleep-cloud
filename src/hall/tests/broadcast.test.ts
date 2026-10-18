@@ -140,8 +140,6 @@ test('ping 只回发起方一条 pong：不广播、不刷新 lastInputAt、吃�
 test('ping 超出限流时静默丢弃：不回 pong，也不回 4002', () => {
   const me = new FakeSocket();
   const hall = newHall([me]);
-  // 预先占住当前窗口（`windowStart` 就是现在，环路里不会跨过整秒边界，因此不会有时序抖动）
-  const connection: ConnectionState = { ...handshook('u_me', 1000), rate: { windowStart: Date.now(), count: 0 } };
 
   for (let i = 0; i < 6; i += 1) {
     const current = me.deserializeAttachment() as ConnectionState;

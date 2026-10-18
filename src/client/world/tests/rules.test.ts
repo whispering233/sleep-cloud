@@ -4,7 +4,6 @@ import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, ZOOM_MIN } from '../../
 import { HALL_LEVELS, levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
 import type { Person } from '../../../shared/protocol';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
-import type { Motion } from '../../motion';
 import {
   MARKER_RADIUS,
   PERSON_HIT_PX,
