@@ -68,14 +68,12 @@
     pointer-events: none;
   }
 
+  /* 显示条：只有一行纯文字，左对齐。块方向只留 `spacing.xs`（上下各 4px）——显示组没有触击尺寸
+     要求，12px 字上下各 4px 就是全部余量（`docs/ui/DESIGN.md` 的 `hud` 行） */
   .hud {
-    /* 浮层（`.hud-menu`）的定位基准：铺在齿轮下方右对齐，不用 `getBoundingClientRect` 算坐标 */
-    position: relative;
     display: flex;
     align-items: center;
-    /* 组间间距大于组内间距：分组靠间距读出来，不画分隔线（`docs/ui/DESIGN.md` 的 `hud` 行） */
-    gap: var(--spacing-md);
-    padding-block: calc(env(safe-area-inset-top) + var(--spacing-sm)) var(--spacing-sm);
+    padding-block: calc(env(safe-area-inset-top) + var(--spacing-xs)) var(--spacing-xs);
     padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
       calc(env(safe-area-inset-right) + var(--spacing-md));
     color: var(--color-neutral-muted);
@@ -85,8 +83,7 @@
     letter-spacing: var(--tracking-caption);
   }
 
-  /* 显示组：纯文字，与右边的胶囊按钮靠外观区分。`flex:1 1 auto` 把它剩下的宽度全吃掉，
-     可点击组就被钉在最右；窄屏放不下时它自己折行（`flex-wrap`），不去挤压按钮 */
+  /* 显示组：纯文字，不带任何可点击外观。单行是设计目标，`flex-wrap` 只作兜底 */
   .hud-info {
     flex: 1 1 auto;
     min-width: 0;
@@ -96,15 +93,25 @@
     gap: var(--spacing-sm);
   }
 
-  /* 可点击组：不参与伸缩（宽度就是按钮的宽度），垂直居中跟随 HUD 高度 */
-  .hud-actions {
+  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 齿轮，
+     中间由齿轮那一格的 `margin-inline-start: auto` 拉开；不换行、高 44px */
+  .action-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--spacing-md);
+    min-height: 44px;
+  }
+
+  /* 可点击组：不参与伸缩（宽度就是按钮的宽度） */
+  .action-row-actions {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
   }
 
-  /* HUD 里的数值（床号、在线人数、空床、延迟）用等宽：数字跳动时不推挤旁边的文字 */
+  /* 界面里的数值（床号、在线人数、空床、延迟）用等宽：数字跳动时不推挤旁边的文字 */
   .hud-numeric {
     font-family: var(--font-numeric);
     font-size: var(--text-numeric);
@@ -113,12 +120,11 @@
     letter-spacing: var(--tracking-numeric);
   }
 
-  /* 可点击组的按钮外观：描边胶囊，与 `.emote-button` 同规格——项目里「这是个按钮」的既有答案，
-     HUD 沿用而不发明第二套。底透明：衬在 `primary` 通栏上，不写第二层底色。
-     高 44px 是触击尺寸（`touch-target-min`），不再用负外边距把它吃掉 */
+  /* 动作行里的按钮外观：描边胶囊，与 `.emote-button` 同规格——项目里「这是个按钮」的既有答案，
+     沿用而不发明第二套。底透明：衬在面板的 `secondary` 上，不写第二层底色。
+     描边用 `trace` 而不是 `claimed`：`claimed` 压在 `secondary` 上只有 2.74:1，低于 WCAG 1.4.11 的 3:1
+     （`docs/ui/DESIGN.md` 的 `hud-action` 行）。高 44px 是触击尺寸（`touch-target-min`） */
   .hud-action {
-    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
-    pointer-events: auto;
     min-height: 44px;
     padding: 0 var(--spacing-md);
     color: var(--color-neutral);
@@ -127,22 +133,22 @@
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     letter-spacing: var(--tracking-label);
-    border: 1px solid var(--color-claimed);
+    border: 1px solid var(--color-trace);
     border-radius: var(--radius-full);
   }
 
-  /* 设置齿轮：钉在最右、垂直居中。与可点击组只靠 `.hud` 的组间间距（12px）分开，不画分隔线 */
+  /* 设置齿轮：钉在动作行右端（`margin-inline-start: auto` 把中间拉开），也是浮层的定位基准 */
   .hud-settings {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
+    margin-inline-start: auto;
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
      图标颜色吃 `neutral-muted`（齿轮是次要入口，与 `GO` 的 `neutral` 拉开一档） */
   .hud-settings-button {
-    /* 通栏 `.hud-stack` 是 `pointer-events: none`，按钮要把它收回来 */
-    pointer-events: auto;
     /* 齿轮自己也在遮罩之上（层级 3 > 浮层 2 > 遮罩 1）：「再点齿轮也关」就是按钮自己的 `onClick`，
        而不是碰巧被遮罩吃掉那一下 */
     position: relative;
@@ -154,7 +160,7 @@
     place-items: center;
     color: var(--color-neutral-muted);
     background-color: transparent;
-    border: 1px solid var(--color-claimed);
+    border: 1px solid var(--color-trace);
     border-radius: var(--radius-full);
   }
 
@@ -163,13 +169,14 @@
     height: 20px;
   }
 
-  /* 齿轮浮层：右对齐到齿轮所在侧（右内边距与 `.hud` 的 `padding-inline-end` 同一个算式，
-     否则会在安全区手机上错开一截）、贴在 HUD 通栏下沿之下。宽度就一行字，不设上限也不会被右边缘裁掉。
-     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud` 本身不是层叠上下文） */
+  /* 齿轮浮层：**向上**展开（`inset-block-end: 100%`，定位基准是齿轮那一格 `.hud-settings`）、
+     右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
+     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud-settings` / `.chat-panel` 都不是层叠上下文） */
   .hud-menu {
     position: absolute;
-    inset-block-start: 100%;
-    inset-inline-end: calc(env(safe-area-inset-right) + var(--spacing-md));
+    inset-block-end: 100%;
+    inset-inline-end: 0;
+    margin-block-end: var(--spacing-xs);
     z-index: 2;
     padding: var(--spacing-sm);
     color: var(--color-neutral-muted);
@@ -178,7 +185,7 @@
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     letter-spacing: var(--tracking-label);
-    border: 1px solid var(--color-claimed);
+    border: 1px solid var(--color-trace);
     border-radius: var(--radius-md);
     /* 版本号是「读一眼」的字串，不是会跳的数值：不用等宽字体 */
     white-space: nowrap;
@@ -207,17 +214,7 @@
     white-space: nowrap;
   }
 
-  /* HUD 下沿展开的那一行：贴住 HUD 通栏（负外边距吃掉 `.hud-stack` 的间隙），只吃它自己的点击。
-     两件事共用这一行：`GO` 的床号输入、换床模式的提示（两者互斥，不会同屏） */
-  .hud-jump {
-    margin-block-start: calc(-1 * var(--spacing-sm));
-    padding-block-end: var(--spacing-sm);
-    padding-inline: calc(env(safe-area-inset-left) + var(--spacing-md))
-      calc(env(safe-area-inset-right) + var(--spacing-md));
-    background-color: var(--color-primary);
-    pointer-events: auto;
-  }
-
+  /* 门控行（`GO` 的床号输入 / 换床提示）：面板里的普通一行，不再需要负外边距与自绘底色 */
   .hud-jump-row {
     display: flex;
     align-items: center;

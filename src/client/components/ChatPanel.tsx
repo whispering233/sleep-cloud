@@ -7,13 +7,15 @@ import { EMOTE_SHORTCUTS } from '../emotes';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
+import { ActionRow } from './ActionRow';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
 
 /**
- * 底部常驻的面板（见 `docs/ui/DESIGN.md`）：私聊目标行 + 床上动作行 + 输入行，
- * 窄屏也不收进菜单。**没有消息列表**——聊天只在世界里（头顶那一格气泡，见 `world.ts`），
+ * 底部常驻的面板 = **底部控制台**（见 `docs/ui/DESIGN.md` 的 `chat-panel` 行）：连接提示条 →
+ * 私聊目标行 → 床上动作行 → 气泡弱提示 → 动作行 → 门控行 → 输入行，顺序固定，窄屏也不收进菜单。
+ * **没有消息列表**——聊天只在世界里（头顶那一格气泡，见 `world.ts`），
  * 所以面板高度只跟这几行控件有关。私聊目标就是**唯一选中对象**——点 × 取消选中，
  * 目标离开大厅时选中已被清掉。
  *
@@ -69,7 +71,7 @@ export function ChatPanel() {
   );
 
   return (
-    <section className="chat-panel" aria-label="聊天">
+    <section className="chat-panel" aria-label="聊天与操作">
       {/* 连接提示条：占位（不浮层），所以可用视口自动扣掉它；显示与否由自己订阅的连接态决定 */}
       <ConnectionBanner />
 
@@ -107,6 +109,9 @@ export function ChatPanel() {
 
       {/* 输入行上方的弱提示：草稿放不进气泡两行时提前说一声（估算，宁可保守；不拦发送） */}
       {hint !== undefined && <p className="chat-hint">{hint}</p>}
+
+      {/* 动作行 + 门控行：可点击组与齿轮紧贴输入行上方（触发在上、展开在下） */}
+      <ActionRow />
 
       {/* 输入行 / 表情行：同一行、同一位置，由 `emoteOpen` 切换（展开时输入框与发送都不出现） */}
       <form
