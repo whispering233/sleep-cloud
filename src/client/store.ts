@@ -24,6 +24,8 @@ import type { Motion } from './motion';
 import { anchorPrediction, beginPrediction } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
+import { sameZoomMode } from './zoom';
+import type { ZoomMode } from './zoom';
 
 /**
  * 头顶那一个气泡：**只记「说了什么、到什么时候」**。
@@ -91,10 +93,10 @@ export interface ClientState {
    */
   switching: boolean;
   /**
-   * 相机已拉到下限（拉远档）。**只在翻越时写**（世界层逐帧算、同值不通知），动作行那颗按钮的文案吃它。
-   * 它与 `switching` 无关：拉远是视角，不是模式，两个可以同时开。
+   * **世界缩放档位**（客户端本地状态，不进协议、不进快照、不持久化）：`自由缩放` 或锁死在某一档。
+   * 它与 `switching` 无关：缩放是视角，不是模式，两个可以同时开。
    */
-  overview: boolean;
+  zoomMode: ZoomMode;
 }
 
 const emptyState = (): ClientState => ({
@@ -105,7 +107,7 @@ const emptyState = (): ClientState => ({
   clockOffsetMs: 0,
   bubbles: new Map(),
   switching: false,
-  overview: false,
+  zoomMode: { kind: 'free' },
 });
 
 let state: ClientState = emptyState();
@@ -198,10 +200,10 @@ export function setSwitching(on: boolean): void {
   setState({ switching: on });
 }
 
-/** 相机是否已拉到下限（见 `ClientState.overview`）：世界层只在翻越时写，同值不通知。 */
-export function setOverview(on: boolean): void {
-  if (state.overview === on) return;
-  setState({ overview: on });
+/** 写世界缩放档位（见 `ClientState.zoomMode`）：同值不写（档位是低频状态，不需要白重渲染一次）。 */
+export function setZoomMode(mode: ZoomMode): void {
+  if (sameZoomMode(state.zoomMode, mode)) return;
+  setState({ zoomMode: mode });
 }
 
 /**

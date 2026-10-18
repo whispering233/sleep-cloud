@@ -25,6 +25,7 @@ import {
   WALL_BODY,
   WALL_WIDTH,
   AISLE,
+  ZOOM_TIERS,
 } from '../constants';
 import { readDoc, tableRows } from './doc';
 
@@ -87,6 +88,13 @@ describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
     expect(CHAT_MAX_LEN).toBe(200);
     expect(POOL_SIZE).toBe(64);
     expect(MAX_DPR).toBe(docLimit('MAX_DPR'));
+  });
+
+  it('缩放档位表（§3）：四档与文档逐档一致（界面不自己写数）', () => {
+    // 这一格是 `0.175 / 0.5 / 0.75 / 1`，比单值的 `docLimit` 多一个拆分
+    const rows = tableRows(readDoc('design/config.md'), '## 3. 限制', '## 4. 密钥');
+    const value = (rows.find(([item]) => (item ?? '').replaceAll('`', '') === 'ZOOM_TIERS')?.[1] ?? '').replaceAll('`', '');
+    expect([...ZOOM_TIERS]).toEqual(value.split('/').map((part) => Number(part.trim())));
   });
 
   it('单厅（§1）：厅标识逐字来自文档', () => {

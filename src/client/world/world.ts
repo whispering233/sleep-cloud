@@ -8,7 +8,6 @@ import {
   MAX_DPR,
   POOL_SIZE,
   WALL_WIDTH,
-  ZOOM_MIN,
   ZOOM_TEXT_MIN,
 } from '../../shared/constants';
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
@@ -17,8 +16,9 @@ import type { Person } from '../../shared/protocol';
 import { errorTextFor } from '../error-text';
 import { keyboardNow } from '../keyboard';
 import { predictionPointAt } from '../prediction';
-import { beginWalk, getState, setBedDirection, setOverview, setSwitching, showNotice } from '../store';
+import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
 import type { ClientState } from '../store';
+import type { ZoomMode } from '../zoom';
 import {
   alignTargetOf,
   anchorScroll,
@@ -81,8 +81,8 @@ export interface WorldHandle {
   focusMyBed(): void;
   /** 相机跳到指定床（动作行的 `GO`）。 */
   focusBed(bedNo: number): void;
-  /** 拉开 / 收起整厅视角（动作行的「看全厅 / 回到 1×」；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
-  toggleOverview(): void;
+  /** 设世界缩放档位（动作行那颗胶囊；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
+  setZoomMode(mode: ZoomMode): void;
 }
 
 /**
@@ -94,12 +94,6 @@ export interface UiInsets {
   top: HTMLElement | null;
   bottom: HTMLElement | null;
 }
-
-/**
- * 「已拉到下限」的容差：比例是浮点乘积（起点比例 × 距离比），不会正好等于 `ZOOM_MIN`。
- * 它只用于动作行那颗按钮的文案，不参与夹取（夹取是 `clampZoom` 的严格边界）。
- */
-const OVERVIEW_EPS = 0.005;
 
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
@@ -699,11 +693,9 @@ class WorldScene extends Phaser.Scene {
       this.zoom = clamped;
       this.applyZoom();
     }
-    // 已在下限 → 动作行那颗按钮改文案（同值不通知）；浮点乘积不会正好等于下限，所以留一点容差
-    setOverview(clamped <= ZOOM_MIN + OVERVIEW_EPS);
   }
 
-  // ——— 输入：单指拖拽平移 + 轻点；两根手指 = 拉远／放回 ———
+  // ——— 输入：单指拖拽平移 + 轻点；两根手指 = 拉远／放回（固定档下只平移） ———
 
   private bindInput(): void {
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
@@ -736,6 +728,7 @@ class WorldScene extends Phaser.Scene {
    * 两指缩放：距离比 → 比例（夹在 `[ZOOM_MIN, 1]`），**锚在起点那个世界点上**——
    * 每帧改完比例再用同一支 `getWorldPoint` 校正一次滚屏，让那个点仍落在当前两指中点下方。
    * 不自己推相机矩阵：Phaser 的换算不必在这里重写一遍（写错的表现就是拉远时世界在漂）。
+   * 固定档下**不改比例**，但下面那段锚点补偿照旧——两指拖动因此就是平移。
    */
   private updatePinch(): void {
     const pinch = this.pinch;
@@ -747,7 +740,7 @@ class WorldScene extends Phaser.Scene {
       pinch.dist = dist;
       return;
     }
-    this.setZoom(pinch.zoom * (dist / pinch.dist));
+    if (getState().zoomMode.kind === 'free') this.setZoom(pinch.zoom * (dist / pinch.dist));
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const now = this.cameras.main.getWorldPoint(mid.x, mid.y);
     // 锚点的世界坐标必须仍落在当前中点上：差多少补多少（两指一起平移时，补的就是平移量）
@@ -938,11 +931,13 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 动作行的「看全厅 / 回到 1×」：一次性的相机命令，**不动相机焦点**（只改比例）。
-   * 不在下限就拉到下限，已在下限就回 1×——两个入口（捏合与这条）操作同一个状态。
+   * 动作行的缩放档位：写 store（胶囊文案吃它）并**立即应用**——固定档把比例设上去，
+   * `free` 只解锁（比例保持当前值：「自由缩放」是不锁定，不是回到某个数）。
+   * **不动相机焦点**（只改比例）。
    */
-  toggleOverview(): void {
-    this.setZoom(this.zoom <= ZOOM_MIN + OVERVIEW_EPS ? 1 : ZOOM_MIN);
+  setZoomMode(mode: ZoomMode): void {
+    writeZoomMode(mode);
+    if (mode.kind === 'fixed') this.setZoom(mode.z);
   }
 }
 
@@ -980,8 +975,8 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     focusBed(bedNo: number): void {
       scene.focusBed(bedNo);
     },
-    toggleOverview(): void {
-      scene.toggleOverview();
+    setZoomMode(mode: ZoomMode): void {
+      scene.setZoomMode(mode);
     },
   };
 }

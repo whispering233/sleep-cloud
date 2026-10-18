@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { getState, setSwitching, showNotice } from '../store';
-import { focusBed, focusMyBed, toggleOverview } from '../world-handle';
+import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
+import { sameZoomMode, zoomModeLabel, zoomOptions } from '../zoom';
 import { useHudView } from './Hud';
 import { TextInput } from './TextInput';
 
@@ -22,36 +23,47 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / `看全厅`）、右 = 设置齿轮（点开是一个向上展开的浮层：**更换床位** + 版本号），
+ * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个向上展开的浮层：**更换床位** + 版本号），
  * 门控行紧贴其下。分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
  *
  * `GO` 点开后在门控行展开输入床号（`hop`）：输入的是**显示床号**（1 起），由 `parseJumpTarget`
  * 按当前 `bedCount` 先拦一道——非法就给可见提示且**不发送**（可点击的界面不静默失败）。
+ * 缩放胶囊点开后在同一个行位置展开档位选项（`zoom-picker`）：**它既是世界缩放的单指入口**
+ * （WCAG 2.5.1：多指手势必须有单指替代，而且捏合没有可发现性），也是档位状态的**常驻显示**
+ * ——忘了自己锁在 `0.5×` 的人会以为捏合坏了。
  *
- * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO`**
- * （`GO` 是「跳过去看」、换床是「搬过去」，摆在一起必混），门控行换成换床提示（两者互斥）。
+ * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO` 与缩放胶囊**
+ * （两者都是「看一眼」的，换床是「搬过去」，摆在一起必混），门控行换成换床提示（互斥）。
  * 模式的可见状态必须**常驻**：它跨聊天、跨起身活着，忘了自己在模式里的人点一张空床，代价与误点一样。
  */
 export function ActionRow() {
   const view = useHudView();
-  /** `GO` 展开的门控行：提交、取消、Esc 都收起（不留一个空行占着面板版面） */
-  const [jumpOpen, setJumpOpen] = useState(false);
+  /**
+   * 门控行的唯一占用者（`GO` 的输入 / 缩放选项）：提交、取消、选中一项、`Esc` 都收起
+   * （不留一个空行占着面板版面）。第三个占用者「换床提示」不占这里——它由 `view.switching` 驱动，
+   * 优先级最高（模式是常驻事实，展开项是临时动作）。
+   */
+  const [gate, setGate] = useState<'none' | 'jump' | 'zoom'>('none');
   const [draft, setDraft] = useState('');
   /** 齿轮浮层：遮罩 / `Esc` / 再点齿轮三条路径都收起（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // 浮层开着时的 `Esc`：键盘用户不必靠鼠标点遮罩才能关（遮罩是 `aria-hidden` 的纯点击面）
+  // 浮层或缩放选项开着时的 `Esc`：键盘用户不必靠鼠标点遮罩 / 再点那颗胶囊才能关
+  // （遮罩是 `aria-hidden` 的纯点击面）
   useEffect(() => {
-    if (!menuOpen) return undefined;
+    if (!menuOpen && gate !== 'zoom') return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        setGate('none');
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen]);
+  }, [menuOpen, gate]);
 
   const closeJump = (): void => {
-    setJumpOpen(false);
+    setGate('none');
     setDraft('');
   };
 
@@ -102,22 +114,25 @@ export function ActionRow() {
               type="button"
               className="hud-action"
               aria-label="跳到指定床号"
-              aria-expanded={jumpOpen}
-              onClick={() => (jumpOpen ? closeJump() : setJumpOpen(true))}
+              aria-expanded={gate === 'jump'}
+              onClick={() => (gate === 'jump' ? closeJump() : setGate('jump'))}
             >
               GO
             </button>
           )}
-          {/* 世界缩放的**单指入口**：WCAG 2.5.1 要求多指手势必须有单指替代，而且捏合本身没有可发现性。
-              文案随状态（不在下限 = 「看全厅」，已在下限 = 「回到 1×」）；捏合与它操作同一个状态 */}
-          <button
-            type="button"
-            className="hud-action"
-            aria-label={view.overview ? '回到原来的比例' : '看全厅'}
-            onClick={() => toggleOverview()}
-          >
-            {view.overview ? '回到 1×' : '看全厅'}
-          </button>
+          {/* 缩放胶囊：文案 = **当前档位**（它是档位状态的常驻显示），点开在门控行展开选项。
+              换床模式里不显示（与 `GO` 一致：模式期间门控行归换床提示） */}
+          {view.switching ? null : (
+            <button
+              type="button"
+              className="hud-action"
+              aria-label="画布缩放"
+              aria-expanded={gate === 'zoom'}
+              onClick={() => setGate(gate === 'zoom' ? 'none' : 'zoom')}
+            >
+              {zoomModeLabel(view.zoomMode)}
+            </button>
+          )}
         </div>
 
         {/* 齿轮：与可点击组同一套描边胶囊外观，但是 44×44 的正方形（里面只有图标）。
@@ -185,7 +200,7 @@ export function ActionRow() {
       ) : null}
 
       {/* `GO` 展开的门控行：输入显示床号（1 起），回车或「确定」提交，Esc 或「取消」收起 */}
-      {jumpOpen && !view.switching ? (
+      {gate === 'jump' && !view.switching ? (
         <form
           className="gate-row"
           onSubmit={(event) => {
@@ -213,6 +228,28 @@ export function ActionRow() {
             取消
           </button>
         </form>
+      ) : null}
+
+      {/* 缩放档位选项（`zoom-picker`，与 `GO` 的输入 / 换床提示同一个行位置）：点一项立即生效 + 收起，
+          纯本地状态、无上行。选中项加实心 + ✓（`aria-pressed` 已表达选中） */}
+      {gate === 'zoom' && !view.switching ? (
+        <div className="gate-row zoom-row">
+          {zoomOptions().map((option) => (
+            <button
+              key={zoomModeLabel(option)}
+              type="button"
+              className={sameZoomMode(option, view.zoomMode) ? 'hud-action zoom-option-selected' : 'hud-action'}
+              aria-pressed={sameZoomMode(option, view.zoomMode)}
+              onClick={() => {
+                setZoomMode(option);
+                setGate('none');
+              }}
+            >
+              {sameZoomMode(option, view.zoomMode) ? '✓ ' : ''}
+              {zoomModeLabel(option)}
+            </button>
+          ))}
+        </div>
       ) : null}
     </>
   );

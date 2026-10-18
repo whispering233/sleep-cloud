@@ -1,6 +1,8 @@
 import { displayBedNoOf } from '../shared/layout';
 import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
+import { sameZoomMode } from './zoom';
+import type { ZoomMode } from './zoom';
 
 /**
  * 界面的**派生视图**（纯函数，可单测）：顶部显示条与动作行共用这一份。
@@ -24,8 +26,8 @@ export interface HudView {
   rttMs?: number;
   /** 换床模式是否开着：开着时门控行换成换床提示、可点击组收起 `GO`（见 `docs/ui/DESIGN.md`） */
   switching: boolean;
-  /** 相机是否已拉到下限：决定那颗按钮是「看全厅」还是「回到 1×」 */
-  overview: boolean;
+  /** 世界缩放档位：动作行那颗缩放胶囊的文案吃它（见 `src/client/zoom.ts`） */
+  zoomMode: ZoomMode;
 }
 
 export function hudViewOf(state: ClientState): HudView {
@@ -37,7 +39,7 @@ export function hudViewOf(state: ClientState): HudView {
     emptyBeds: state.hall === undefined ? undefined : state.hall.bedCount - state.ownedBeds.size,
     rttMs: state.rttMs,
     switching: state.switching,
-    overview: state.overview,
+    zoomMode: state.zoomMode,
   };
 }
 
@@ -50,6 +52,6 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.emptyBeds === b.emptyBeds &&
     a.rttMs === b.rttMs &&
     a.switching === b.switching &&
-    a.overview === b.overview
+    sameZoomMode(a.zoomMode, b.zoomMode)
   );
 }

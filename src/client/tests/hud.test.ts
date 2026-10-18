@@ -38,7 +38,7 @@ describe('HUD 派生视图', () => {
       emptyBeds: BED_COUNT - 1,
       rttMs: undefined,
       switching: false,
-      overview: false,
+      zoomMode: { kind: 'free' },
     });
   });
 
@@ -105,11 +105,11 @@ describe('HUD 派生视图', () => {
     expect(sameHudView(sampled, hudViewOf(stateWith({ rttMs: 120 })))).toBe(true);
   });
 
-  it('拉远档状态变了才算变化：它决定那颗按钮是「看全厅」还是「回到 1×」', () => {
+  it('缩放档位变了才算变化：它决定那颗胶囊的文案', () => {
     const base = hudViewOf(stateWith());
-    expect(base.overview).toBe(false);
-    expect(sameHudView(base, hudViewOf(stateWith({ overview: false })))).toBe(true);
-    expect(sameHudView(base, hudViewOf(stateWith({ overview: true })))).toBe(false);
+    expect(base.zoomMode).toEqual({ kind: 'free' });
+    expect(sameHudView(base, hudViewOf(stateWith({ zoomMode: { kind: 'free' } })))).toBe(true);
+    expect(sameHudView(base, hudViewOf(stateWith({ zoomMode: { kind: 'fixed', z: 0.75 } })))).toBe(false);
   });
 
   it('换床模式开关变了才算变化：它决定门控行与 `GO` 的存亡', () => {

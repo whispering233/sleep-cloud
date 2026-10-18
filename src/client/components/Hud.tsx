@@ -22,7 +22,7 @@ export function useHudView(): HudView {
 
 /**
  * 顶部的极简信息条，**只放显示性信息**：`在线 n` / `空床 n` / `延迟 n ms`，左对齐、单行
- * （`docs/ui/DESIGN.md` 的 `hud` 行）。可点击组（床号 / `GO` / 看全厅）与设置齿轮**不在这里**
+ * （`docs/ui/DESIGN.md` 的 `hud` 行）。可点击组（床号 / `GO` / 缩放胶囊）与设置齿轮**不在这里**
  * ——它们住在 `chat-panel` 的动作行（见 `ActionRow`）。
  *
  * 「延迟」**常驻**——没有样本时显示 `—`；样本来自聊天回投与**按需探活的 `pong`**（所以回到前台 /
