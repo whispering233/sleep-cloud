@@ -16,7 +16,7 @@ import { findPath } from '../shared/pathfinding';
  * 3. 外推点绝不进 React 的逐帧状态：由世界层每帧现算（`world.ts` 的 `selfPoint`）。
  */
 export interface Prediction {
-  /** 锚点（世界像素）：发出意图时的权威点，或最近一条关于自己的 `pos` */
+  /** 锚点（世界像素）：发出意图时的权威点，或最近一条关于自己的 `pos` 在折线上的**投影** */
   x: number;
   y: number;
   /** 锚点对应的服务端时刻 */
@@ -38,9 +38,9 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
  * 收到关于自己的 `pos`：用权威点与该批的服务端时刻**重锚**（不重锚就一路分叉，而且再也回不来）。
  * 路径不必重算——服务端与客户端走的是同一条折线，只是锚点往后挪了一拍。
  *
- * 重锚**只许向前收敛**：画面在权威点前方多少（`ahead`），锚点时刻就往前挪多少，于是画面在
- * 那一刻一动不动、`lead` 保持（`docs/design/30-movement-sync.md` §3.2）。权威点反而在我身前时
- * `ahead = 0` → 画面当场前跳到权威点，仍不倒退。
+ * 重锚**只许向前收敛**：画面在锚点（权威点的投影）前方多少（`ahead`），锚点时刻就往前挪多少，
+ * 于是画面在那一刻一动不动、`lead` 保持（`docs/design/30-movement-sync.md` §3.2）。权威点反而在
+ * 我身前时 `ahead = 0` → 画面当场前跳到锚点，仍不倒退。
  *
  * 权威点离我外推的位置太远时返回 `undefined`（**外推作废**，渲染回落到权威值）：`hop` 传送、
  * 或服务端换了目标。判据用 `TELEPORT_SNAP_PX`——与插值判「位置跳变」是同一个阈值，
@@ -52,19 +52,26 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
 export function anchorPrediction(prediction: Prediction, x: number, y: number, ts: number): Prediction | undefined {
   const predicted = predictionPointAt(prediction, ts);
   if (Math.hypot(x - predicted.x, y - predicted.y) > TELEPORT_SNAP_PX) return undefined;
-  const path = dropPassed(prediction.path, { x, y });
-  const ahead = arcLengthAhead({ x, y }, path, predicted);
-  return { x, y, anchorTs: ts - (ahead / WALK_SPEED_PX_PER_S) * 1000, path };
+  const origin = { x: prediction.x, y: prediction.y };
+  // 锚点取权威点的**投影**：横向分量不进轨迹，否则画面会被拉到一条斜线上（§3.2）
+  const anchor = projectOnPath(origin, prediction.path, { x, y });
+  const ahead = Math.max(0, arcLengthAhead(origin, prediction.path, predicted) - anchor.arc);
+  return {
+    x: anchor.x,
+    y: anchor.y,
+    anchorTs: ts - (ahead / WALK_SPEED_PX_PER_S) * 1000,
+    path: dropPassed(origin, prediction.path, anchor.arc),
+  };
 }
 
 /**
- * `from` 沿折线走到 `to`（投影到折线上的最近点）的弧长：重锚用它量「画面在权威点前方多少个像素」。
- * `to` 在折线外时取最近点；投影落在 `from` 之前（或折线为空）时为 0——那一段不该由锚点时刻吸收。
+ * `to` 到折线（起点 `from` → 各途经点）的**最近投影点**及其弧长：重锚用它把权威点搬到折线上，
+ * 并量出「画面在锚点前方多少个像素」。投影落在 `from` 之前、或折线为空时停在 `from`（弧长 0）。
  */
-export function arcLengthAhead(from: Point, path: Point[], to: Point): number {
+function projectOnPath(from: Point, path: Point[], to: Point): Point & { arc: number } {
   let previous = from;
   let travelled = 0;
-  let best = { distance: Infinity, arc: 0 };
+  let best: Point & { arc: number; distance: number } = { x: from.x, y: from.y, arc: 0, distance: Infinity };
   for (const point of path) {
     const dx = point.x - previous.x;
     const dy = point.y - previous.y;
@@ -73,28 +80,38 @@ export function arcLengthAhead(from: Point, path: Point[], to: Point): number {
     const x = previous.x + dx * ratio;
     const y = previous.y + dy * ratio;
     const distance = Math.hypot(to.x - x, to.y - y);
-    if (distance < best.distance) best = { distance, arc: travelled + length * ratio };
+    if (distance < best.distance) best = { x, y, arc: travelled + length * ratio, distance };
     travelled += length;
     previous = point;
   }
-  return best.arc;
+  return { x: best.x, y: best.y, arc: best.arc };
 }
 
 /**
- * 剪掉锚点已经走过的拐点：留着它，推进器会先掉头走回那个拐点（画面上是往回跳一下）。
- * 判据：锚点到拐点的连线在「拐点 → 下一个拐点」方向上的投影为正（= 锚点已在这一段之中或之后）。
+ * `from` 沿折线走到 `to`（投影到折线上的最近点）的弧长：重锚用它量「画面在锚点前方多少个像素」。
+ * `to` 在折线外时取最近点；投影落在 `from` 之前（或折线为空）时为 0——那一段不该由锚点时刻吸收。
  */
-function dropPassed(path: Point[], anchor: Point): Point[] {
-  let index = 0;
-  while (index + 1 < path.length) {
-    const from = path[index] as Point;
-    const to = path[index + 1] as Point;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    if ((anchor.x - from.x) * dx + (anchor.y - from.y) * dy <= 0) break;
-    index += 1;
+export function arcLengthAhead(from: Point, path: Point[], to: Point): number {
+  return projectOnPath(from, path, to).arc;
+}
+
+/**
+ * 剪掉**锚点已经走过**的拐点：留着它，推进器会先掉头走回那个拐点（画面上是往回跳一下）。
+ * 判据是**弧长**（折线自己走过的距离），与锚点横向偏出折线多少无关——方向点积在那个情形下会剪错。
+ * 锚点之后第一个拐点永远留下（最后那个途经点就是目的地，不能被剪掉）。
+ */
+function dropPassed(from: Point, path: Point[], passedArc: number): Point[] {
+  let previous = from;
+  let travelled = 0;
+  let dropped = 0;
+  while (dropped < path.length) {
+    const point = path[dropped] as Point;
+    travelled += Math.hypot(point.x - previous.x, point.y - previous.y);
+    if (travelled >= passedArc) break;
+    previous = point;
+    dropped += 1;
   }
-  return index === 0 ? path : path.slice(index);
+  return path.slice(Math.max(0, Math.min(dropped, path.length - 1)));
 }
 
 /**

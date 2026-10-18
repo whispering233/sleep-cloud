@@ -17,6 +17,7 @@ import { findPath } from '../../shared/pathfinding';
 import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from '../prediction';
+import type { Prediction } from '../prediction';
 import { applyError, applyLeave, applyPos, applySnapshot, applyState, beginWalk, clearPrediction, getState, setState } from '../store';
 
 const BED_COUNT = (HALL_LEVELS[0] as HallLevel).capacity;
@@ -265,6 +266,88 @@ describe('自身外推：重锚', () => {
       const lead = ((travelled(FROM, path, predictionPointAt(current, end)) - travelled(FROM, path, truth)) / WALK_SPEED_PX_PER_S) * 1000;
       const tolerance = oneWay === 0 ? 1 : oneWay * 0.2;
       expect(Math.abs(lead - oneWay)).toBeLessThanOrEqual(tolerance);
+    }
+  });
+});
+
+describe('自身外推：权威点横向偏离折线（锚点取投影 + 剪枝按弧长）', () => {
+  /** 卡住的复现输入：出发 990→、锚点时刻 727；画面在 t=1000 已走 60px，权威点在折线南侧 10px。 */
+  const MID: Prediction = { x: 990, y: 128, anchorTs: 727, path: [{ x: 2_277, y: 128 }, { x: 2_277, y: 1_432 }] };
+
+  it('权威点横向偏 10px（复现）：画面不动、轨迹不是斜线、拐点不被剪', () => {
+    const before = predictionPointAt(MID, 1_000);
+    expect(before.x).toBeCloseTo(1_050.06, 6);
+    expect(before.y).toBeCloseTo(128, 6);
+
+    const anchored = anchorPrediction(MID, 1_000, 138, 1_000);
+    if (!anchored) throw new Error('横向 10px 不该判成传送');
+
+    // 锚点 = 权威点在折线上的**投影**：那 10px 横向偏移不进轨迹
+    expect(anchored.x).toBeCloseTo(1_000, 6);
+    expect(anchored.y).toBeCloseTo(128, 6);
+
+    // 画面一动不动（改前与改后各差 ≤1px）
+    const after = predictionPointAt(anchored, 1_000);
+    expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+
+    // 拐点 (2277,128) 仍在（改前被方向点积误删，画面被投到穿床的斜线上）
+    expect(anchored.path).toEqual(MID.path);
+    expect(anchored.path).not.toBe(MID.path);
+
+    // 之后每一帧都还在原折线上（y 恒 128，直到拐点），即没有变成斜线
+    for (let t = 1_000; t <= 3_000; t += 100) expect(predictionPointAt(anchored, t).y).toBeCloseTo(128, 6);
+  });
+
+  it('权威点向北偏 10px（反方向横向）：同样不动、同样保拐点', () => {
+    const before = predictionPointAt(MID, 1_000);
+    const anchored = anchorPrediction(MID, 1_000, 118, 1_000);
+    if (!anchored) throw new Error('横向 10px 不该判成传送');
+
+    expect(anchored).toMatchObject({ x: 1_000, y: 128 });
+    expect(predictionPointAt(anchored, 1_000).x).toBeCloseTo(before.x, 6);
+    expect(predictionPointAt(anchored, 1_000).y).toBeCloseTo(before.y, 6);
+    expect(anchored.path).toEqual(MID.path);
+  });
+
+  it('拐点落在 `ahead` 之内：剪枝只按锚点走到的弧长，画面不抄近路穿床', () => {
+    const pivot = streetPointAt(2, 2, ROWS);
+    const prediction = beginPrediction(FROM, pivot, BED_COUNT, 1_000);
+    if (!prediction) throw new Error('折线应当存在');
+    // 第一个真拐点（后两个途经点之一）在折线上的弧长
+    const corner = pathLength(FROM, prediction.path.slice(0, prediction.path.length - 1));
+    const ts = 1_000 + ((corner + 30) / WALK_SPEED_PX_PER_S) * 1000;
+
+    // 权威点在拐点前 20px、画面已在拐点后 30px：`ahead` = 50 跨着拐点
+    const authority = along(FROM, prediction.path, corner - 20);
+    const anchored = anchorPrediction(prediction, authority.x, authority.y, ts);
+    if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
+
+    const before = predictionPointAt(prediction, ts);
+    const after = predictionPointAt(anchored, ts);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
+    // 画面仍在折线上（拐点之后是沿第二段走的），不是锚点到下一拐点的直线
+    const onPath = along(FROM, prediction.path, corner + 30);
+    expect(after.x).toBeCloseTo(onPath.x, 6);
+    expect(after.y).toBeCloseTo(onPath.y, 6);
+    // 只掉掉了与起点重合那个零长度「拐点」，真拐点留着
+    expect(anchored.path).toEqual(prediction.path.slice(1));
+  });
+
+  it('权威点在画面前方且横向偏 10px：前向跳到投影点，之后每帧不小于改前', () => {
+    const prediction = beginPrediction(FROM, TO, BED_COUNT, 1_000);
+    if (!prediction) throw new Error('折线应当存在');
+    const ahead = along(FROM, prediction.path, 120);
+    const anchored = anchorPrediction(prediction, ahead.x, ahead.y - 10, 1_100);
+    if (!anchored) throw new Error('这是同一条折线上的一拍，不该作废');
+
+    expect(anchored.anchorTs).toBeCloseTo(1_100, 6);
+    expect(predictionPointAt(anchored, 1_100)).toEqual(ahead);
+    for (let t = 1_100; t <= 1_400; t += 10) {
+      const before = travelled(FROM, prediction.path, predictionPointAt(prediction, t));
+      const afterTravelled = travelled(FROM, prediction.path, predictionPointAt(anchored, t));
+      expect(afterTravelled).toBeGreaterThanOrEqual(before - 1e-9);
     }
   });
 });
