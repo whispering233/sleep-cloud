@@ -19,8 +19,13 @@ export interface Prediction {
   /** 锚点（世界像素）：发出意图时的权威点，或最近一条关于自己的 `pos` 在折线上的**投影** */
   x: number;
   y: number;
-  /** 锚点对应的服务端时刻 */
+  /** 锚点对应的服务端时刻（带 `lead` 时比 `ts` 早） */
   anchorTs: number;
+  /**
+   * 这条锚点对应的**真值时刻**：发起那一刻（`beginPrediction` 的 `now`）或重锚那条 `pos.ts`。
+   * 保鲜期从它起算，不从 `anchorTs`（两者只在 `lead = 0` 时才相等，见 `30-movement-sync.md` §3.7）。
+   */
+  ts: number;
   /** 锚点之后剩余的途经点（最后一个就是目标点） */
   path: Point[];
 }
@@ -31,7 +36,7 @@ export interface Prediction {
  */
 export function beginPrediction(from: Point, to: Point, bedCount: number, now: number): Prediction | undefined {
   const path = findPath(from, to, bedCount);
-  return path ? { x: from.x, y: from.y, anchorTs: now, path } : undefined;
+  return path ? { x: from.x, y: from.y, anchorTs: now, ts: now, path } : undefined;
 }
 
 /**
@@ -40,7 +45,7 @@ export function beginPrediction(from: Point, to: Point, bedCount: number, now: n
  *
  * 重锚**只许向前收敛**：画面在锚点（权威点的投影）前方多少（`ahead`），锚点时刻就往前挪多少，
  * 于是画面在那一刻一动不动、`lead` 保持（`docs/design/30-movement-sync.md` §3.2）。权威点反而在
- * 我身前时 `ahead = 0` → 画面当场前跳到锚点，仍不倒退。
+ * 我身前时 `ahead = 0` → 画面当场前跳到锚点，仍不倒退。真值时刻换成这一拍的 `ts`（保鲜期从它起算）。
  *
  * 权威点离我外推的位置太远时返回 `undefined`（**外推作废**，渲染回落到权威值）：`hop` 传送、
  * 或服务端换了目标。判据用 `TELEPORT_SNAP_PX`——与插值判「位置跳变」是同一个阈值，
@@ -60,6 +65,7 @@ export function anchorPrediction(prediction: Prediction, x: number, y: number, t
     x: anchor.x,
     y: anchor.y,
     anchorTs: ts - (ahead / WALK_SPEED_PX_PER_S) * 1000,
+    ts,
     path: dropPassed(origin, prediction.path, anchor.arc),
   };
 }
@@ -116,11 +122,12 @@ function dropPassed(from: Point, path: Point[], passedArc: number): Point[] {
 
 /**
  * 外推点：锚点按 `WALK_SPEED_PX_PER_S`（= `advanceMover` 的默认速度）沿折线推进「现在 − 锚点时刻」，
- * 但**最多推进 `PREDICTION_STALE_MS`** —— 超时冻结在最后一个外推点，**不回退**到旧权威点。
+ * 但**最多推进到真值时刻之后 `PREDICTION_STALE_MS`** —— 此后冻结在最后一个外推点，**不回退**到旧权威点。
  * 推进量按时间算（`advanceMover` 同一条纪律），所以掉帧与节拍抖动只影响平滑度、不影响速度。
  */
 export function predictionPointAt(prediction: Prediction, now: number): Point {
-  const elapsed = Math.min(Math.max(0, now - prediction.anchorTs), PREDICTION_STALE_MS);
+  const staleAt = prediction.ts + PREDICTION_STALE_MS;
+  const elapsed = Math.max(0, Math.min(now, staleAt) - prediction.anchorTs);
   const mover: MoverState = { x: prediction.x, y: prediction.y, path: [...prediction.path] };
   advanceMover(mover, elapsed);
   return { x: mover.x, y: mover.y };

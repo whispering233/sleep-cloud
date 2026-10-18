@@ -288,7 +288,7 @@ describe('自身外推：重锚', () => {
 
 describe('自身外推：权威点横向偏离折线（锚点取投影 + 剪枝按弧长）', () => {
   /** 卡住的复现输入：出发 990→、锚点时刻 727；画面在 t=1000 已走 60px，权威点在折线南侧 10px。 */
-  const MID: Prediction = { x: 990, y: 128, anchorTs: 727, path: [{ x: 2_277, y: 128 }, { x: 2_277, y: 1_432 }] };
+  const MID: Prediction = { x: 990, y: 128, anchorTs: 727, ts: 1_000, path: [{ x: 2_277, y: 128 }, { x: 2_277, y: 1_432 }] };
 
   it('权威点横向偏 10px（复现）：画面不动、轨迹不是斜线、拐点不被剪', () => {
     const before = predictionPointAt(MID, 1_000);
@@ -587,5 +587,85 @@ describe('自身外推：意图锚点取真值 + 领先量（store）', () => {
     const render = predictionPointAt(started, SNAPSHOT_TS);
     expect(Math.abs(render.x - front.x)).toBeLessThan(10);
     expect(Math.abs(render.y - front.y)).toBeLessThan(10);
+  });
+});
+
+describe('自身外推：保鲜期按「最后一条关于自己的 pos」起算（store）', () => {
+  it('带 250ms 领先量的外推：`ts + 2000ms` 之内照常推进，之后冻结且不回退', () => {
+    applySnapshot(snapshot());
+    beginWalk(TO);
+    // 走出 55px（= 250ms）时改目标：那 55px 进的是**锚点时刻**，领先量 250ms
+    vi.setSystemTime(LOCAL_NOW + 250);
+    beginWalk(RETARGET);
+    const prediction = getState().prediction;
+    if (!prediction) throw new Error('外推应当已登记');
+    const ts = SNAPSHOT_TS + 250;
+    expect(prediction.anchorTs).toBe(SNAPSHOT_TS);
+    expect(prediction.ts).toBe(ts);
+    expect(prediction.ts - prediction.anchorTs).toBeCloseTo(250, 6);
+    // 折线比「2000 + 领先量」还长 → 推进量可以被观察到（不是走到头了才不动）
+    expect(pathLength(FROM, prediction.path)).toBeGreaterThan((WALK_SPEED_PX_PER_S * (PREDICTION_STALE_MS + 250)) / 1000);
+
+    let last = travelled(FROM, prediction.path, predictionPointAt(prediction, ts));
+    expect(last).toBeCloseTo(55, 6);
+    for (let t = ts + 16; t <= ts + PREDICTION_STALE_MS; t += 16) {
+      const position = travelled(FROM, prediction.path, predictionPointAt(prediction, t));
+      expect(position).toBeGreaterThan(last);
+      last = position;
+    }
+    // 冻结点在真值时刻之后 2000ms = 495px（按锚点时刻起算的话 1750ms 就冻死在 440px）
+    expect(last).toBeCloseTo((WALK_SPEED_PX_PER_S * (PREDICTION_STALE_MS + 250)) / 1000, 6);
+    const frozen = predictionPointAt(prediction, ts + PREDICTION_STALE_MS);
+    expect(predictionPointAt(prediction, ts + PREDICTION_STALE_MS + 30_000)).toEqual(frozen);
+    expect(frozen).not.toEqual(FROM);
+  });
+
+  it('旧外推已冻结时发新意图：不携带幻影领先量（lead = 0），画面就在真值点，且能正常推进', () => {
+    applySnapshot(snapshot());
+    beginWalk(RETARGET);
+    const old = getState().prediction;
+    if (!old) throw new Error('外推应当已登记');
+    // 3000ms 没有任何关于自己的 pos：旧外推早就冻结在 440px 处（真值点还是 `me.x/y` = FROM）
+    vi.setSystemTime(LOCAL_NOW + 3_000);
+    const serverNow = SNAPSHOT_TS + 3_000;
+    expect(serverNow - old.ts).toBeGreaterThan(PREDICTION_STALE_MS);
+    expect(travelled(FROM, old.path, predictionPointAt(old, serverNow))).toBeCloseTo(
+      (WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 1000,
+      6,
+    );
+
+    beginWalk(TO);
+    const prediction = getState().prediction;
+    if (!prediction) throw new Error('外推应当已登记');
+    // 领先量 0：锚点时刻 = 真值时刻 = 发起那一刻，画面点就在锚点（= 真值点）上
+    expect(prediction.anchorTs).toBe(serverNow);
+    expect(prediction.ts).toBe(serverNow);
+    const render = predictionPointAt(prediction, serverNow);
+    expect(render.x).toBeCloseTo(FROM.x, 6);
+    expect(render.y).toBeCloseTo(FROM.y, 6);
+
+    // 也不一开局就冻死：之后满满 2000ms 照常推进
+    let last = 0;
+    for (let t = serverNow; t <= serverNow + PREDICTION_STALE_MS; t += 16) {
+      const position = travelled(FROM, prediction.path, predictionPointAt(prediction, t));
+      expect(position).toBeGreaterThanOrEqual(last);
+      last = position;
+    }
+    expect(last).toBeCloseTo((WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 1000, 6);
+  });
+
+  it('重锚把真值时刻换成那条 `pos` 的时刻（`ts === pos.ts`）', () => {
+    applySnapshot(snapshot());
+    beginWalk(TO);
+    const started = getState().prediction;
+    if (!started) throw new Error('外推应当已登记');
+    expect(started.ts).toBe(SNAPSHOT_TS);
+
+    const authority = along(FROM, started.path, 60);
+    applyPos({ t: 'pos', ts: 1_000_200, items: [['u_me', authority.x, authority.y]] });
+    const anchored = getState().prediction;
+    if (!anchored) throw new Error('同一条折线上的一拍，不该作废');
+    expect(anchored.ts).toBe(1_000_200);
+    expect(anchored.anchorTs).toBeLessThanOrEqual(anchored.ts);
   });
 });

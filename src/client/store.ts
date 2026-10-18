@@ -13,7 +13,7 @@ import type {
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_BUBBLE_MS, WALK_SPEED_PX_PER_S } from '../shared/constants';
+import { CHAT_BUBBLE_MS, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../shared/constants';
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
@@ -274,8 +274,11 @@ export function beginWalk(to: Point): void {
   // 领先量 = 画面上那一点在**新折线上的投影弧长** / v（`30-movement-sync.md` §3.3）。用弧长不用直线
   // 距离：躺在床上点地面时画面在床心、锚点在床脚前，两者相距 78px 是横向偏移，拿它当领先量会把画面
   // 凭空前推。站着不动（没有外推）→ 0，于是「点击即起步」；改目标时画面在切换那一刻一动不动。
-  const leadMs = state.prediction
-    ? (arcLengthAhead(from, started.path, predictionPointAt(state.prediction, serverNow)) / WALK_SPEED_PX_PER_S) * 1000
+  // 旧外推**已经冻结**（`PREDICTION_STALE_MS` 内没有关于自己的 `pos`）→ 不带领先量：那个画面点是
+  // 幻影，带上它等于把新外推的锚点时刻往前挪、白占保鲜期（`30-movement-sync.md` §3.7）。
+  const old = state.prediction;
+  const leadMs = old && serverNow - old.ts <= PREDICTION_STALE_MS
+    ? (arcLengthAhead(from, started.path, predictionPointAt(old, serverNow)) / WALK_SPEED_PX_PER_S) * 1000
     : 0;
   setState({ prediction: { ...started, anchorTs: serverNow - leadMs } });
 }
