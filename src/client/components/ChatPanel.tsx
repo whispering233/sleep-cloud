@@ -12,6 +12,7 @@ import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ActionRow } from './ActionRow';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
+import { QuickPhrases } from './QuickPhrases';
 import { SlotPanel } from './SlotPanel';
 import { TextInput } from './TextInput';
 
@@ -75,8 +76,11 @@ export function ChatPanel() {
 
   return (
     <section className="chat-panel" aria-label="聊天与操作">
-      {/* 插槽面板挂在整块面板上沿（绝对定位，不撑开这里）：内容本轮留空，见 `docs/design/50-slot-panel.md` */}
-      <SlotPanel onBlankPointerDown={blurFocusedEditable} />
+      {/* 插槽面板挂在整块面板上沿（绝对定位，不撑开这里）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
+          点一条只改草稿、不发送、不退场 */}
+      <SlotPanel onBlankPointerDown={blurFocusedEditable}>
+        <QuickPhrases onFill={setDraft} />
+      </SlotPanel>
 
       {/* 连接提示条：占位（不浮层），所以可用视口自动扣掉它；显示与否由自己订阅的连接态决定 */}
       <ConnectionBanner />
