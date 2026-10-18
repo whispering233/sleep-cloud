@@ -184,6 +184,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 - **默认截图看不到设备像素**：proof PNG 一律 1 像素/CSS 像素（写死 `scale:"css"`，`screenshot()` 忽略 `clip`/`scale`）。要判读设备像素：临时给世界 `canvas` 加 `transform: translate(…) scale(3); image-rendering: pixelated`（1 输出像素 = 1 设备像素），用完清空并核对残留。
 - **本机 headless 会话没有触摸面**（手动启动这条路）：实测 `navigator.maxTouchPoints = 0`、`'ontouchstart' in window = false` → Phaser 4 不建 `TouchManager`，**合成 `TouchEvent` 到得了画布但游戏不处理**（对照：真实鼠标拖拽有效）。所以双指捏合在这条路上只能验到「事件不被处理」，**必须在真机或带触摸的浏览器会话上验**（B17）。
 - **但触摸面不是普遍没有**（托管浏览器的会话实测）：同一台机器上另一次会话量到 `navigator.maxTouchPoints = 1`（`hasTouch`）、`devicePixelRatio = 3`、视口 **393×852 CSS**（= 1179×2556 设备像素），用 CDP `Input.dispatchTouchEvent` 合成双指**走通了 Phaser 的触摸路径**（拉远与平移都实测到；仍不是真手指）。所以动手前先量两个数（`navigator.maxTouchPoints`、`devicePixelRatio`）：为 0 就换一个带触摸面的会话，**别把「没验到」写成通过**；「拿不到 393 宽」也只是手动参数启动那一条的经验
+- **读世界层内部量（相机 `scrollX`/`scrollY`、`scene.slotOpen`）的探针配方**：在 `addInitScript`（文档脚本之前）里包 `Function.prototype.bind`，从**第一个实参** `arguments[0]` 里筛出带 `scene.getScenes` 的对象——那是 Phaser `Game`。**别去筛 `this`**：`fn.bind(obj)` 时 `this` 是 `fn` 自己。`Game` 只在 boot 时绑一次（`this.boot.bind(this)`），所以探针必须在 **reload 之前**注入，页面加载完再装会一直筛到 0 个候选。
 
 **这份清单是流程、不是任务**：跑完把不合格的按「不行就怎么补」改掉，然后把 `backlog.md` 里对应那条删掉。**A 每次上真机都跑（≈10 分钟），B 只在首次部署或相关改动之后跑。**
 
