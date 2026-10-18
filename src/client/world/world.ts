@@ -103,6 +103,14 @@ const OVERVIEW_EPS = 0.005;
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
 const TAP_MS = 350;
+
+/** 焦点还在可编辑元素上就收掉它：画布上的指针事件被 Phaser preventDefault，浏览器默认的「点别处 = 失焦」不会发生（见 `docs/ui/DESIGN.md` 的「软键盘 · 轻点画布」）。 */
+function blurFocusedEditable(): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
+  else if (active instanceof HTMLElement && active.isContentEditable) active.blur();
+}
+
 /** 跟随的匀速速度：约 0.5 秒追上 250px（跟得上，又不像镜头被硬拖）。 */
 const CAMERA_FOLLOW_PX_PER_S = 500;
 /** 屏幕中央区（占屏幕的比例）：自己在这一块里走动不值得动镜头，正好是相机的死区。 */
@@ -704,6 +712,8 @@ class WorldScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.pruneReleasedPointers();
+    // 键盘没开时任何按下（含拖拽 / 捏合）都顺手收焦点：那时没有键盘基线，收焦点不会打回用户的拖拽
+    if (!keyboardNow().open) blurFocusedEditable();
     // 两根手指同时按着 = 缩放；第三根起直接忽略（多出来的手指不改变什么，也不会把平移带成两倍速）
     if (this.pointers.size >= 2) return;
     this.pointers.set(pointer.id, { x: pointer.x, y: pointer.y, moved: 0 });
@@ -797,6 +807,12 @@ class WorldScene extends Phaser.Scene {
     }
     // 轻点（未拖动、时间短、且这整次手势只有一根手指）才是一次意图
     if (!pinched && tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS) {
+      // 键盘弹着时的轻点 = 只收键盘与焦点，那一下不发意图
+      // （落点按收缩后的视口算，随即键盘收起、相机回基线——看着就是点歪了）
+      if (keyboardNow().open) {
+        blurFocusedEditable();
+        return;
+      }
       this.dispatchTap(pointer);
     }
   }

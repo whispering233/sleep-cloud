@@ -13,54 +13,6 @@
 
 ---
 
-## 卡 A · 轻点画布收键盘与焦点
-
-**依据**：`docs/ui/DESIGN.md`「软键盘」的 `轻点画布` 行（本卡刚新增的那一行）；根因是画布上 `touchstart` / `touchend` / `mousedown` 被 Phaser `preventDefault()`（`TouchManager.js` 只在 `event.target === canvas` 时吃，`MouseManager.preventDefaultDown` 默认 true），浏览器「点空白 = 焦点离开输入框」的默认动作不会发生。
-
-**改动范围（只 1 个文件）**：`src/client/world/world.ts`
-
-1. 文件内私有工具函数（放在轻点判据常量旁边）：
-   ```ts
-   /** 焦点还在可编辑元素上就收掉它：画布上的指针事件被 Phaser preventDefault，浏览器默认的「点别处 = 失焦」不会发生（见 `docs/ui/DESIGN.md` 的「软键盘 · 轻点画布」）。 */
-   function blurFocusedEditable(): void {
-     const active = document.activeElement;
-     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
-     else if (active instanceof HTMLElement && active.isContentEditable) active.blur();
-   }
-   ```
-2. `onPointerDown`：`this.pruneReleasedPointers();` 之后、`if (this.pointers.size >= 2) return;` **之前**加
-   `if (!keyboardNow().open) blurFocusedEditable();`
-   ——键盘没开时任何按下（含拖拽 / 捏合）都顺手收焦点：那时没有键盘基线，收焦点不会打回用户的拖拽。
-3. `onPointerUp`：轻点判据那一段（`if (!pinched && tracked.moved < TAP_SLOP_PX && pointer.upTime - pointer.downTime < TAP_MS)`）改成
-   ```ts
-   // 键盘弹着时的轻点 = 只收键盘与焦点，那一下不发意图
-   // （落点按收缩后的视口算，随即键盘收起、相机回基线——看着就是点歪了）
-   if (keyboardNow().open) {
-     blurFocusedEditable();
-     return;
-   }
-   this.dispatchTap(pointer);
-   ```
-   （`keyboardNow` 这个文件已经 import 了，直接复用。）
-4. **不要动** `keyboard.ts` / `keyboardNow()` 的语义，也不要动拖拽 / 捏合 / `rebaseKeyboard` 的分支。
-
-**测试**：本卡无单测（世界层依赖 Phaser 与真实 DOM）。要求 `npm test`（472 passed 基线）与 `npm run typecheck` 全绿。
-
-**验证（`ui-verifier`，手机视口 393×852 / DPR 3 / 合成 touch，逐条取证，每条最多 3 次尝试、总步骤 ≤ 16）**
-
-| # | 操作 | 断言 |
-| :--- | :--- | :--- |
-| 1 | 聚焦聊天输入框 → 等键盘状态回到「未开」（键盘本来就不会真弹）→ 轻点画布空地 | `document.activeElement` **不再是**输入框；**且那一下照常走**（出现 `walk` 上行 / 小人开始移动） |
-| 2 | 伪造 `visualViewport` 使 `keyboardNow().open === true`（配方照 `docs/design/build.md` §7 第 19 条：伪造 `height` 852 → 516 并派发 `resize`）→ 轻点画布空地 | **0 条上行**、小人不动；焦点被收 |
-| 3 | 键盘「开着」（同上伪造）→ 在画布上拖拽（位移 > 8px） | **焦点不被收**（`document.activeElement` 仍是输入框） |
-| 4 | 键盘「未开」→ 在画布上拖拽 | 相机平移正常；焦点被收（与第 3 条对照） |
-
-真键盘那一半（iOS / Android 各一遍）只在真机上得结论，**不要**在本地硬凑；真机条目已写在 `docs/design/build.md` §7 第 25 条。
-
-**提交**：`fix(world): 轻点画布收键盘与焦点（Phaser 吃了 preventDefault）`
-
----
-
 ## 卡 B · 点别人的床：三类本地提示（与错误码同文案）
 
 **依据**：`docs/ui/DESIGN.md`「谁能躺」新增的两段（三类本地闸门 + 为什么本地判）、`docs/api/error-code.md` §3 的「客户端预判」行、`docs/ui/DESIGN.md` 的 `toast-recoverable` 行。
