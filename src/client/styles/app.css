@@ -120,10 +120,11 @@
     letter-spacing: var(--tracking-numeric);
   }
 
-  /* 动作行里的按钮外观：描边胶囊，与 `.emote-button` 同规格——项目里「这是个按钮」的既有答案，
+  /* 动作行里的按钮外观：描边胶囊，与 `.emote-toggle` 同规格——项目里「这是个按钮」的既有答案，
      沿用而不发明第二套。底透明：衬在面板的 `secondary` 上，不写第二层底色。
-     描边用 `trace` 而不是 `claimed`：`claimed` 压在 `secondary` 上只有 2.74:1，低于 WCAG 1.4.11 的 3:1
-     （`docs/ui/DESIGN.md` 的 `hud-action` 行）。高 44px 是触击尺寸（`touch-target-min`） */
+     描边仍用 `claimed`：`claimed` 压在 `secondary` 上是 **3.57:1**（压在 `primary` 上 3.12），
+     已经满足 WCAG 1.4.11 对非文本控件 3:1 的下限——搬进面板不需要换墨色。
+     高 44px 是触击尺寸（`touch-target-min`） */
   .hud-action {
     min-height: 44px;
     padding: 0 var(--spacing-md);
@@ -133,7 +134,7 @@
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     letter-spacing: var(--tracking-label);
-    border: 1px solid var(--color-trace);
+    border: 1px solid var(--color-claimed);
     border-radius: var(--radius-full);
   }
 
@@ -160,7 +161,7 @@
     place-items: center;
     color: var(--color-neutral-muted);
     background-color: transparent;
-    border: 1px solid var(--color-trace);
+    border: 1px solid var(--color-claimed);
     border-radius: var(--radius-full);
   }
 
@@ -185,7 +186,7 @@
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     letter-spacing: var(--tracking-label);
-    border: 1px solid var(--color-trace);
+    border: 1px solid var(--color-claimed);
     border-radius: var(--radius-md);
     /* 版本号是「读一眼」的字串，不是会跳的数值：不用等宽字体 */
     white-space: nowrap;
