@@ -14,6 +14,7 @@ import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positi
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { errorTextFor } from '../error-text';
+import { blurFocusedEditable } from '../focus';
 import { keyboardNow } from '../keyboard';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
@@ -83,6 +84,11 @@ export interface WorldHandle {
   focusBed(bedNo: number): void;
   /** 设世界缩放档位（动作行那颗胶囊；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
+  /**
+   * 插槽面板打开 / 关闭（`docs/design/50-slot-panel.md` §4）：打开期间**画布尺寸与相机冻结**
+   * （键盘动画逐帧触发才会逐帧重建绘制缓冲），关闭时**先解冻、立即重建一次**、然后才淡出。
+   */
+  setSlotOpen(open: boolean): void;
 }
 
 /**
@@ -98,13 +104,6 @@ export interface UiInsets {
 /** 轻点判据（见 `docs/ui/DESIGN.md`「世界相机」）：位移 < 8px 且时长 < 350ms，否则那是一次拖拽。 */
 const TAP_SLOP_PX = 8;
 const TAP_MS = 350;
-
-/** 焦点还在可编辑元素上就收掉它：画布上的指针事件被 Phaser preventDefault，浏览器默认的「点别处 = 失焦」不会发生（见 `docs/ui/DESIGN.md` 的「软键盘 · 轻点画布」）。 */
-function blurFocusedEditable(): void {
-  const active = document.activeElement;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
-  else if (active instanceof HTMLElement && active.isContentEditable) active.blur();
-}
 
 /** 跟随的匀速速度：约 0.5 秒追上 250px（跟得上，又不像镜头被硬拖）。 */
 const CAMERA_FOLLOW_PX_PER_S = 500;
@@ -183,6 +182,12 @@ class WorldScene extends Phaser.Scene {
   private baseline: { x: number; y: number; viewTop: number } | undefined;
   /** 键盘期间用户自己动了镜头：不再推「露出自己」——新位置就是新基线 */
   private keyboardMoved = false;
+  /**
+   * 插槽面板开着（`docs/design/50-slot-panel.md` §4）：画布尺寸与相机整体冻结。
+   * 画布尺寸由 `resizeToHost` 早退守住（保留打开前的像素尺寸，只被 `.app-shell` 裁掉底部），
+   * 相机由「夹取与 `follow` 都不跑」守住。
+   */
+  private slotOpen = false;
 
   constructor(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets) {
     super('world');
@@ -530,6 +535,8 @@ class WorldScene extends Phaser.Scene {
    * 取位点由 `update` 取一次后传进来（与那一帧渲染用的小人位置是同一个点）。
    */
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
+    // 插槽面板开着：相机整体冻结，打开前的滚屏值就是最终值（`docs/design/50-slot-panel.md` §4）
+    if (this.slotOpen) return;
     // 键盘期间不 follow（`docs/ui/DESIGN.md`「软键盘」的冻结行）：镜头只在遮住时补一次最小位移
     if (this.baseline) return;
     const me = state.me;
@@ -617,6 +624,8 @@ class WorldScene extends Phaser.Scene {
    */
   private applyCameraBounds(): void {
     if (this.loadedBedCount === undefined) return;
+    // 插槽面板开着：夹取不跑（冻结期间相机不动）
+    if (this.slotOpen) return;
     // 键盘期间不夹取：夹取会把锚点补偿与最小位移打回（bounds 也已经被 `beginKeyboard` 摘掉）
     if (this.baseline) return;
     const outer = scrollRegionOf(levelIndexOfBedCount(this.loadedBedCount));
@@ -658,6 +667,9 @@ class WorldScene extends Phaser.Scene {
    * 画布像素 = CSS 像素 × DPR，而相机 `zoom = DPR × 拉远比例` 把世界像素换回 CSS 像素（1× 下 1 世界像素 = 1 CSS 像素）。
    */
   private resizeToHost(): void {
+    // 插槽面板开着：画布像素尺寸冻结——保留打开前的尺寸（只被 `.app-shell` 裁掉底部）。
+    // 否则键盘动画会让这里逐帧重建绘制缓冲、每帧清空内容，就是那些闪烁（`50-slot-panel.md` §4）
+    if (this.slotOpen) return;
     const rect = this.host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const keyboard = keyboardNow().open;
@@ -939,6 +951,19 @@ class WorldScene extends Phaser.Scene {
     writeZoomMode(mode);
     if (mode.kind === 'fixed') this.setZoom(mode.z);
   }
+
+  /**
+   * 插槽面板的打开 / 关闭（`docs/design/50-slot-panel.md` §4）。打开是**什么都不做**：
+   * 冻结靠上面那几处早退，当前像素尺寸与滚屏值原样保留。关闭要**先清标志再立即重建一次**
+   * （顺序不能倒：那一次全屏缓冲重建必须落在面板仍然不透明的时刻——退场动画在它之后）。
+   * 旋转屏幕 / 真实尺寸变化在冻结期间被丢弃，解冻时按当时的尺寸重建。
+   */
+  setSlotOpen(open: boolean): void {
+    if (open === this.slotOpen) return;
+    this.slotOpen = open;
+    if (open) return;
+    this.resizeToHost();
+  }
 }
 
 export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets): WorldHandle {
@@ -977,6 +1002,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     setZoomMode(mode: ZoomMode): void {
       scene.setZoomMode(mode);
+    },
+    setSlotOpen(open: boolean): void {
+      scene.setSlotOpen(open);
     },
   };
 }

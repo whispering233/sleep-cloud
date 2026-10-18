@@ -4,12 +4,15 @@ import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_SHORTCUTS } from '../emotes';
+import { blurFocusedEditable } from '../focus';
+import { setSlotSource } from '../slot';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ActionRow } from './ActionRow';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
+import { SlotPanel } from './SlotPanel';
 import { TextInput } from './TextInput';
 
 /**
@@ -72,6 +75,9 @@ export function ChatPanel() {
 
   return (
     <section className="chat-panel" aria-label="聊天与操作">
+      {/* 插槽面板挂在整块面板上沿（绝对定位，不撑开这里）：内容本轮留空，见 `docs/design/50-slot-panel.md` */}
+      <SlotPanel onBlankPointerDown={blurFocusedEditable} />
+
       {/* 连接提示条：占位（不浮层），所以可用视口自动扣掉它；显示与否由自己订阅的连接态决定 */}
       <ConnectionBanner />
 
@@ -122,6 +128,9 @@ export function ChatPanel() {
           if (selectedId !== undefined) sendWhisper(selectedId, draft);
           else sendChat(draft);
           setDraft('');
+          // 发出去的内容只在世界里以气泡出现 → 必须让世界回来才看得见。**显式**收焦点：
+          // 「按钮抢焦点」在 Chromium 成立、Safari 不一定，不能靠那个差异（`50-slot-panel.md` §3）
+          blurFocusedEditable();
         }}
       >
         {emoteOpen ? (
@@ -151,6 +160,9 @@ export function ChatPanel() {
               // 只是免得到服务端才吃 4001，**不是**气泡的显示容量（见 `docs/design/config.md` 的 `CHAT_MAX_LEN`）
               maxLength={CHAT_MAX_LEN}
               onChange={(event) => setDraft(event.target.value)}
+              // 焦点是插槽面板首版**唯一**的触发源：开、关都归它（`../slot.ts`），不写「失焦即退场」
+              onFocus={() => setSlotSource('chat-input', true)}
+              onBlur={() => setSlotSource('chat-input', false)}
             />
             {emoteToggle}
             <PrimaryAction type="submit">发送</PrimaryAction>

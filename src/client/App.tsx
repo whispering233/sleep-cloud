@@ -9,7 +9,9 @@ import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
 import { trackKeyboard } from './keyboard';
+import { slotActive, subscribeSlot } from './slot';
 import { connectHall } from './ws';
+import { setSlotOpen } from './world-handle';
 
 /**
  * 页面骨架：世界层铺满视口（DOM 界面浮在它之上，只占边缘）。
@@ -47,6 +49,13 @@ export function App() {
     if (!entered || !layoutVersion) return;
     return connectHall({ layoutVersion });
   }, [entered, layoutVersion]);
+
+  // 插槽面板打开 / 关闭 → 世界层冻结 / 解冻（`docs/design/50-slot-panel.md` §4）。
+  // 界面层不 import 世界层：这根反向线走 `./world-handle.ts`（世界层还没起来时它什么都不做）
+  useEffect(() => {
+    setSlotOpen(slotActive());
+    return subscribeSlot(() => setSlotOpen(slotActive()));
+  }, []);
 
   return (
     <div className="app-shell" ref={shellRef}>
