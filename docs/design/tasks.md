@@ -13,7 +13,7 @@
 
 ---
 
-**当前卡片（3 张，按序号做；一张一次提交）**：规格来源 `30-movement-sync.md`（§3 重锚与不变量、§5.2 节拍、§6.2 观测）。
+**当前卡片（卡 2 已实现待复审；待做：卡 2b、卡 3、卡 4。一张一次提交）**：规格来源 `30-movement-sync.md`（§3 重锚与不变量、§5.2 节拍、§6.2 观测）。
 
 ---
 
@@ -27,6 +27,22 @@
   - 在床上点地面：锚点为床脚前那一点，首帧即起步。
   - 离线（`connection !== 'online'`）时不登记外推（现状保持）。
 - **CHANGELOG**：`### Fixed` 一条——起步与改目标时自己的小人不再往回跳。
+
+### 卡 2b：保鲜期按「最后一条关于自己的 `pos`」算（修卡 2 带入 `lead` 后的误冻结）
+
+- **背景**：卡 2 会在「走路中途改目标」时把 `lead`（≈`oneWay`）带进新外推。而现在的冻结判据是「`now − anchorTs > PREDICTION_STALE_MS`」，把 `anchorTs` 往前挪了 `lead` 就等于**白占保鲜期**：① 旧外推已冻结（`now − anchorTs > 2000`）时再发意图 → 新外推 `elapsed` 一开局就 ≥ 2000 → **当场冻死**；② `lead` 接近 2000ms 时新外推只能走一小段就冻。
+- **规格**：`docs/design/30-movement-sync.md` §3.7（三行：保鲜期从真值时刻起算、锚点记真值时刻、冻结后的旧外推不带领先量）。
+- **改动范围**：`src/client/prediction.ts`、`src/client/store.ts`、`src/client/tests/prediction.test.ts`。不改 `hall.ts` / `docs/`。
+- **要做**：
+  1. `Prediction` 增加 `ts`（这条锚点对应的**真值时刻**：`beginPrediction` 传的 `now`；`anchorPrediction` 取 `pos.ts`）。
+  2. 冻结判据改为 `elapsed = max(0, min(now, ts + PREDICTION_STALE_MS) − anchorTs)`（推进量仍从 `anchorTs` 算，只是天花板按真值时刻）。
+  3. `beginWalk`：旧外推已冻结（`serverNow − old.ts > PREDICTION_STALE_MS`）时 `leadMs = 0`；否则照旧。
+- **验收**：
+  - 现有 491 条全绿（`lead = 0` 的行为一字不变）。
+  - 新增：带 `lead = 250ms` 的外推，从发起到 2000ms 都**正常推进**（不再提前冻结）；2000ms 后冻结且不回退。
+  - 新增：旧外推已冻结（`now − old.ts > 2000`）→ 发新意图，`lead = 0`、画面 = 真值、且能正常推进（不得一开局就冻）。
+  - 新增：`anchorPrediction` 后 `ts === pos.ts`。
+- **CHANGELOG**：并入卡 2 已有条目（不单开）。
 
 ### 卡 3：新移动者不「补走一拍」（服务端）
 
