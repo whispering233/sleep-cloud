@@ -257,41 +257,31 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
 
 /**
  * 软键盘吃掉的视口（`docs/ui/DESIGN.md`「软键盘」）：只算两个数，不碰 DOM。
- * 键盘是否打开 = 底部被吃掉的高度超过一个门槛：**地址栏收放时** `innerHeight` 与
- * `visualViewport.height` 同步变化（差 ≈ 0），所以这个判据不会被地址栏骗到；
- * 真键盘（iOS / Android）的差都在两百像素以上。
+ * `shrink` = `innerHeight − visualViewport.height`：**地址栏收放时两者同步变、差 ≈ 0**，所以这个判据
+ * 不会被地址栏饵到；真键盘（iOS / Android）的差都在两百像素以上。
  *
- * **页面被捏合放大时必须直接判「没开」**：不禁用户缩放（`AGENTS.md` 硬纪律 18），而放大后
- * `visualViewport.height ≈ innerHeight / scale`，`scale` 只要超过 1.1 差额就破门槛——不拦的话，
- * 用户在面板上捏一下页面就会被读成键盘、把面板抬到半屏高。缩小（`scale < 1`，部分浏览器
- * 允许）不在此列：它让视觉视口比布局视口还高，`shrink` 本来就是 0。
- *
- * shortcut: 键盘滑入时跨过门槛之前的几帧仍被当作「尺寸变化」，那几帧面板抬得比真键盘矮一小截；
- * 等真机实测说它看得见再收紧口径。
+ * **页面被捏合放大时一律判「没吃视口」**（`shrink = 0`）：不禁用户缩放（`AGENTS.md` 硬纪律 18），
+ * 而放大后 `visualViewport.height ≈ innerHeight / scale`——不拦的话，在输入行上捏一下就会把整个外壳
+ * 抬到半屏高。缩小（`scale < 1`，部分浏览器允许）不在此列：它让视觉视口比布局视口还高，`shrink`
+ * 本来就是 0。
  */
-export const KEYBOARD_OPEN_PX = 80;
-
 export interface KeyboardState {
-  /** 键盘是否打开 */
-  open: boolean;
-  /** 底边被吃掉的高度（CSS px）= `innerHeight − visualViewport.height` */
+  /** 底边被吃掉的高度（CSS px）= `innerHeight − visualViewport.height`；页面放大期间恒为 0 */
   shrink: number;
   /** 视觉视口被往下 pan 的量（`visualViewport.offsetTop`）：iOS 聚焦输入框时会 pan */
   pan: number;
 }
 
-/** 纯函数：两个视口高度 → 键盘状态。`viewport` 为 `null`（桌面 / 老浏览器）与「视觉视口比布局视口还高」（取整抖动）都退回「没开、没缩」。 */
+/** 纯函数：两个视口高度 → 键盘状态。`viewport` 为 `null`（桌面 / 老浏览器）与「视觉视口比布局视口还高（取整抖动）」都退回「没吃、没 pan」。 */
 export function keyboardOf(
   innerHeight: number,
   viewport: { height: number; offsetTop: number; scale: number } | null,
 ): KeyboardState {
-  if (!viewport) return { open: false, shrink: 0, pan: 0 };
-  const shrink = Math.max(0, Math.round(innerHeight - viewport.height));
-  // 放大过的页面不是键盘（见上面那段）：宁可退回「尺寸变化」那条路，也不能把 UI 塌成半屏
+  if (!viewport) return { shrink: 0, pan: 0 };
+  // 放大过的页面不是键盘（见上面那段）：宁可当成没吃视口，也不能把外壳抬成半屏
   const zoomed = viewport.scale > 1.01;
   return {
-    open: !zoomed && shrink > KEYBOARD_OPEN_PX,
-    shrink,
+    shrink: zoomed ? 0 : Math.max(0, Math.round(innerHeight - viewport.height)),
     pan: Math.max(0, Math.round(viewport.offsetTop)),
   };
 }

@@ -546,28 +546,23 @@ describe('进厅 / 重连时相机对准谁', () => {
 });
 
 /**
- * 键盘状态的纯函数：`visualViewport` 是视口缩小的唯一来源（`docs/ui/DESIGN.md`「软键盘」）。
- * 面板抬升与画布缩小吃的是同一份 `shrink`，所以这里的每个数都得说清楚。
+ * 键盘吃掉多少视口：`visualViewport` 是视口变化的唯一来源（`docs/ui/DESIGN.md`「软键盘」）。
+ * 只算两个数——`shrink`（外壳要抬多高）与 `pan`（iOS 聚焦时视觉视口往下挪的量）。
  */
-describe('软键盘状态：缩小量、pan 与「算不算打开」', () => {
-  it('没有 visualViewport（桌面 / 老浏览器）：不开、不缩、不 pan', () => {
-    expect(keyboardOf(852, null)).toEqual({ open: false, shrink: 0, pan: 0 });
+describe('软键盘吃掉多少视口：shrink 与 pan', () => {
+  it('没有 visualViewport（桌面 / 老浏览器）：不缩、不 pan', () => {
+    expect(keyboardOf(852, null)).toEqual({ shrink: 0, pan: 0 });
   });
 
   it('键盘打开：缩小量 = innerHeight − 视觉视口高；iOS 聚焦时的 pan 取 offsetTop', () => {
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 0 });
-    expect(keyboardOf(852, { height: 516, offsetTop: 100, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 100 });
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 })).toEqual({ shrink: 336, pan: 0 });
+    expect(keyboardOf(852, { height: 516, offsetTop: 100, scale: 1 })).toEqual({ shrink: 336, pan: 100 });
   });
 
-  it('地址栏收放：两个高度同步变、差 ≈ 0，所以判成「不是键盘」', () => {
-    expect(keyboardOf(852, { height: 852, offsetTop: 0, scale: 1 }).open).toBe(false);
-    expect(keyboardOf(744, { height: 744, offsetTop: 0, scale: 1 }).open).toBe(false);
-    expect(keyboardOf(800, { height: 802, offsetTop: 0, scale: 1 }).open).toBe(false);
-  });
-
-  it('门槛在 80px：正好 80 不算，81 算（手写条 / 小键盘不至于反复开合）', () => {
-    expect(keyboardOf(852, { height: 772, offsetTop: 0, scale: 1 }).open).toBe(false);
-    expect(keyboardOf(852, { height: 771, offsetTop: 0, scale: 1 }).open).toBe(true);
+  it('地址栏收放：两个高度同步变、差 ≈ 0，所以外壳不动', () => {
+    expect(keyboardOf(852, { height: 852, offsetTop: 0, scale: 1 }).shrink).toBe(0);
+    expect(keyboardOf(744, { height: 744, offsetTop: 0, scale: 1 }).shrink).toBe(0);
+    expect(keyboardOf(800, { height: 802, offsetTop: 0, scale: 1 }).shrink).toBe(0);
   });
 
   it('取整抖动：视觉视口比布局视口还高、或 offsetTop 为负时不留负数', () => {
@@ -575,26 +570,22 @@ describe('软键盘状态：缩小量、pan 与「算不算打开」', () => {
     expect(keyboardOf(852, { height: 516, offsetTop: -3, scale: 1 }).pan).toBe(0);
   });
 
-  it('两个数都取整：不到一个 CSS 像素的抖动不该让画布与面板逐帧重排', () => {
-    expect(keyboardOf(852, { height: 515.6, offsetTop: 0.4, scale: 1 })).toEqual({ open: true, shrink: 336, pan: 0 });
-    expect(keyboardOf(852, { height: 515.4, offsetTop: 0.6, scale: 1 })).toEqual({ open: true, shrink: 337, pan: 1 });
+  it('两个数都取整：不到一个 CSS 像素的抖动不该让外壳与面板逐帧重排', () => {
+    expect(keyboardOf(852, { height: 515.6, offsetTop: 0.4, scale: 1 })).toEqual({ shrink: 336, pan: 0 });
+    expect(keyboardOf(852, { height: 515.4, offsetTop: 0.6, scale: 1 })).toEqual({ shrink: 337, pan: 1 });
   });
 });
 
 describe('键盘判据的护栏：页面被捏合放大时一律不算键盘', () => {
-  it('scale > 1 时不进键盘态（否则手指捏一下就把整屏 UI 塌成半截）', () => {
-    // 852 / 2 = 426 → shrink 426，破门槛；但只要 scale 是 2 就必须判「没开」
-    expect(keyboardOf(852, { height: 426, offsetTop: 0, scale: 2 })).toEqual({
-      open: false,
-      shrink: 426,
-      pan: 0,
-    });
-    // 放大一点点也算：852 ×（1 − 1/1.2）≈ 142 > 80
-    expect(keyboardOf(852, { height: 710, offsetTop: 0, scale: 1.2 }).open).toBe(false);
+  it('scale > 1 时缩小量归零（否则手指捏一下就把外壳抬成半屏）', () => {
+    // 852 / 2 = 426 → 差值 426；但只要 scale 是 2 就必须当成没吃视口
+    expect(keyboardOf(852, { height: 426, offsetTop: 0, scale: 2 })).toEqual({ shrink: 0, pan: 0 });
+    // 放大一点点也算：852 × (1 − 1/1.2) ≈ 142
+    expect(keyboardOf(852, { height: 710, offsetTop: 0, scale: 1.2 }).shrink).toBe(0);
   });
 
-  it('scale 的取整抖动（1.001 / 正好 1）仍照常判键盘', () => {
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 }).open).toBe(true);
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1.001 }).open).toBe(true);
+  it('scale 的取整抖动（1.001 / 正好 1）照常算', () => {
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 }).shrink).toBe(336);
+    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1.001 }).shrink).toBe(336);
   });
 });
