@@ -24,12 +24,19 @@ export interface PrefStorage {
 }
 
 /**
- * 取要用的 storage：**有没有 `localStorage` 的判定只写在这一处**（Node 单测没有它、浏览器禁用持久化
- * 时它也可能抛）。没有就返回 `undefined` → 读一律默认、写一律丢弃。
+ * 取要用的 storage：**有没有 `localStorage` 的判定只写在这一处**（Node 单测没有它；浏览器禁用持久化
+ * 时它可能抛）。没有就返回 `undefined` → 读一律默认、写一律丢弃。
+ *
+ * 这里的 `try` 不是多余：策略禁止持久化时（用户禁掉站点数据 / 不透明源），**连读这个属性都会抛
+ * `SecurityError`**，不裹就会在模块加载那一刻把整个页面拖崩。
  */
 function resolveStorage(injected?: PrefStorage): PrefStorage | undefined {
   if (injected) return injected;
-  return (globalThis as { localStorage?: PrefStorage }).localStorage;
+  try {
+    return (globalThis as { localStorage?: PrefStorage }).localStorage;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 读到坏值 / 版本不符时顺手删该键（删也可能抛，静默）。不删就永久循环判废。 */

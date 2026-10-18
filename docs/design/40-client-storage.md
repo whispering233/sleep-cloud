@@ -55,7 +55,7 @@
 | 读 | 唯一入口 `readPref(key, isValid, fallback)`：`getItem` → `JSON.parse` → 查 `v` → 跑 `isValid`（**白名单枚举**，不允许「任意 JSON 都收」）→ 任一环失败返回 `fallback` |
 | 读到坏值 | **顺手删该键**（`removeItem`，也裹 try/catch）。不删就永久循环判废；删只发生在启动读一次的时候。**不做启动扫描清理** |
 | 写 | `try { setItem } catch { 丢弃这次写入 }` —— **不弹提示、不重试、不降级到 `sessionStorage`**。隐私模式 / 配额满时用户照常玩，只是下次不记得（静默类错误不弹提示，硬纪律 13 精神） |
-| 环境无 storage | **Node 单测（`localStorage` 不存在）与浏览器禁用持久化**：读 → 一律默认，写 → 丢弃。**判定只写在 `prefs.ts` 一处**，不散落 `typeof localStorage !== 'undefined'` |
+| 环境无 storage | **Node 单测（`localStorage` 不存在）与浏览器禁用持久化**（用户禁掉站点数据时，**连读这个属性都会抛 `SecurityError`**）：读 → 一律默认，写 → 丢弃。**判定只写在 `prefs.ts` 一处**，不散落 `typeof localStorage !== 'undefined'` |
 | 读时机 | 启动时读一次进 `store` 初值，之后**不再碰 `localStorage`**（不进逐帧路径；也让 `localStorage` 只出现在一个模块里） |
 | 上限 | **单值 ≲1KB、键数 ≲10**，写成规则（不做运行时配额检测 —— 现在没有需求方） |
 | 清理与迁移 | **不建框架**：唯一的失效动作是「读到坏值 / 版本不符 → 删该键 + 用默认」。不做 `sc.` 前缀扫描，不做多标签页 `storage` 事件订阅（§4.1） |

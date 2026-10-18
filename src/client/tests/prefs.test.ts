@@ -70,4 +70,20 @@ describe('缩放档位偏好（sc.zoom.mode）', () => {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
   });
+
+  it('连读 localStorage 属性都抛（策略禁止持久化）时不崩：读回默认、写静默丢弃', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('SecurityError: 站点数据被禁止');
+      },
+    });
+    try {
+      expect(readZoomMode()).toEqual({ kind: 'free' });
+      expect(() => setZoomMode({ kind: 'fixed', z: 0.75 })).not.toThrow();
+      expect(getState().zoomMode).toEqual({ kind: 'fixed', z: 0.75 });
+    } finally {
+      delete (globalThis as { localStorage?: PrefStorage }).localStorage;
+    }
+  });
 });
