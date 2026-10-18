@@ -4,22 +4,17 @@ import {
   createAccumulator,
   emptyWindow,
   percentile50,
+  percentile95,
   sampleProbe,
-  stepRegress,
   summarizeWindow,
 } from '../move-probe';
 import type { ProbeAccumulator } from '../move-probe';
+import type { Prediction } from '../prediction';
 
 const at = (x: number, y: number) => ({ x, y });
+const predictionOn = (path: { x: number; y: number }[]): Prediction => ({ x: 0, y: 0, anchorTs: 0, ts: 0, path });
 
-/** 沿 +x 走的一串画面点（每步 10px）→ 累加器；倒退累加的起点。 */
-const walkingEast = (): ProbeAccumulator => {
-  const accumulator = createAccumulator();
-  for (let step = 0; step < 3; step += 1) sampleProbe(accumulator, { point: at(step * 10, 0) });
-  return accumulator;
-};
-
-describe('p50 / max', () => {
+describe('p50 / p95 / max', () => {
   it('奇数个样本取正中', () => {
     expect(percentile50([3, 1, 2])).toBe(2);
     expect(percentile50([100, 30, 51, 7, 42])).toBe(42);
@@ -32,9 +27,16 @@ describe('p50 / max', () => {
 
   it('没有样本时是 undefined（不是 0）', () => {
     expect(percentile50([])).toBeUndefined();
+    expect(percentile95([])).toBeUndefined();
   });
 
-  it('一行里四个字段各给 p50 与 max', () => {
+  it('p95 取第 ceil(0.95n) 小的样本（20 个样本 = 第 19 小）', () => {
+    const values = Array.from({ length: 20 }, (_, index) => index * 10); // 0 … 190
+    expect(percentile95(values)).toBe(180);
+    expect(percentile95([5])).toBe(5);
+  });
+
+  it('一行里四个字段各给 p50 / p95 / max', () => {
     const line = summarizeWindow({
       leadMs: [240, 250, 260],
       regressPx: [0, 0, 0],
@@ -42,14 +44,20 @@ describe('p50 / max', () => {
       tickSpan: [100, 102, 101],
     });
     expect(line).toBe(
-      '[move-probe] leadMs p50=250 max=260 | regressPx p50=0 max=0 | posAge p50=4 max=9 | tickSpan p50=101 max=102',
+      '[move-probe] leadMs p50=250 p95=260 max=260 | regressPx p50=0 p95=0 max=0 | posAge p50=4 p95=9 max=9 | tickSpan p50=101 p95=102 max=102',
     );
+  });
+
+  it('p95 与其他统计一样按一位小数取整', () => {
+    // 18 个 1 + 7.25 + 9：第 19 小（index 18）就是 7.25
+    const line = summarizeWindow({ ...emptyWindow(), tickSpan: [...Array(18).fill(1), 7.25, 9] });
+    expect(line).toContain('tickSpan p50=1 p95=7.3 max=9');
   });
 
   it('没有样本的字段不占位（不补 0）', () => {
     const line = summarizeWindow({ ...emptyWindow(), posAge: [1, 2] });
-    expect(line).toContain('leadMs p50=- max=-');
-    expect(line).toContain('posAge p50=1.5 max=2');
+    expect(line).toContain('leadMs p50=- p95=- max=-');
+    expect(line).toContain('posAge p50=1.5 p95=2 max=2');
   });
 
   it('一个样本都没有时不出行', () => {
@@ -57,31 +65,46 @@ describe('p50 / max', () => {
   });
 });
 
-describe('倒退累加', () => {
-  it('正向位移不累加', () => {
-    expect(walkingEast().window.regressPx).toEqual([0, 0, 0]);
+describe('倒退只在同一条折线内算', () => {
+  /** 折线：向东到 (100,0)，再向北到 (100,100)；拐角在 (100,0)。 */
+  const cornerPath = [at(100, 0), at(100, 100)];
+
+  it('同一条折线上前进不累加（含绕拐角：弧长单调）', () => {
+    const prediction = predictionOn(cornerPath);
+    const accumulator = createAccumulator();
+    for (const point of [at(20, 0), at(60, 0), at(100, 10), at(100, 60)]) {
+      sampleProbe(accumulator, { point, prediction });
+    }
+    expect(accumulator.window.regressPx).toEqual([0, 0, 0, 0]);
   });
 
-  it('逆向位移按投影累加（斜着退也只算逆着上一方向的那一段）', () => {
-    const accumulator = walkingEast();
-    sampleProbe(accumulator, { point: at(14, 8) }); // 退 6px（另 8px 是垂直分量）
-    sampleProbe(accumulator, { point: at(3, 17) }); // 新方向是斜的，再沿它退 6/8 的比例
-    expect(accumulator.window.regressPx.slice(3)).toEqual([6, 0]);
+  it('同一条折线上倒退 30px → 30（绕拐角后往回退也算）', () => {
+    const prediction = predictionOn(cornerPath);
+    const accumulator = createAccumulator();
+    sampleProbe(accumulator, { point: at(60, 0), prediction });
+    sampleProbe(accumulator, { point: at(30, 0), prediction }); // 弧长 60 → 30
+    sampleProbe(accumulator, { point: at(100, 40), prediction }); // 弧长 140
+    sampleProbe(accumulator, { point: at(100, 10), prediction }); // 弧长 110
+    expect(accumulator.window.regressPx).toEqual([0, 30, 0, 30]);
   });
 
-  it('退着走一步之后，方向就跟着掉头（继续退不算倒退）', () => {
-    const accumulator = walkingEast();
-    sampleProbe(accumulator, { point: at(10, 0) }); // 退 10px，方向变为 −x
-    sampleProbe(accumulator, { point: at(7, 0) }); // 继续沿 −x 走：相对新方向是前进
-    expect(accumulator.window.regressPx.slice(3)).toEqual([10, 0]);
+  it('换了一条折线（合法掉头改目标）不算倒退', () => {
+    const accumulator = createAccumulator();
+    sampleProbe(accumulator, { point: at(60, 0), prediction: predictionOn([at(200, 0)]) });
+    // 掉头向西：新意图换了一根新数组，画面点相对新锚点仍在前进
+    sampleProbe(accumulator, { point: at(55, 0), prediction: predictionOn([at(-200, 0)]) });
+    expect(accumulator.window.regressPx).toEqual([0, 0]);
   });
 
-  it('拐弯（垂直方向）不误报', () => {
-    const accumulator = walkingEast();
-    // 从 (20,0) 起沿 +y 走：位移与上一方向（+x）的点积为 0
-    sampleProbe(accumulator, { point: at(20, 10) });
-    sampleProbe(accumulator, { point: at(20, 20) });
-    expect(accumulator.window.regressPx).toEqual([0, 0, 0, 0, 0]);
+  it('外推消失（hop / 意图被拒）不比较，也不把上一趟的弧长留到下一趟', () => {
+    const accumulator = createAccumulator();
+    sampleProbe(accumulator, { point: at(60, 0), prediction: predictionOn([at(200, 0)]) });
+    sampleProbe(accumulator, { point: at(80, 0) }); // 没有外推：站定的权威点
+    expect(accumulator.window.regressPx).toEqual([0, 0]);
+    expect(accumulator.trail).toBeUndefined();
+    // 重新起步时即便落在旧弧长之前，也不算倒退
+    sampleProbe(accumulator, { point: at(10, 0), prediction: predictionOn([at(200, 0)]) });
+    expect(accumulator.window.regressPx).toEqual([0, 0, 0]);
   });
 
   it('倒退过的行前置 !!，全程正向的行不加前缀', () => {
@@ -95,7 +118,7 @@ describe('倒退累加', () => {
     const accumulator = createAccumulator();
     sampleProbe(accumulator, { posAge: 3, posTs: 1_000 });
     expect(accumulator.window.regressPx).toEqual([]);
-    expect(accumulator.step).toBeUndefined();
+    expect(accumulator.trail).toBeUndefined();
   });
 });
 
@@ -126,11 +149,10 @@ describe('样本口径', () => {
     expect(accumulator.window.tickSpan).toEqual([]);
   });
 
-  it('第一帧没有方向可逆 → 倒退量为 0，并把第一帧当作方向的起点', () => {
-    const first = stepRegress(undefined, at(5, 5));
-    expect(first.regressPx).toBe(0);
-    expect(first.step).toEqual({ point: at(5, 5), direction: { x: 0, y: 0 } });
-    expect(stepRegress(first.step, at(5, 15)).regressPx).toBe(0);
-    expect(stepRegress({ point: at(5, 15), direction: { x: 0, y: 1 } }, at(5, 5)).regressPx).toBe(10);
+  it('第一帧没有上一采样 → 倒退量为 0，并把这一帧当作折线起点', () => {
+    const accumulator: ProbeAccumulator = createAccumulator();
+    sampleProbe(accumulator, { point: at(5, 0), prediction: predictionOn([at(10, 0)]) });
+    expect(accumulator.window.regressPx).toEqual([0]);
+    expect(accumulator.trail).toEqual({ path: [at(10, 0)], arc: 5 });
   });
 });

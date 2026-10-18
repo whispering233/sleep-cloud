@@ -1,11 +1,10 @@
 import type { Point } from '../shared/layout';
-import { predictionPointAt } from './prediction';
+import { arcLengthAhead, predictionPointAt } from './prediction';
+import type { Prediction } from './prediction';
 import { getState, subscribe } from './store';
 
 /** 输出周期：每 10s 一行（`docs/design/30-movement-sync.md` §6.2）。 */
 const PROBE_INTERVAL_MS = 10_000;
-/** 小于这个位移（像素）不算「有方向」：原地不动时算不出单位向量，硬算会得到 `NaN`。 */
-const STEP_EPSILON_PX = 0.5;
 
 /** 一个周期内各字段的样本。哪一项没有样本就是空数组（那一项不占位，也不补 0）。 */
 export interface ProbeWindow {
@@ -17,16 +16,25 @@ export interface ProbeWindow {
 
 export const emptyWindow = (): ProbeWindow => ({ leadMs: [], regressPx: [], posAge: [], tickSpan: [] });
 
-/** 上一个画面点与那一段的运动方向（单位向量）：倒退量按「逆着上一个方向」算。 */
-export interface ProbeStep {
-  point: Point;
-  direction: Point;
+/**
+ * 上一采样的**折线身份**：`prediction.path` 的数组引用与当时沿它的弧长。
+ * 倒退只在同一条折线内量——换了数组就是换了轨迹（新意图、重锚时剪枝），
+ * 那一下的位移方向本来就是新的，不能当倒退。
+ */
+export interface ProbeTrail {
+  path: Point[];
+  arc: number;
 }
 
 /** 一帧的观测输入。缺的字段就是没有样本：没有外推时没有 `leadMs`，还没收到过 `pos` 时没有后两项。 */
 export interface ProbeFrame {
-  /** 画面点（现算，见 `predictionPointAt`）；不在走动时没有画面点，退不倒退无从谈 */
+  /**
+   * 画面点（现算，见 `predictionPointAt`）：有外推时是外推点，`roaming` 但没有外推时是权威点 `me.x/y`。
+   * 站定也照样采样——弧长不变，倒退恒为 0。
+   */
   point?: Point;
+  /** 画面点所在的外推：倒退量要用它的 `path` 引用与锚点算弧长；没有外推就是没有轨迹。 */
+  prediction?: Prediction;
   /** `prediction.ts − prediction.anchorTs` */
   leadMs?: number;
   /** `(Date.now() + clockOffsetMs) − pos.ts`，只在**新的一批** `pos` 到达时给 */
@@ -35,10 +43,10 @@ export interface ProbeFrame {
   posTs?: number;
 }
 
-/** 探针的累加器：窗口样本 + 上一帧的画面点与方向 + 上一批 `pos` 的时刻。 */
+/** 探针的累加器：窗口样本 + 上一采样的折线弧长 + 上一批 `pos` 的时刻。 */
 export interface ProbeAccumulator {
   window: ProbeWindow;
-  step?: ProbeStep;
+  trail?: ProbeTrail;
   /** 上一批 `pos.ts`；快照后 `lastPosTs` 清空 → 这里跟着清空（不跨快照算 `tickSpan`）。 */
   posTs?: number;
 }
@@ -56,27 +64,35 @@ export function percentile50(values: number[]): number | undefined {
   return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-/** 一帧的倒退像素：位移在**上一帧方向**上的分量取负（正向走 → 0）。 */
-export function stepRegress(step: ProbeStep | undefined, point: Point): { regressPx: number; step: ProbeStep } {
-  // 第一帧没有方向可逆，倒退量按 0 算
-  if (step === undefined) return { regressPx: 0, step: { point, direction: { x: 0, y: 0 } } };
-  const dx = point.x - step.point.x;
-  const dy = point.y - step.point.y;
-  const distance = Math.hypot(dx, dy);
-  return {
-    regressPx: Math.max(0, -(dx * step.direction.x + dy * step.direction.y)),
-    step: {
-      point,
-      direction: distance < STEP_EPSILON_PX ? step.direction : { x: dx / distance, y: dy / distance },
-    },
-  };
+/**
+ * p95（nearest-rank）：第 `ceil(0.95 × n)` 小的那个样本。判据是「p95 > 150ms」，插值只会在
+ * 样本很少时外推到样本之外，没有意义。空样本 `undefined`。
+ */
+export function percentile95(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)];
+}
+
+/**
+ * 一帧的倒退像素：只在**同一条折线**内比弧长，`max(0, 上次弧长 − 本次弧长)`。
+ * 折线引用没变时锚点也没变（`beginPrediction` 与 `anchorPrediction` 都新建数组），弧长可以直接相减。
+ */
+function regressStep(accumulator: ProbeAccumulator, point: Point, prediction: Prediction | undefined): number {
+  if (prediction === undefined) {
+    accumulator.trail = undefined;
+    return 0;
+  }
+  const arc = arcLengthAhead({ x: prediction.x, y: prediction.y }, prediction.path, point);
+  const previous = accumulator.trail;
+  accumulator.trail = { path: prediction.path, arc };
+  // 引用变了就是新轨迹（合法掉头 / `hop` 回落 / 剪枝）：不比较
+  return previous !== undefined && previous.path === prediction.path ? Math.max(0, previous.arc - arc) : 0;
 }
 
 export function sampleProbe(accumulator: ProbeAccumulator, frame: ProbeFrame): void {
   if (frame.point !== undefined) {
-    const stepped = stepRegress(accumulator.step, frame.point);
-    accumulator.step = stepped.step;
-    accumulator.window.regressPx.push(stepped.regressPx);
+    accumulator.window.regressPx.push(regressStep(accumulator, frame.point, frame.prediction));
   }
   if (frame.leadMs !== undefined) accumulator.window.leadMs.push(frame.leadMs);
   // 后两项按**新的一批 `pos`** 计：同一批被反复采样会把它的年龄越采越大、把节拍差采成 0
@@ -91,7 +107,10 @@ const round = (value: number): number => Math.round(value * 10) / 10;
 
 function stats(values: number[]): string {
   const p50 = percentile50(values);
-  return p50 === undefined ? 'p50=- max=-' : `p50=${round(p50)} max=${round(Math.max(...values))}`;
+  const p95 = percentile95(values);
+  return p50 === undefined || p95 === undefined
+    ? 'p50=- p95=- max=-'
+    : `p50=${round(p50)} p95=${round(p95)} max=${round(Math.max(...values))}`;
 }
 
 /** 一个窗口 → 一行；一个样本都没有时返回 `undefined`（没有观测就不打空行）。 */
@@ -125,6 +144,7 @@ export function startMoveProbe(): void {
         : undefined;
     sampleProbe(accumulator, {
       point,
+      prediction,
       leadMs: prediction && prediction.ts - prediction.anchorTs,
       posAge: state.lastPosTs === undefined ? undefined : serverNow - state.lastPosTs,
       posTs: state.lastPosTs,
