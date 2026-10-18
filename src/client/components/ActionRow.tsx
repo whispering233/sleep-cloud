@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { getState, setSwitching, showNotice } from '../store';
+import { APP_VERSION } from '../version';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -180,8 +181,7 @@ export function ActionRow() {
               >
                 {view.switching ? '取消换床' : '更换床位'}
               </button>
-              {/* pi-lens-ignore: ts:2304 —— 构建期注入的全局量，声明在 src/globals.d.ts（两个 tsconfig 都 include 它） */}
-              <div className="hud-menu-version">v{__APP_VERSION__}</div>
+              <div className="hud-menu-version">v{APP_VERSION}</div>
             </div>
           ) : null}
         </div>

@@ -6,6 +6,6 @@
     "types": ["vite/client"],
     "moduleResolution": "bundler"
   },
-  "include": ["src/client", "src/shared", "src/globals.d.ts"],
+  "include": ["src/client", "src/shared"],
   "exclude": ["src/**/tests/**"]
 }

@@ -1,7 +1,8 @@
 import type { Point } from '../shared/layout';
 import { arcLengthAhead, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
-import { getState, subscribe } from './store';
+import { subscribe } from './store';
+import type { ClientState } from './store';
 
 /** 输出周期：每 10s 一行（`docs/design/30-movement-sync.md` §6.2）。 */
 const PROBE_INTERVAL_MS = 10_000;
@@ -130,20 +131,23 @@ export function summarizeWindow(window: ProbeWindow): string | undefined {
  * 画面点与 `leadMs` 现算（外推点本就不进 React 状态，见 `prediction.ts`），
  * 所以这里采到的就是世界层画的那个点。
  */
+/**
+ * 画面点：有外推时是外推点，站在走道上时是权威点 `me.x/y`；躺在床上时没有画面点（没有可比轨迹）。
+ * 与世界层画的是同一个点（`world.ts` 的 `selfPoint`），只是采样时刻不同。
+ */
+function selfPointOf(state: ClientState, serverNow: number): Point | undefined {
+  if (state.prediction) return predictionPointAt(state.prediction, serverNow);
+  return state.me?.state === 'roaming' ? { x: state.me.x, y: state.me.y } : undefined;
+}
+
 export function startMoveProbe(): void {
   const accumulator = createAccumulator();
 
   subscribe((state) => {
     const serverNow = Date.now() + state.clockOffsetMs;
     const prediction = state.prediction;
-    const me = state.me;
-    const point = prediction
-      ? predictionPointAt(prediction, serverNow)
-      : me?.state === 'roaming'
-        ? { x: me.x, y: me.y }
-        : undefined;
     sampleProbe(accumulator, {
-      point,
+      point: selfPointOf(state, serverNow),
       prediction,
       leadMs: prediction && prediction.ts - prediction.anchorTs,
       posAge: state.lastPosTs === undefined ? undefined : serverNow - state.lastPosTs,

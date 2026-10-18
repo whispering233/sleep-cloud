@@ -19,8 +19,7 @@
   "include": [
     "src/worker",
     "src/hall",
-    "src/shared",
-    "src/globals.d.ts"
+    "src/shared"
   ],
   "exclude": [
     "src/**/tests/**"
