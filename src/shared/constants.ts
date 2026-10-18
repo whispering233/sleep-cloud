@@ -75,9 +75,10 @@ export const INTENT_ECHO_TIMEOUT_MS = 1_500;
 export const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
 /**
- * 自身外推的保鲜期（**只在客户端**）：发出 `walk` 后这么久没收到任何「关于自己的 `pos`」
- * → 停在最后一个外推点（**不回退**到旧权威点，倒退比停住更难受）。
- * 见 `docs/api/20-api-ws.md` §6。
+ * 自身外推的保鲜期（**只在客户端**）：从「最后一条关于自己的 `pos`」（或发起意图那一刻）起算，
+ * 这么久没有任何 `pos` → 停在最后一个外推点（**不回退**到旧权威点，倒退比停住更难受）。
+ * 注意基准是**真值时刻**而不是锚点时刻（带入领先量后两者差一个 `lead`）。
+ * 见 `docs/design/30-movement-sync.md` §3.7。
  */
 export const PREDICTION_STALE_MS = 2_000;
 
