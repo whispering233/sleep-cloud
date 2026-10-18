@@ -121,11 +121,11 @@ class FakeSocket {
   }
 }
 
-function newHall(sockets: FakeSocket[]): Hall {
+function newHall(sockets: FakeSocket[], sql: SqlStorage = freshSql()): Hall {
   const ctx = {
     id: { name: HALL_ID },
     storage: {
-      sql: freshSql(),
+      sql,
       getAlarm: async () => null,
       setAlarm: async () => {},
       deleteAlarm: async () => {},
@@ -155,6 +155,13 @@ function walk(hall: Hall, ws: FakeSocket, target: Point): void {
   ).handleIntent(ws as never, ws.connection, { t: 'walk', x: target.x, y: target.y });
 }
 
+/** 走「我要躺这张床」：走 `approachBed` 那条复合意图（先走到床脚前、到达后再躺下）。 */
+function lie(hall: Hall, ws: FakeSocket, bedNo: number): void {
+  (
+    hall as unknown as { handleIntent: (ws: WebSocket, c: ConnectionState, m: UpstreamMessage) => void }
+  ).handleIntent(ws as never, ws.connection, { t: 'lie', bedNo });
+}
+
 /** 这条连接收到的所有关于某人的位置（`pos` 一批一条，按到达顺序）。 */
 function positionsIn(ws: FakeSocket, userId: string): Point[] {
   return ws.received
@@ -173,6 +180,7 @@ describe('节拍已在跑时新起步的人不补走一拍', () => {
   const START: Point = streetPointAt(0, 0, 9);
   const FAR: Point = streetPointAt(0, 12, 9); // 2076px：够走好几秒
   const NEAR: Point = streetPointAt(0, 1, 9); // 173px：约 787ms 就到
+  const FAR_BED = 12; // 0 排最右那张：床脚前约 2078px，够走好几秒
 
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
@@ -193,8 +201,48 @@ describe('节拍已在跑时新起步的人不补走一拍', () => {
 
     vi.advanceTimersByTime(20); // t=100：唯一的一次节拍
 
-    expect(lastPosition(a, 'u_a')).toEqual({ x: START.x + 22, y: START.y });
-    expect(lastPosition(a, 'u_b').x).toBeCloseTo(START.x + 4.4, 6);
+    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22, 9);
+    expect(lastPosition(a, 'u_a').y).toBe(START.y);
+    expect(lastPosition(a, 'u_b').x).toBeCloseTo(START.x + 4.4, 9);
+  });
+
+  it('一拍已过 80ms 时新增的走躺意图也只走 20ms（4.4px）', () => {
+    const a = new FakeSocket(standAt('u_a', START));
+    const b = new FakeSocket(standAt('u_b', START));
+    const hall = newHall([a, b]);
+
+    walk(hall, a, FAR); // t=0：A 起步，节拍从此刻开始
+    vi.advanceTimersByTime(80); // t=80：这一拍还没到
+    lie(hall, b, FAR_BED); // B 此刻才接到走躺意图（approachBed → startMover）
+
+    vi.advanceTimersByTime(20); // t=100：唯一的一次节拍
+
+    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22, 9);
+    expect(lastPosition(a, 'u_b').x).toBeCloseTo(START.x + 4.4, 9);
+    expect(lastPosition(a, 'u_b').y).toBe(START.y);
+  });
+
+  it('驱逐重建后的移动者第一拍只推进一个 TICK_MS，不补走被驱逐那段', () => {
+    const sql = freshSql();
+    const a = new FakeSocket(standAt('u_a', START));
+    const b = new FakeSocket(standAt('u_b', START));
+    const hall = newHall([a, b], sql);
+
+    walk(hall, a, FAR); // t=0：A 起步
+    vi.advanceTimersByTime(300); // t=300：A 已经在路上
+    const beforeEviction = lastPosition(a, 'u_a');
+
+    // 驱逐 = 新实例接手：旧实例的内存循环一起丢掉（附加数据留在 socket 上）
+    vi.clearAllTimers();
+    vi.advanceTimersByTime(800); // t=1100：这 800ms 谁都没走
+    expect(lastPosition(a, 'u_a')).toEqual(beforeEviction);
+
+    const revived = newHall([a, b], sql);
+    walk(revived, b, FAR); // 有人新起步 → startTicking → ensureMovers 按附加数据里的 target 重建 A
+    vi.advanceTimersByTime(100); // t=1200：重建后的第一拍
+
+    expect(lastPosition(a, 'u_a').x - beforeEviction.x).toBeCloseTo(22, 9); // 一个 TICK_MS × 220px/s
+    expect(lastPosition(a, 'u_a').y).toBe(START.y);
   });
 
   it('短路径跑到终点：正好停在终点，不越界', () => {
@@ -215,17 +263,17 @@ describe('节拍已在跑时新起步的人不补走一拍', () => {
 
     walk(hall, a, FAR);
     walk(hall, b, FAR);
-    vi.advanceTimersByTime(100); // t=100：A 走到 x=50
-    expect(lastPosition(a, 'u_a').x).toBe(START.x + 22);
+    vi.advanceTimersByTime(100); // t=100：A 走到 x≈22
+    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22, 9);
 
     vi.advanceTimersByTime(50); // t=150
-    walk(hall, a, { x: START.x + 22, y: START.y }); // 目标就是当前点 = 停止走动（移除移动者）
-    expect(lastPosition(a, 'u_a')).toEqual({ x: START.x + 22, y: START.y });
+    walk(hall, a, { x: lastPosition(a, 'u_a').x, y: START.y }); // 目标就是当前点 = 停止走动（移除移动者）
+    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22, 9);
 
     vi.advanceTimersByTime(10); // t=160
     walk(hall, a, FAR); // 同一用户再走一次，此刻才是新的起步时刻
 
     vi.advanceTimersByTime(40); // t=200：这一拍只该推进 40ms
-    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22 + 8.8, 6);
+    expect(lastPosition(a, 'u_a').x).toBeCloseTo(START.x + 22 + 8.8, 9);
   });
 });
