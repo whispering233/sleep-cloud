@@ -342,17 +342,34 @@
     border: 0;
   }
 
-  /* 表情按钮：一点即发一条只含该 emoji 的聊天消息（切换键也用它，见 `.chat-composer`） */
-  .emote-button {
+  /* 表情切换键：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
+     `margin-inline-start: auto` 把它钉在行尾——与收起态的「发送」键同一个位置，两态不必重新找 */
+  .emote-toggle {
     min-width: 44px;
     min-height: 44px;
-    padding: 0 var(--spacing-sm);
+    margin-inline-start: auto;
+    padding: 0 var(--spacing-md);
     color: var(--color-neutral);
-    background-color: var(--color-secondary);
+    background-color: transparent;
     font-family: var(--font-label);
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
+  }
+
+  /* 5 个 emoji：纯字形、无描边无底色——靠**形状**跟切换键分开，不靠字形。
+     触击区仍是 44×44，只是看不见那条边 */
+  .emote-item {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    color: var(--color-neutral);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    border: 0;
     border-radius: var(--radius-full);
   }
 
@@ -409,7 +426,8 @@
 
   .input-field:focus-visible,
   .action-primary:focus-visible,
-  .emote-button:focus-visible,
+  .emote-toggle:focus-visible,
+  .emote-item:focus-visible,
   .conn-banner-retry:focus-visible,
   .hud-action:focus-visible,
   .hud-settings-button:focus-visible,

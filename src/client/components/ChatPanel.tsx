@@ -57,11 +57,11 @@ export function ChatPanel() {
   const { selectedId, targetName, meState } = view;
   const hint = bubbleHintOf(draft);
 
-  // 表情切换键：两态共用同一个按钮（收起时在输入框右边，展开时排在最左）
+  // 表情切换键：两态共用同一个按钮，两态位置相同（收起时在发送键左边、展开时钉在最右）
   const emoteToggle = (
     <button
       type="button"
-      className="emote-button"
+      className="emote-toggle"
       aria-label="表情"
       aria-expanded={emoteOpen}
       onClick={() => setEmoteOpen((open) => !open)}
@@ -126,12 +126,11 @@ export function ChatPanel() {
       >
         {emoteOpen ? (
           <>
-            {emoteToggle}
             {EMOTE_SHORTCUTS.map(({ glyph, label }) => (
               <button
                 key={glyph}
                 type="button"
-                className="emote-button"
+                className="emote-item"
                 aria-label={label}
                 onClick={() =>
                   selectedId !== undefined ? sendWhisper(selectedId, glyph) : sendChat(glyph)
@@ -140,6 +139,7 @@ export function ChatPanel() {
                 {glyph}
               </button>
             ))}
+            {emoteToggle}
           </>
         ) : (
           <>
