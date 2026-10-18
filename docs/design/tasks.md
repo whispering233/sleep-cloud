@@ -64,6 +64,16 @@
      - 删掉 `ts === pos.ts` 这种镜像断言，改成正向断言：真值时刻前移后，冻结点跟着前移（用画面距离断言）。
 - **CHANGELOG**：并入卡 2 已有条目（不单开）。
 
+### 卡 3b：补齐另两条起步路径的测试 + 去掉精确浮点相等
+
+- **背景**（卡 3 复审 P2）：`movement.test.ts` 只用 `walk`（→`startWalking`）验了「中途起步不补走一拍」；**走躺**（`approachBed`）与**驱逐重建**（`ensureMovers`）这两条起步路径无断言。另有三处 `toBe(START.x + 22)` 断言一个经比例算出的坐标，几何常量一改会因非行为原因变红。
+- **改动范围**：`src/hall/tests/movement.test.ts`（重建场景若已有固定写法则可在 `src/hall/tests/resume.test.ts` 内补）。不改生产代码、不改 `docs/`。
+- **验收**：
+  - 一拍已过 80ms 时新增一个**走躺**意图（`lie` 到远处床）→ 第一拍只推进 20ms（≈4.4px）。
+  - 驱逐重建后的移动者，第一拍推进量 = `TICK_MS`（不补走被驱逐那段）。
+  - 现有 12 条全绿；坐标断言改 `toBeCloseTo(..., 9)`。
+- **CHANGELOG**：无。
+
 ### 卡 3：新移动者不「补走一拍」（服务端）
 
 - **目的**：节拍运行中才开始走的人，第一拍不许多推进「上一次拍到现在」的整段时间。
@@ -77,12 +87,18 @@
 ### 卡 4：观测探针（`?debug=1`）
 
 - **目的**：让 §6.1 的硬指标可以**举证**，而不是靠肉眼。
-- **改动范围**：客户端世界层（每 10s 打印一行，不进 UI、不进 React 状态）、必要时 `src/client/store.ts` 只读导出。
+- **改动范围**：新增 `src/client/move-probe.ts` + `src/client/tests/move-probe.test.ts`；`src/client/store.ts` 只加一个只读字段；`src/client/main.tsx` 或 `App.tsx` 里一行开关。不改世界层渲染、不改协议、不改 `docs/`。
+- **口径**（`docs/design/30-movement-sync.md` §6.2）：
+  - `leadMs = prediction.ts − prediction.anchorTs`（没有外推时不计）；
+  - `regressPx` = 两帧之间画面点**逆着上一个运动方向**的位移累加（拐弯处点积≈ 0，不误报）；
+  - `posAge = (Date.now() + clockOffsetMs) − state.lastPosTs`（该字段由 `applyPos` 写入，新快照后重置）；
+  - `tickSpan` = 相邻两条 `pos.ts` 之差。
 - **验收**：
-  - `?debug=1` 时每 10s 打印 `leadMs` / `regressPx` / `posAge` / `tickSpan` 的 p50 与 max。
-  - 无参数时完全不打印、无额外开销路径。
-  - `regressPx > 0` 时用显眼前缀（便于在控制台一眼看到）。
-- **不做**：不加协议字段、不加 HUD 文案。
+  - `?debug=1` 时每 10s 一行：`leadMs` / `regressPx` / `posAge` / `tickSpan` 的 p50 与 max；
+  - 无参数时**不订阅、不建定时器、零开销**；
+  - `regressPx > 0` 的行用 `!!` 前缀（控制台一眼看到）；
+  - 聚合逻辑是纯函数，单测覆盖（p50/max、倒退累加、拐弯不误报、无样本不出行）。
+- **不做**：不加协议字段、不加 HUD 文案、不写文件。
 - **CHANGELOG**：`### Added` 一条——`?debug=1` 的位置同步观测。
 
 ---
