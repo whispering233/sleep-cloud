@@ -281,14 +281,13 @@ export function beginWalk(to: Point): void {
   // 领先量 = 画面上那一点在**新折线上的投影弧长** / v（`30-movement-sync.md` §3.3）。用弧长不用直线
   // 距离：改目标时新旧折线可能**垂直**（画面点偏在新路径的侧方），直线距离会把侧向偏移当成前进量、
   // 把画面凭空前推。站着不动（没有外推）→ 0，于是「点击即起步」；改目标时画面沿新折线不跳。
-  // 旧外推**已经冻结**（真值陈旧度 ≥ 保鲜期，恰好等于也算）→ 不带领先量：那个画面点是幻影，带上它
-  // 等于把新外推的锚点时刻往前挪、白占保鲜期（§3.7）。携带的量另**封顶半个保鲜期**，否则陈旧画面点
-  // 会让下一条 `pos` 超出传送门槛、整条外推作废（画面成段后跳）。
+  // 携带与否只看闸门：真值已静默半个保鲜期以上（取严格，恰好等于也算）→ 画面点是幻影，不携带（§3.7）。
+  // **不封顶**：封顶会咬掉合法领先量（RTT 2s 时 lead ≈ 1s 是正常的），而那一咬正发生在用户点击的时刻
+  // → 画面后退；收闸门只影响这条链路已经静默半秒以上的降级状态。
   const old = state.prediction;
-  const carriedMs = old && serverNow - old.ts < PREDICTION_STALE_MS
+  const leadMs = old && serverNow - old.ts < PREDICTION_STALE_MS / 2
     ? (arcLengthAhead(from, started.path, predictionPointAt(old, serverNow)) / WALK_SPEED_PX_PER_S) * 1000
     : 0;
-  const leadMs = Math.min(carriedMs, PREDICTION_STALE_MS / 2);
   setState({ prediction: { ...started, anchorTs: serverNow - leadMs } });
 }
 

@@ -653,10 +653,12 @@ describe('自身外推：保鲜期按「最后一条关于自己的 pos」起算
     expect(last).toBeCloseTo((WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 1000, 6);
   });
 
-  it('陈旧判据取严格：真值陈旧度 1999ms 带领先量（封顶半个保鲜期），2000 / 2001ms 不带', () => {
+  it('陈旧闸门取严格且不封顶：陈旧度 250 / 999ms 携带（切换那一刻 0px），1000 / 2000ms 不携带', () => {
     // 快照只取一次：假时钟钉在 `LOCAL_NOW` 那一刻，此后 `serverNow = SNAPSHOT_TS + 经过的毫秒数`
     applySnapshot(snapshot());
-    for (const [age, fresh] of [[1_999, true], [2_000, false], [2_001, false]] as const) {
+    // 陈旧度 → 是否携带那个画面点（闸门 = 半个保鲜期，取严格）
+    const cases = [[250, true], [999, true], [1_000, false], [2_000, false]] as const;
+    for (const [age, carried] of cases) {
       clearPrediction();
       vi.setSystemTime(LOCAL_NOW);
       beginWalk(RETARGET);
@@ -666,21 +668,51 @@ describe('自身外推：保鲜期按「最后一条关于自己的 pos」起算
       vi.setSystemTime(LOCAL_NOW + age);
       const serverNow = SNAPSHOT_TS + age;
       expect(serverNow - old.ts).toBe(age);
+      const before = travelled(FROM, old.path, predictionPointAt(old, serverNow));
       beginWalk(TO);
       const prediction = getState().prediction;
       if (!prediction) throw new Error('外推应当已登记');
 
-      const render = predictionPointAt(prediction, serverNow);
-      if (!fresh) {
-        // 恰好等于保鲜期也算陈旧：不携带那个画面点（它冻在 440px 处），画面回到真值点
+      const after = travelled(FROM, prediction.path, predictionPointAt(prediction, serverNow));
+      if (!carried) {
+        // 陈旧度 ≥ 半个保鲜期（恰好等于也算）：那个画面点是幻影，画面落到真值点——**有界**后退 ≤ v × 陈旧度
         expect(serverNow - prediction.anchorTs).toBe(0);
-        expect(Math.hypot(render.x - FROM.x, render.y - FROM.y)).toBeLessThanOrEqual(1);
+        expect(after).toBeLessThanOrEqual(1);
+        expect(before - after).toBeLessThanOrEqual((WALK_SPEED_PX_PER_S * age) / 1000 + 1);
         continue;
       }
-      // 带：但那 439.8px（≈1999ms）是幻影，只带到半个保鲜期为止
-      expect(serverNow - prediction.anchorTs).toBeCloseTo(PREDICTION_STALE_MS / 2, 6);
-      expect(serverNow - prediction.anchorTs).toBeLessThanOrEqual(PREDICTION_STALE_MS / 2);
-      expect(travelled(FROM, prediction.path, render)).toBeCloseTo((WALK_SPEED_PX_PER_S * PREDICTION_STALE_MS) / 2_000, 6);
+      // 携带：领先量原样进锚点时刻（999ms 也照带，说明不再封顶半个保鲜期），切换那一刻画面不动
+      expect(serverNow - prediction.anchorTs).toBeCloseTo(age, 3);
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('RTT 2s 的合法领先量不被咬：陈旧度 100ms 而画面领先 1000 / 1200ms → 锚点时刻原样前移', () => {
+    applySnapshot(snapshot());
+    // 1000ms = RTT 2s 的 `oneWay` 名义值（也恰好是旧封顶值，所以加一个 1200ms 的抖动样本）；
+    for (const lead of [1_000, 1_200]) {
+      clearPrediction();
+      vi.setSystemTime(LOCAL_NOW);
+      beginWalk(RETARGET);
+      const old = getState().prediction;
+      if (!old) throw new Error('外推应当已登记');
+      // 锚点比真值时刻早 `lead − 100`，再把时钟推 100ms → 陈旧度 100ms、领先量 = `lead`
+      setState({ prediction: { ...old, anchorTs: old.ts - (lead - 100) } });
+      vi.setSystemTime(LOCAL_NOW + 100);
+      const serverNow = SNAPSHOT_TS + 100;
+      const stale = getState().prediction;
+      if (!stale) throw new Error('外推应当已登记');
+      expect(serverNow - stale.ts).toBe(100);
+      expect(serverNow - stale.anchorTs).toBeCloseTo(lead, 3);
+      const before = travelled(FROM, stale.path, predictionPointAt(stale, serverNow));
+
+      beginWalk(TO);
+      const prediction = getState().prediction;
+      if (!prediction) throw new Error('外推应当已登记');
+      // 封顶半个保鲜期的话 1200ms 这一档只剩 1000ms → 下面画面当场后退 44px
+      expect(serverNow - prediction.anchorTs).toBeCloseTo(lead, 3);
+      const after = travelled(FROM, prediction.path, predictionPointAt(prediction, serverNow));
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
     }
   });
 
