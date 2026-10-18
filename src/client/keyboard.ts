@@ -8,14 +8,6 @@
  * 算数在 `world/rules.ts` 的 `keyboardOf`（纯函数，DOM-free 才能单测）；这一层只负责订阅与写样式。
  */
 import { keyboardOf } from './world/rules';
-import type { KeyboardState } from './world/rules';
-
-/** 此刻的键盘状态：`trackKeyboard` 每吃一次视口事件就重算一遍，`shrink` 决定面板抬多高。 */
-let current: KeyboardState = { open: false, shrink: 0, pan: 0 };
-
-export function keyboardNow(): KeyboardState {
-  return current;
-}
 
 /**
  * 订阅 `visualViewport` 的 `resize` 与 `scroll`（iOS 聚焦时 pan 走 `scroll`），把缩小量与 pan 写到宿主的
@@ -27,13 +19,13 @@ export function trackKeyboard(shell: HTMLElement): () => void {
   if (!viewport) return () => {};
 
   const sync = (): void => {
-    current = keyboardOf(window.innerHeight, viewport);
+    const state = keyboardOf(window.innerHeight, viewport);
     // 缩 shell 的下边缘：画布与面板一起让出键盘那一块
-    shell.style.insetBlockEnd = `${current.shrink}px`;
+    shell.style.insetBlockEnd = `${state.shrink}px`;
     // `position: fixed` 相对**布局视口**定位，而 `offsetTop > 0` 表示视觉视口顶边落在布局视口顶边
     // **下方**（屏幕顶上显示的是布局 y = offsetTop 的内容）——所以 shell 要同量**下移**才对得上屏幕，
     // 用 `-pan` 会让它再往上错 2×pan。
-    shell.style.transform = current.pan === 0 ? '' : `translateY(${current.pan}px)`;
+    shell.style.transform = state.pan === 0 ? '' : `translateY(${state.pan}px)`;
   };
 
   viewport.addEventListener('resize', sync);
