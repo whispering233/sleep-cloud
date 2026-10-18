@@ -206,13 +206,27 @@ describe('轻点命中（世界像素）', () => {
     });
   });
 
-  it('床上有人时什么都不做且绝不落成 walk', () => {
-    expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], residentId: 'u_other', bedNo: 42 })).toEqual({
-      kind: 'none',
+  it('床上有人：别人占的床只给提示（与 3002 同文案），自己躺着的床什么都不做；都绝不落成 walk', () => {
+    expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], selfId: 'u_me', residentId: 'u_other', bedNo: 42 })).toEqual({
+      kind: 'notice',
+      reason: 'occupied',
     });
     expect(tapTargetFor({ point: { x: 812, y: 316 }, spots: [], selfId: 'u_me', residentId: 'u_me', bedNo: 42 })).toEqual(
       { kind: 'none' },
     );
+  });
+
+  it('别人有主但空着的床：只给提示（与 3003 同文案），占用 / 归属优先于「我有床」这条本地闸门', () => {
+    const tap = (extra: Partial<TapInput> = {}) =>
+      tapTargetFor({ point: { x: 812, y: 316 }, spots: [], selfId: 'u_me', bedNo: 42, owned: true, ...extra });
+
+    // 我还没床：仍是「别人的床」，不是「可以躺」
+    expect(tap()).toEqual({ kind: 'notice', reason: 'other-owned' });
+    expect(tap({ ownedBedNo: undefined })).toEqual({ kind: 'notice', reason: 'other-owned' });
+    // 我有别的床：占用 / 归属优先，报的是「别人的床」而不是「我已经有一张床」
+    expect(tap({ ownedBedNo: 7 })).toEqual({ kind: 'notice', reason: 'other-owned' });
+    // 换床模式里也换不到有主的床
+    expect(tap({ ownedBedNo: 7, switching: true })).toEqual({ kind: 'notice', reason: 'other-owned' });
   });
 
   it('无主空床：我还没床 / 就是我那张 / 在模式里 → 躺下；我有别的床又不在模式里 → 只给提示', () => {
@@ -227,8 +241,8 @@ describe('轻点命中（世界像素）', () => {
     // ③ 我有别的床、在换床模式里：这才是换床
     expect(tap({ ownedBedNo: 7, switching: true })).toEqual({ kind: 'lie', bedNo: 42 });
     // ④ 我有别的床、不在模式里：不发上行，只给提示（换床会当场释放旧床归属）
-    expect(tap({ ownedBedNo: 7 })).toEqual({ kind: 'notice' });
-    expect(tap({ ownedBedNo: 7, switching: false })).toEqual({ kind: 'notice' });
+    expect(tap({ ownedBedNo: 7 })).toEqual({ kind: 'notice', reason: 'has-bed' });
+    expect(tap({ ownedBedNo: 7, switching: false })).toEqual({ kind: 'notice', reason: 'has-bed' });
   });
 
   it('没有可走的街网点（厅外、床缝）：什么都不做（服务端会回 3006，别发）', () => {

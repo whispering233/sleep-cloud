@@ -430,8 +430,12 @@ export type TapTarget =
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
   | { kind: 'recenter' }
-  /** 「已经有床了」的那一下：**只给提示，不发上行**（文案由世界层出，判据不该带文案） */
-  | { kind: 'notice' }
+  /**
+   * 三类本地闸门的那一下：**只给提示，不发上行**（文案由世界层出，判据不该带文案）。
+   * `occupied` = 这张床有人（`3002`）、`other-owned` = 这是别人的床（`3003`）、
+   * `has-bed` = 我已经有一张床（本地闸门，服务端没有对应的拒因）。
+   */
+  | { kind: 'notice'; reason: 'occupied' | 'other-owned' | 'has-bed' }
   | { kind: 'none' };
 
 export interface TapInput {
@@ -443,6 +447,11 @@ export interface TapInput {
   /** 点到的那张床的占用者 id（含自己）；空床为 `undefined` */
   residentId?: string;
   bedNo?: number;
+  /**
+   * 这张床**有主**（`state.ownedBeds.has(bedNo)`）。归属是否过期客户端不知道，
+   * 所以这里偏保守：过期但还没广播的空床也算「有主」（见 `docs/ui/DESIGN.md`「谁能躺」）。
+   */
+  owned?: boolean;
   /**
    * 我已经有主的床号（`me.ownedBedNo`）：换床的闸门靠它。它**只可能等于服务端那张床**——
    * 归属过期要 30 天不出现，而在线的人一直在刷 `last_seen_at`（见 `docs/db/schema.md`），
@@ -465,17 +474,20 @@ export interface TapInput {
 /**
  * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
  * ③ 可躺的床 → 躺下（**我还没床**、**就是我自己那张**、**换床模式里**这三种情形）；
- * ④ 床上有人（含自己）→ 什么都不做；⑧ 我有别的床又不在模式里 → 只给提示（换床走显式模式）；
- * ⑨ 可走的街网 → 走过去；⑩ 其余 → 什么都不做。
- * ② 与 ④ 都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做，别把两者合成一个 `none`。
+ * ④ 床上有人（含自己）→ 见下面的床位分支；⑨ 可走的街网 → 走过去；⑩ 其余 → 什么都不做。
+ * ② 与「点自己躺着的床」都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做。
  *
  * **床格绝不能落成 `walk`**：服务端会回 `3006`，等于点了个空气。
+ *
+ * 床位分支的三类本地闸门按**服务端优先级**排（`3002` 有人 > `3003` 别人的床 > 本地「我有床」）：
+ * 同一下点击命中多条时，提示要与服务端真收到意图时回的那条一致，否则用户看到两种说法。
+ * 只有「我有别的床又不在模式里」是纯本地闸门（服务端会接受换床）。
  *
  * 为什么「我有别的床又不在模式里」要拦：换床会**当场释放旧床归属**（别人可以立刻捡走），而一次轻点的意图强度太低——
  * 用户大多只是点错了。旧床归属的代价不能由一次误点承担（见 `docs/design/00-master-design.md` §4）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching, owned } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
@@ -490,10 +502,15 @@ export function tapTargetFor(input: TapInput): TapTarget {
   }
 
   if (bedNo !== undefined) {
-    if (residentId !== undefined) return { kind: 'none' };
-    // 无主空床：我还没床（首次认领）/ 目标就是我那张（躺着在床上点它会被服务端回 3004 静默）/ 模式内
-    if (ownedBedNo === undefined || ownedBedNo === bedNo || switching === true) return { kind: 'lie', bedNo };
-    return { kind: 'notice' };
+    // 自己躺着的床：什么都不做（服务端回 3004 静默），也免得本地外推白走一趟
+    if (selfId !== undefined && residentId === selfId) return { kind: 'none' };
+    if (residentId !== undefined) return { kind: 'notice', reason: 'occupied' };
+    if (ownedBedNo === bedNo) return { kind: 'lie', bedNo };
+    // 别人的床（有主、没人躺）优先于「我有床」这条本地闸门
+    if (owned === true) return { kind: 'notice', reason: 'other-owned' };
+    if (ownedBedNo !== undefined && switching !== true) return { kind: 'notice', reason: 'has-bed' };
+    // 无主空床：我还没床（首次认领）/ 换床模式里
+    return { kind: 'lie', bedNo };
   }
   return walkTarget ? { kind: 'walk', x: walkTarget.x, y: walkTarget.y } : { kind: 'none' };
 }

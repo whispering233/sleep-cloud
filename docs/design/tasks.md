@@ -13,48 +13,6 @@
 
 ---
 
-## 卡 B · 点别人的床：三类本地提示（与错误码同文案）
-
-**依据**：`docs/ui/DESIGN.md`「谁能躺」新增的两段（三类本地闸门 + 为什么本地判）、`docs/api/error-code.md` §3 的「客户端预判」行、`docs/ui/DESIGN.md` 的 `toast-recoverable` 行。
-
-**现状（要修的回归）**：`rules.ts` 现在 `residentId !== undefined → { kind: 'none' }`（静默），而**别人有主但空着**的床落进 `notice` 却报的是「已经有一张床 · 换床在设置里」——「这张床有人了」「这是别人的床」两条反馈全没了。
-
-**改动范围**
-
-1. `src/client/world/rules.ts`
-   - `TapInput` 加 `owned?: boolean`（这张床**有主**：`state.ownedBeds.has(bedNo)`。客户端不知道归属是否过期——这是接受的偏保守一侧，见文档）。
-   - `TapTarget` 的 notice 改成带原因：`{ kind: 'notice'; reason: 'occupied' | 'other-owned' | 'has-bed' }`。
-   - `tapTargetFor` 的床位分支按这个顺序（服务端优先级 3002 > 3003 > 本地闸门）：
-     1. `residentId === selfId` → `{ kind: 'none' }`（对应静默 `3004`；也防止本地外推白走一趟）
-     2. `residentId !== undefined` → `notice('occupied')`
-     3. `ownedBedNo === bedNo` → `lie`
-     4. `owned === true` → `notice('other-owned')`
-     5. `ownedBedNo !== undefined && switching !== true` → `notice('has-bed')`
-     6. 否则 → `lie`
-   - 更新 `tapTargetFor` 上方的文档注释（三类本地闸门 + 服务端优先级）。
-2. `src/client/world/world.ts` 的 `dispatchTap`
-   - 传 `owned: bedNo !== undefined ? state.ownedBeds.has(bedNo) : undefined`（写进 `tapTargetFor({...})` 的那个对象）。
-   - `case 'notice'` 按 `reason` 给文案：`occupied → errorTextFor('3002')`、`other-owned → errorTextFor('3003')`、`has-bed → '已经有一张床 · 换床在设置里'`。
-   - **文案不许再抄第二份字面量**：`3002` / `3003` 走 `errorTextFor`（`src/client/error-text.ts`，已由 `docs/api/error-code.md` 镜像测试覆盖）。`errorTextFor` 返回 `undefined` 时**不提示**（直接 return），与其它静默类一致。
-3. `src/client/world/tests/rules.test.ts`
-   - 改「床上有人时什么都不做且绝不落成 walk」那条：点**别人占**的床 = `{ kind: 'notice', reason: 'occupied' }`；点**自己正躺着**的床仍是 `{ kind: 'none' }`（保留一条）。
-   - 新增：别人有主空床 + 我还没床 → `{ kind: 'notice', reason: 'other-owned' }`；别人有主空床 + 我有别的床 → 仍是 `other-owned`（占用 / 归属优先于本地闸门）；无主空床 + 我有别的床 → `{ kind: 'notice', reason: 'has-bed' }`（原有断言只改 reason）。
-   - 保持「绝不落成 `walk`」的断言。
-
-**验证（`ui-verifier`，本地浏览器两个客户端，手机视口，逐条取证；每条最多 3 次尝试、总步骤 ≤ 18）**
-
-| # | 操作 | 断言 |
-| :--- | :--- | :--- |
-| 1 | 客户端 X 认领并躺下床 k（床 k 有主 + 有占用）→ 客户端 Y（**没有床**）点床 k 的**床角**（不要落在小人身上） | toast「这张床有人了」；**Y 的 `lie` 上行 0 条**（小人不动、不出现外推） |
-| 2 | 客户端 X 认领床 k 后**起身走到别处**（床 k 有主、空着）→ Y 点床 k | toast「这是别人的床」；Y 的 `lie` 上行 0 条 |
-| 3 | Y 自己认领一张无主空床 j（有床）→ 点另一张**无主空床** | toast「已经有一张床 · 换床在设置里」（回归不破）；`lie` 上行 0 条 |
-| 4 | Y 躺着时点自己那张床的床角 | **无 toast**、无上行 |
-| 5 | Y 点床 k 上小人的身体 | 变成**选中**（头顶名字 / 私聊目标行），不是 toast（命中半径内的人优先） |
-
-**提交**：`fix(world): 点别人的床给出与错误码同文案的提示`
-
----
-
 ## 卡 C · 缩放档位：自由缩放 / 全厅 / 0.5× / 0.75× / 1×
 
 **依据**：`docs/ui/DESIGN.md` 的世界相机（`缩放` / `固定档的下限` / `拉远后的退役`）、`action-row`、新增的 `zoom-picker`、`chat-panel` 的门控行三者互斥；`docs/design/config.md` §3 的 `ZOOM_TIERS`、§6 的「缩放档位」。

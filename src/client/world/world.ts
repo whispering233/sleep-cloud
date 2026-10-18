@@ -14,6 +14,7 @@ import {
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
+import { errorTextFor } from '../error-text';
 import { keyboardNow } from '../keyboard';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setOverview, setSwitching, showNotice } from '../store';
@@ -837,6 +838,7 @@ class WorldScene extends Phaser.Scene {
       selfId: state.me?.id,
       residentId: bedNo !== undefined ? residentOf(state, bedNo) : undefined,
       bedNo,
+      owned: bedNo !== undefined ? state.ownedBeds.has(bedNo) : undefined,
       ownedBedNo: state.me?.ownedBedNo,
       switching: state.switching,
       walkTarget: nearestStreetPoint(point, bedCount),
@@ -856,10 +858,17 @@ class WorldScene extends Phaser.Scene {
         this.handlers.onLie(target.bedNo);
         return;
       }
-      case 'notice':
-        // 我有别的床、又不在换床模式里：**不发上行**，只指路（纯文字提示，不是操作目标）
-        showNotice('已经有一张床 · 换床在设置里');
+      case 'notice': {
+        // 三类本地闸门都只给提示、**不发上行**：文案与错误码同源（`src/client/error-text.ts`），
+        // 同一件事在本地拦下与服务端拒绝时说同一句话（见 `docs/ui/DESIGN.md`「谁能躺」）。
+        const text =
+          target.reason === 'has-bed'
+            ? '已经有一张床 · 换床在设置里'
+            : errorTextFor(target.reason === 'occupied' ? '3002' : '3003');
+        // 查不到文案 = 静默（与其它静默类错误一致，见 `AGENTS.md` 硬纪律 13）
+        if (text !== undefined) showNotice(text);
         return;
+      }
       case 'walk':
         // 点地面 = 取消选中 + 走过去（选中态与走动的分工由纯函数给定）
         // 它也是换床模式最自然的「不搬了」：退出模式再走
