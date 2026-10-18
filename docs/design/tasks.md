@@ -3,7 +3,7 @@
 > 规则：按端到端垂直切片；一张卡必须能独立提交、独立验证、独立回滚。**完成后从本文件删除**（它不是历史记录）。
 > 依据：`00-master-design.md`、`architecture.md`、`10-hall-runtime.md`、`20-layout.md`、`config.md`、`build.md`、`../db/schema.md`、`../api/`、`../ui/DESIGN.md`、`../../AGENTS.md`（硬纪律）。
 
-**顺序：B → C → D**（A 已落地）。B 的键盘逻辑吃的是 A 之后的 `.chat-panel` 结构。
+**顺序：C → D**（A、B 已落地）。
 
 ## 派活硬约束（每张卡都适用）
 
@@ -12,20 +12,6 @@
 - 一张卡一次 `git commit`；提交信息不带任务卡语义。
 
 ---
-
-## 卡 B · 软键盘：视口与相机按 `visualViewport` 走
-
-依据：`../ui/DESIGN.md`「世界相机 · 软键盘」+ Layout 里那条键盘规则；`../../AGENTS.md` 硬纪律 32；`../design/build.md` §7 第 19 条。
-
-范围：`src/client/world/rules.ts`（两个新纯函数 + 单测）、`src/client/world/world.ts`（视口高度来源、冻结夹取与 follow、基线保存/还原）、面板抬升的那一层（`ChatPanel.tsx` 或 `app.css`）、`src/client/world/tests/rules.test.ts`、`build.md` §7 第 19 条补「本地已验的那一半」。
-
-- [ ] 新纯函数 `anchorScroll(...)`：给「旧视口顶 / 新视口顶 / 当前滚屏」返回补偿后的滚屏（**不改取景中心**）。单测：变矮 / 变高 / 同一高度（幂等）
-- [ ] 新纯函数 `revealShift(...)`：给「自己 / 新旧可用视口」返回 0 或「刚好露出」的最小位移。单测：在可见区内 → 0；被底部吃掉 → 只推到边界；被顶部吃掉 → 只推回边界
-- [ ] 视口高度与面板位置同吃 `visualViewport`（`height` + `offsetTop`）；键盘收起后滚屏**写回基线**
-- [ ] 键盘期间：夹取不跑、`follow` 不跑；用户拖拽 / 捏合后把当前滚屏写回基线
-- [ ] 键盘动画逐帧触发时不累积误差（每帧都由「基线 + 当前值」重算，不累加增量）
-- [ ] `npm test`、`npm run typecheck` 绿
-- [ ] 如实写明本地验到了哪一半（纯函数 + 面板抬升的样式路径；真键盘、iOS pan 只能真机）
 
 ## 卡 C · 入场层形象选中态
 
