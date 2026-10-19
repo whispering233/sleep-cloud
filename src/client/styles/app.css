@@ -272,7 +272,9 @@
      `pointer-events: none`（不可 Tab、不被读屏读到由组件的 `inert` 负责） */
   .slot-panel {
     position: absolute;
-    inset-inline: 0;
+    /* 负的边框宽度：绝对定位的 inset 基准是父元素的 **padding box**，而 `.chat-panel` 自带 1px 边框。
+       写 0 会让插槽面板比 chat-panel 两边各窄 1px，两块左边框就错开成一个小台阶 */
+    inset-inline: -1px;
     inset-block-start: 100%;
     overflow-y: auto;
     overscroll-behavior: contain;
