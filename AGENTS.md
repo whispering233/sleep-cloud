@@ -18,7 +18,8 @@
 | 厅的空间模型、床位与格子规格、级表与厅的边界、布局契约 | `docs/design/20-layout.md` |
 | 端云位置同步：时延归属、重锚公式、别人滞后、验收口径与已知代价 | `docs/design/30-movement-sync.md` |
 | 客户端本地持久化：准入判据、键协议、键登记表 | `docs/design/40-client-storage.md` |
-| 插槽面板：两种悬挂态、区域几何、触发源、动画与闪烁、内容契约 | `docs/design/50-slot-panel.md` |
+| 插槽面板：内容契约、快捷用语、已知代价 | `docs/design/50-slot-panel.md` |
+| 交互外壳：所有权表、输入会话状态机、Grid 两态、退场时序、画布冻结 | `docs/design/60-interaction-shell.md` |
 | 时间常量、限制、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、额度监控 | `docs/design/build.md` |
 | 测试环境与流程（哪类测试用哪个环境） | `docs/design/test.md` |
@@ -80,13 +81,14 @@
 
 30. **点空闲床不换床：换床走显式模式。** 我已有别的床时点一张无主空床**只给提示**（`已经有一张床 · 换床在设置里`）、不发上行——旧床归属一旦释放就可能被别人捡走，一次误点的代价不能这么大。换床的唯一入口是齿轮浮层 →「更换床位」→ 模式内点空床（模式**跨聊天、跨起身**活着，所以必须有常驻提示行与明确出口）。闸门在客户端纯函数 `tapTargetFor` 里；服务端语义不变（`lie` 到另一张可认领的床仍然算换床）。
 31. **多指手势要先申请触摸指针。** Phaser 默认只建 **1 个**触摸指针（`input.activePointers` 默认 1，且 `pointers[0]` 归鼠标）→ 第二根手指被**静默丢掉**，而首指会假装成单指拖拽把相机拉走。任何多指手势都必须先确认 `createWorld` 里的这个配置（本项目的踩坑记录见 `CHANGELOG.md`）。
-32. **软键盘不需要界面知道它多高。** 输入行聚焦时**整个底部组合（聊天面板 + 插槽面板）挪到顶部显示条下方**，顶部与键盘天然不重叠（`docs/design/50-slot-panel.md` §2）——所以**不读 `visualViewport.height`**，也不声明 `interactive-widget`。这不是美观选择：键盘「弹没弹 / 吃掉多高」在部分内核里根本测不出来（布局视口与视觉视口都不缩，或两者一起缩导致差值归零），只要依赖那一量，就总有一类内核会错（夸克里输入框被键盘盖住）。**唯一还读的是 `visualViewport.offsetTop`**：iOS 聚焦时会平移视觉视口，`.app-shell` 靠 `transform: translateY` 把自己拉回屏幕——**只动 transform、不改尺寸**，因此不会引起画布重建。面板的开关只看触发源（首版 = 输入行焦点），不看键盘。
-33. **位移只走 `transform`，不对 `inset` 做过渡。** 后者是逐帧布局，而每帧改宿主尺寸会让 `Scale.NONE` 下的 `ResizeObserver` 每帧调一次 `scale.resize`、重建整块绘制缓冲——画布闪烁的老病根就是它。同理，相机 inset 必须吃**布局值**（`layoutTopOf` 用 `offsetTop` 累加），不能吃 `getBoundingClientRect()`：后者会跟着 `transform` 走，过渡进行中量到的是滑到一半的位置，夹取就跟着跳。
-34. **贴顶态下会抢焦点的按钮必须 `pointerdown` 里 `preventDefault()`。** 面板在贴顶态与空闲态相距五百多像素，一旦按钮抢走输入行焦点，触发源立即清 active → 面板移回底部 → `pointerup` 落在空处、`click` 根本不触发（用户得点两次）。已有三处：快捷用语条目、发送、😀 切换键。**发送与点面板空白另须显式 `blurFocusedEditable()` 退场**——不许依赖「按钮抢焦点」这个浏览器差异（Chromium 抢、Safari 可能不抢）；床号 / `GO` / 缩放档位 / 齿轮只要求**退场**（靠自然失焦）。**点面板空白是唯一出口**（画布被面板盖住，点不到）。
+32. **软键盘不需要界面知道它多高。** 进入**打字态**时**整个底部组合（聊天面板 + 插槽面板）挪到顶部显示条下方**，顶部与键盘天然不重叠（`docs/design/60-interaction-shell.md` §2、§3）——所以**不读 `visualViewport.height`**，也不声明 `interactive-widget`。这不是美观选择：键盘「弹没弹 / 吃掉多高」在部分内核里根本测不出来（布局视口与视觉视口都不缩，或两者一起缩导致差值归零），只要依赖那一量，就总有一类内核会错（夸克里输入框被键盘盖住）。**唯一还读的是 `visualViewport.offsetTop`**：iOS 聚焦时会平移视觉视口，`.app-shell` 靠 `transform: translateY` 把自己拉回屏幕——**只动 transform、不改尺寸**。
+33. **打字态 = store 里的状态，不是 DOM 焦点。** 焦点只是入口之一（shell 级 `focusin` 认出可编辑控件）；退场**只有一个出口** `exitComposer()`：幂等、**不看 `activeElement` 是谁**。另有一条对账：shell 级 `focusout` 后下一帧发现活跃元素不在面板内的可编辑控件里 → 退场。这两条合起来才挡住「控件被卸载不发 blur」（表情行原地替换输入行）与「别的控件抢焦点」（`GO` 床号）。**打字态必须常驻一个 44px 可见出口**（动作行右端的「收起」胶囊）——隐性出口出错时等于没有出口。
+34. **布局归 CSS，JS 只买状态。** `.app-shell` 是 Grid 两态（`auto 1fr auto` / `auto auto 1fr`），面板与插槽都在流里：**不量高度、不写 `--dock-y`、不用 `translateY` 挪面板、两态瞬切无动画**。位移式布局每加一行控件都要重算一次，而测量面板底锚点量到的永远是上一帧。相机 inset 仍只吃**布局值**（`layoutTopOf` 用 `offsetTop` 累加），不吃 `getBoundingClientRect()`：后者会跟着 transform 跑。
+35. **可点性必须与视觉同源，画布只收画布起手的 tap。** 退场用 `visibility` 离散过渡（`transition-behavior: allow-discrete`），**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。
 
 **本地持久化（客户端）**
 
-35. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
+36. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
 ## 术语
 
