@@ -14,24 +14,6 @@
 
 ---
 
-## 卡 3：布局改 Grid 两态，删掉所有量高
-
-**目标**：面板与插槽进流；删 `--dock-y`、`translateY`、量高的 `ResizeObserver`。
-
-**做**
-1. `app.css`：`.app-shell` 改 `display: grid; grid-template-rows: auto 1fr auto`；`[data-docked='top']` 时 `grid-template-rows: auto auto 1fr`（选择器挂 `.app-shell` 上，用 `:has()` 或由 `ChatPanel` 给 shell 加 `data-composer`，选后者：不依赖 `:has()`）。
-2. `.world-layer` 改 `grid-area: 1 / 1 / -1 / -1`（铺满所有行、在网格之下），`.hud-stack` 第 1 行，`.chat-panel` 第 3 行（打字态第 2 行），`.slot-panel` 打字态第 3 行、`min-height: 0`（要能内部滚动）。
-3. **删**：`.chat-panel` 的 `--dock-y` 与 `transform`、`SlotPanel` 的 `height` inline 计算与两个 `ResizeObserver`、`ChatPanel` 的 `dockShift`。
-4. 边框接缝按现状保留（谁在上面谁有上圆角）。
-5. 宽档（≥640）的居中/最大宽度改用 `justify-self` + `margin-inline: auto`，不再靠 `inset` 微调。
-
-**验收**
-- 两态切换后 HUD / 面板 / 插槽边界与改前一致（手机视口截图对比，允许 ±0px）
-- `npm run typecheck` 干净；grep 不到 `--dock-y`、`slotHeightOf`
-- 相机取景不受影响（面板可见时最底一行仍能滚到面板之上）
-
----
-
 ## 卡 4：指针与退场时序（可点性跟视觉同源）+ 齿轮浮层改 `popover`
 
 **做**
