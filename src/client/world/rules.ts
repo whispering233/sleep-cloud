@@ -313,6 +313,7 @@ export interface Size {
  * 冻结门（`docs/design/60-interaction-shell.md` §5）：软键盘的指纹是**宽度不变、高度变小**——
  * 打字期间这一种变化跳过 `scale.resize`（每次重建绘制缓冲就是一帧黑闪）。
  * 其余一律重算：宽度变、高度变高、DPR 变（换屏）、旋屏（宽高互换）都不受冻结影响。
+ * **退场也不补算**：退场那一帧宿主往往还在键盘收起中途，照它重算就是先缩再涨（`world.ts` 的 `resizeToHost`）。
  */
 export function shouldResize(prev: Size, next: Size, typing: boolean): boolean {
   return !(typing && next.width === prev.width && next.height < prev.height && next.dpr === prev.dpr);
