@@ -1,4 +1,5 @@
 import { displayBedNoOf } from '../shared/layout';
+import type { ComposerState } from './composer';
 import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 import { sameZoomMode } from './zoom';
@@ -28,6 +29,8 @@ export interface HudView {
   switching: boolean;
   /** 世界缩放档位：动作行那颗缩放胶囊的文案吃它（见 `src/client/zoom.ts`） */
   zoomMode: ZoomMode;
+  /** 输入会话：`typing` 时动作行右端的齿轮换成「收起」胶囊（见 `docs/design/60-interaction-shell.md` §2） */
+  composer: ComposerState;
 }
 
 export function hudViewOf(state: ClientState): HudView {
@@ -40,6 +43,7 @@ export function hudViewOf(state: ClientState): HudView {
     rttMs: state.rttMs,
     switching: state.switching,
     zoomMode: state.zoomMode,
+    composer: state.composer,
   };
 }
 
@@ -52,6 +56,7 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.emptyBeds === b.emptyBeds &&
     a.rttMs === b.rttMs &&
     a.switching === b.switching &&
+    a.composer === b.composer &&
     sameZoomMode(a.zoomMode, b.zoomMode)
   );
 }

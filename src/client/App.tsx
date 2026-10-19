@@ -8,7 +8,9 @@ import { Hud } from './components/Hud';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
+import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
+import { getState, setComposer, subscribe } from './store';
 import { connectHall } from './ws';
 
 /**
@@ -41,6 +43,23 @@ export function App() {
   useEffect(() => {
     const shell = shellRef.current;
     return shell ? trackKeyboard(shell) : undefined;
+  }, []);
+
+  // 输入会话的入口：可编辑控件拿焦点（`docs/design/60-interaction-shell.md` §2）
+  useEffect(() => {
+    const shell = shellRef.current;
+    return shell ? trackComposerFocus(shell) : undefined;
+  }, []);
+
+  // 断线也退场：那一刻没有可发的东西，界面先把世界还给人。只在**转入** `offline` 那一次过状态机
+  // （位置节拍每秒十次，每次都比一遍是白费）
+  useEffect(() => {
+    let last = getState().connection;
+    return subscribe((state) => {
+      if (state.connection === last) return;
+      last = state.connection;
+      if (state.connection === 'offline') setComposer({ kind: 'offline' });
+    });
   }, []);
 
   useEffect(() => {

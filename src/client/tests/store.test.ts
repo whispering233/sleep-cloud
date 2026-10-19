@@ -19,6 +19,7 @@ import {
   getState,
   selectPerson,
   setBedDirection,
+  setComposer,
   setState,
   subscribe,
 } from '../store';
@@ -399,5 +400,30 @@ describe('客户端私聊气泡', () => {
 
     expect(getState().bubbles.size).toBe(1);
     expect(getState().bubbles.get('u_other')).toMatchObject({ text: '只给你', kind: 'whisper' });
+  });
+});
+
+describe('输入会话', () => {
+  it('初值是 idle；focus-in 进 typing，同值不通知', () => {
+    expect(getState().composer).toBe('idle');
+    let notified = 0;
+    const off = subscribe(() => {
+      notified += 1;
+    });
+    setComposer({ kind: 'focus-in' });
+    setComposer({ kind: 'focus-in' });
+    expect(getState().composer).toBe('typing');
+    expect(notified).toBe(1);
+
+    setComposer({ kind: 'lost-focus' });
+    expect(getState().composer).toBe('idle');
+    expect(notified).toBe(2);
+    off();
+  });
+
+  it('断线也退场：offline 事件从 typing 回到 idle', () => {
+    setComposer({ kind: 'focus-in' });
+    setComposer({ kind: 'offline' });
+    expect(getState().composer).toBe('idle');
   });
 });

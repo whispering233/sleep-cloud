@@ -5,9 +5,7 @@ import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_SHORTCUTS } from '../emotes';
-import { blurFocusedEditable } from '../focus';
-import { setSlotSource, slotActive, subscribeSlot } from '../slot';
-import { clearSelection, getState, subscribe } from '../store';
+import { clearSelection, exitComposer, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ActionRow } from './ActionRow';
@@ -32,6 +30,8 @@ interface PanelView {
   selectedId?: string;
   targetName?: string;
   meState?: PersonState;
+  /** 输入会话：`typing` 时面板贴到 HUD 下沿、插槽面板打开（`docs/design/60-interaction-shell.md` §2） */
+  composer: ClientState['composer'];
 }
 
 /** 面板只吃这几个字段：位置节拍每秒通知十次，用不上的变化不该渲染。 */
@@ -40,19 +40,18 @@ function viewOf(state: ClientState): PanelView {
     selectedId: state.selectedId,
     targetName: state.selectedId === undefined ? undefined : state.people.get(state.selectedId)?.name,
     meState: state.me?.state,
+    composer: state.composer,
   };
 }
 
 const sameView = (a: PanelView, b: PanelView): boolean =>
-  a.selectedId === b.selectedId && a.targetName === b.targetName && a.meState === b.meState;
+  a.selectedId === b.selectedId && a.targetName === b.targetName && a.meState === b.meState && a.composer === b.composer;
 
 export function ChatPanel() {
   const panelRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<PanelView>(() => viewOf(getState()));
   const [draft, setDraft] = useState('');
   const [emoteOpen, setEmoteOpen] = useState(false);
-  /** 插槽面板开着 = 悬挂态：整个底部组合挪到 HUD 下沿 */
-  const [docked, setDocked] = useState(slotActive);
   /** 贴顶的位移（px，向上为负）：`--dock-y` 与插槽面板的高度都要它 */
   const [dockShift, setDockShift] = useState(0);
 
@@ -62,11 +61,6 @@ export function ChatPanel() {
       const next = viewOf(state);
       setView((prev) => (sameView(prev, next) ? prev : next));
     });
-  }, []);
-
-  useEffect(() => {
-    setDocked(slotActive());
-    return subscribeSlot(() => setDocked(slotActive()));
   }, []);
 
   // 贴顶的位移只走 transform（`inset` 一过渡就是逐帧布局，那是画布重建的老病根）。
@@ -92,9 +86,8 @@ export function ChatPanel() {
   const hint = bubbleHintOf(draft);
 
   // 表情切换键：两态共用同一个按钮，两态位置相同（收起时在发送键左边、展开时钉在最右）。
-  // **必须保住焦点**：它在 docked 态位于屏幕上方，一旦被抢走焦点 → 触发源清 active →
-  // 整组面板下移五百多像素，而 emoji 行会跟着跑到屏幕底部（用户点了却像没反应）。
-  // 退场交给「点某个 emoji」那一下自然失焦——那时 emoji 已经发出、退场正是想要的
+  // **必须保住焦点**：一旦 `pointerdown` 把焦点抢走，下一帧的焦点对账就会退场，
+  // 而两态的面板差五百多像素——用户点了却像没反应。
   const emoteToggle = (
     <button
       type="button"
@@ -113,13 +106,17 @@ export function ChatPanel() {
       ref={panelRef}
       className="chat-panel"
       aria-label="聊天与操作"
-      // 悬挂态：`top` = 整个底部组合贴到 HUD 下沿（位置靠 `--dock-y` 的 transform，见 `../styles/app.css`）
-      data-docked={docked ? 'top' : undefined}
+      // 悬挂态：输入会话是 `typing` 时整组面板贴到 HUD 下沿（位置靠 `--dock-y` 的 transform，见 `../styles/app.css`）
+      data-docked={view.composer === 'typing' ? 'top' : undefined}
       style={{ '--dock-y': `${dockShift}px` } as CSSProperties}
     >
       {/* 插槽面板挂在整块面板**下沿**（绝对定位，不撑开这里）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
           点一条只改草稿、不发送、不退场。`dockShift` 只在贴顶时传：那是它量高度时要加上的位移 */}
-      <SlotPanel onBlankPointerDown={blurFocusedEditable} dockShift={docked ? dockShift : 0}>
+      <SlotPanel
+        active={view.composer === 'typing'}
+        onBlankPointerDown={exitComposer}
+        dockShift={view.composer === 'typing' ? dockShift : 0}
+      >
         <QuickPhrases onFill={setDraft} />
       </SlotPanel>
 
@@ -173,9 +170,9 @@ export function ChatPanel() {
           if (selectedId !== undefined) sendWhisper(selectedId, draft);
           else sendChat(draft);
           setDraft('');
-          // 发出去的内容只在世界里以气泡出现 → 必须让世界回来才看得见。**显式**收焦点：
-          // 「按钮抢焦点」在 Chromium 成立、Safari 不一定，不能靠那个差异（`50-slot-panel.md` §4）
-          blurFocusedEditable();
+          // 发出去的内容只在世界里以气泡出现 → 必须让世界回来才看得见。走唯一的出口（不看 `activeElement`，
+          // 也不靠「按钮抢焦点」：那在 Chromium 成立、Safari 不一定，见 `50-slot-panel.md` §4）
+          exitComposer();
         }}
       >
         {emoteOpen ? (
@@ -205,15 +202,12 @@ export function ChatPanel() {
               // 只是免得到服务端才吃 4001，**不是**气泡的显示容量（见 `docs/design/config.md` 的 `CHAT_MAX_LEN`）
               maxLength={CHAT_MAX_LEN}
               onChange={(event) => setDraft(event.target.value)}
-              // 焦点是插槽面板首版**唯一**的触发源：开、关都归它（`../slot.ts`），不写「失焦即退场」
-              onFocus={() => setSlotSource('chat-input', true)}
-              onBlur={() => setSlotSource('chat-input', false)}
             />
             {emoteToggle}
-            {/* 发送按钮必须在这里保住焦点（同快捷用语）：它在 docked 态位于屏幕上方，
-                一旦被按钮抢走焦点 → 触发源清 active → 整组面板下移五百多像素 →
+            {/* 发送按钮同样必须保住焦点：它在 `typing` 态位于屏幕上方，
+                一旦被按钮抢走焦点 → 下一帧的对账就退场 → 整组面板下移五百多像素，
                 pointerup 落在空处，`click` 根本不触发，用户得再点一次。
-                发送后的退场由 `onSubmit` 里显式的 `blurFocusedEditable()` 负责，不靠这个默认行为 */}
+                发送后的退场由 `onSubmit` 里的 `exitComposer()` 负责，不靠这个默认行为 */}
             <PrimaryAction type="submit" onPointerDown={(event) => event.preventDefault()}>
               发送
             </PrimaryAction>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
-import { getState, setSwitching, showNotice } from '../store';
+import { getState, exitComposer, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
@@ -25,7 +25,9 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
  * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个向上展开的浮层：**更换床位** + 版本号），
- * 门控行紧贴其下。分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
+ * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
+ * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
+ * 分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
  *
  * `GO` 点开后在门控行展开输入床号（`hop`）：输入的是**显示床号**（1 起），由 `parseJumpTarget`
  * 按当前 `bedCount` 先拦一道——非法就给可见提示且**不发送**（可点击的界面不静默失败）。
@@ -136,54 +138,62 @@ export function ActionRow() {
           )}
         </div>
 
-        {/* 齿轮：与可点击组同一套描边胶囊外观，但是 44×44 的正方形（里面只有图标）。
-            它也是浮层的定位基准——齿轮已经在屏幕最底部，所以浮层只能向上展开 */}
+        {/* 右端：`typing` 态换成 **44px「收起」胶囊**（唯一的可见出口，`docs/design/60-interaction-shell.md` §2），
+            空闲态是齿轮。两者共用同一个右端位置，`margin-inline-start: auto` 在 `.hud-settings` 上 */}
         <div className="hud-settings">
-          <button
-            type="button"
-            className="hud-settings-button"
-            aria-label="设置"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
-                与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
-            <svg
-              className="hud-settings-icon"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              {/* 8 齿 + 中心圆：外径 8.3、齿根 6.1，坐标由 45° 步进的齿形算出来，不手调 */}
-              <path d="M18.09 8.13L18.09 11.87L15.17 13.23L17.04 14.4L14.4 17.04L11.37 15.94L11.87 18.09L8.13 18.09L6.77 15.17L5.6 17.04L2.96 14.4L4.06 11.37L1.91 11.87L1.91 8.13L4.83 6.77L2.96 5.6L5.6 2.96L8.63 4.06L8.13 1.91L11.87 1.91L13.23 4.83L14.4 2.96L17.04 5.6L15.94 8.63Z" />
-              <circle cx="10" cy="10" r="2.6" />
-            </svg>
-          </button>
-
-          {/* 浮层：`position: absolute` 锚在齿轮**上方**右对齐（定位基准是 `position: relative` 的
-              `.hud-settings`）——齿轮已经在屏幕最底部，向下展开会直接出屏。
-              两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
-              ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
-          {menuOpen ? (
-            <div className="hud-menu">
+          {view.composer === 'typing' ? (
+            <button type="button" className="hud-action" aria-label="收起输入" onClick={() => exitComposer()}>
+              收起
+            </button>
+          ) : (
+            <>
               <button
                 type="button"
-                className="hud-action hud-menu-action"
-                aria-pressed={view.switching}
-                onClick={() => {
-                  setSwitching(!view.switching);
-                  setMenuOpen(false);
-                  closeGate();
-                }}
+                className="hud-settings-button"
+                aria-label="设置"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(!menuOpen)}
               >
-                {view.switching ? '取消换床' : '更换床位'}
+                {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
+                    与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
+                <svg
+                  className="hud-settings-icon"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {/* 8 齿 + 中心圆：外径 8.3、齿根 6.1，坐标由 45° 步进的齿形算出来，不手调 */}
+                  <path d="M18.09 8.13L18.09 11.87L15.17 13.23L17.04 14.4L14.4 17.04L11.37 15.94L11.87 18.09L8.13 18.09L6.77 15.17L5.6 17.04L2.96 14.4L4.06 11.37L1.91 11.87L1.91 8.13L4.83 6.77L2.96 5.6L5.6 2.96L8.63 4.06L8.13 1.91L11.87 1.91L13.23 4.83L14.4 2.96L17.04 5.6L15.94 8.63Z" />
+                  <circle cx="10" cy="10" r="2.6" />
+                </svg>
               </button>
-              <div className="hud-menu-version">v{APP_VERSION}</div>
-            </div>
-          ) : null}
+
+              {/* 浮层：`position: absolute` 锚在齿轮**上方**右对齐（定位基准是 `position: relative` 的
+                  `.hud-settings`）——齿轮已经在屏幕最底部，向下展开会直接出屏。
+                  两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
+                  ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
+              {menuOpen ? (
+                <div className="hud-menu">
+                  <button
+                    type="button"
+                    className="hud-action hud-menu-action"
+                    aria-pressed={view.switching}
+                    onClick={() => {
+                      setSwitching(!view.switching);
+                      setMenuOpen(false);
+                      closeGate();
+                    }}
+                  >
+                    {view.switching ? '取消换床' : '更换床位'}
+                  </button>
+                  <div className="hud-menu-version">v{APP_VERSION}</div>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
 
