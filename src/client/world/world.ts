@@ -212,9 +212,11 @@ class WorldScene extends Phaser.Scene {
       this.buildBedIndex(bedCount);
       this.rebuildRegion();
     }
-    // 打字态挡下的那次尺寸：回 `idle` 这一帧补算（不挂定时器）
-    const pending = this.pendingSize;
-    if (state.composer === 'idle' && pending) this.applySize(pending);
+    // 打字态挡下的那次尺寸：回 `idle` 这一帧补算（不挂定时器）。
+    // **不直接用记下的那个数**：键盘收起与退场不同步，记下的往往是过渡中途的快照
+    // （实测：记的是 748，真值已经回到 772，照抄就会让画布比宿主矮 24px 且再也没有事件来纠正）。
+    // 所以这里只是「补一次」，尺寸重新从宿主量。
+    if (state.composer === 'idle' && this.pendingSize) this.resizeToHost();
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
@@ -587,7 +589,7 @@ class WorldScene extends Phaser.Scene {
     this.applySize(next);
   }
 
-  /** 唯一的 `scale.resize` 出口：尺寸真的落地了，待补的那次就作废（它至多是一个没跟上的旧值）。 */
+  /** 唯一的 `scale.resize` 出口：尺寸真的落地了，待补的那次就作废。 */
   private applySize(size: Size): void {
     this.pendingSize = undefined;
     this.dpr = size.dpr;

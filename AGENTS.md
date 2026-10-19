@@ -84,11 +84,12 @@
 32. **软键盘不需要界面知道它多高。** 进入**打字态**时**整个底部组合（聊天面板 + 插槽面板）挪到顶部显示条下方**，顶部与键盘天然不重叠（`docs/design/60-interaction-shell.md` §2、§3）——所以**不读 `visualViewport.height`**，也不声明 `interactive-widget`。这不是美观选择：键盘「弹没弹 / 吃掉多高」在部分内核里根本测不出来（布局视口与视觉视口都不缩，或两者一起缩导致差值归零），只要依赖那一量，就总有一类内核会错（夸克里输入框被键盘盖住）。**唯一还读的是 `visualViewport.offsetTop`**：iOS 聚焦时会平移视觉视口，`.app-shell` 靠 `transform: translateY` 把自己拉回屏幕——**只动 transform、不改尺寸**。
 33. **打字态 = store 里的状态，不是 DOM 焦点。** 焦点只是入口之一（shell 级 `focusin` 认出可编辑控件）；退场**只有一个出口** `exitComposer()`：幂等、**不看 `activeElement` 是谁**。另有一条对账：shell 级 `focusout` 后下一帧发现活跃元素不在面板内的可编辑控件里 → 退场。这两条合起来才挡住「控件被卸载不发 blur」（表情行原地替换输入行）与「别的控件抢焦点」（`GO` 床号）。**打字态必须常驻一个 44px 可见出口**（动作行右端的「收起」胶囊）——隐性出口出错时等于没有出口。
 34. **布局归 CSS，JS 只买状态。** `.app-shell` 是 Grid 两态（`auto 1fr auto` / `auto auto 1fr`），面板与插槽都在流里：**不量高度、不写 `--dock-y`、不用 `translateY` 挪面板、两态瞬切无动画**。位移式布局每加一行控件都要重算一次，而测量面板底锚点量到的永远是上一帧。相机 inset 仍只吃**布局值**（`layoutTopOf` 用 `offsetTop` 累加），不吃 `getBoundingClientRect()`：后者会跟着 transform 跑。
-35. **可点性必须与视觉同源，画布只收画布起手的 tap。** 退场用 `visibility` 离散过渡（`transition-behavior: allow-discrete`），**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。
+35. **会抢焦点、或会让布局当场换位的按钮，两个坑一起躲：`pointerdown` 里 `preventDefault()`，并给它独立的 `key`。** 前者：按钮一聚焦就触发 `focusout` 对账 → 面板当场换位；后者：换位后 React 会原地复用那颗 `<button>`（只换属性），而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑——实测按「收起」会顺手弹出设置浮层。
+36. **可点性必须与视觉同源，画布只收画布起手的 tap。** 退场用 `visibility` 离散过渡（`transition-behavior: allow-discrete`），**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。
 
 **本地持久化（客户端）**
 
-36. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
+37. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
 ## 术语
 

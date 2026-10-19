@@ -135,14 +135,25 @@ export function ActionRow() {
             空闲态是齿轮。两者共用同一个右端位置，`margin-inline-start: auto` 在 `.hud-settings` 上 */}
         <div className="hud-settings">
           {view.composer === 'typing' ? (
-            <button type="button" className="hud-action" aria-label="收起输入" onClick={() => exitComposer()}>
+            <button
+              // **必须有 `key`**：不加时 React 会把这颗按钮原地复用成齿轮（同一个 `<button>` 只换属性），
+              // 而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑——于是按一下「收起」
+              // 会顺手弹出设置浮层（实测）。换个 `key` 让它们是两个节点，激活行为无处可落。
+              key="collapse"
+              type="button"
+              className="hud-action"
+              aria-label="收起输入"
+              // 拦掉 `pointerdown` 默认行为：否则它一聚焦就触发 `focusout` 对账，面板在这一帧就换位
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => exitComposer()}
+            >
               收起
             </button>
           ) : (
             <>
               {/* 齿轮就是浮层的触发源：`popoverTarget` = 平台开关（开 / 关 / 点外面 / `Esc` 全归它），
                   `aria-expanded` 由浏览器自己往无障碍树上映射，不再手写 */}
-              <button type="button" className="hud-settings-button" aria-label="设置" popoverTarget="hud-menu">
+              <button key="gear" type="button" className="hud-settings-button" aria-label="设置" popoverTarget="hud-menu">
                 {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
                     与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
                 <svg
