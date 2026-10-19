@@ -57,7 +57,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 
 - `.app-shell` 是 `display: grid`，两种态**只换 `grid-template-rows`**：`auto 1fr auto`（空闲）/ `auto auto 1fr`（打字）。
 - 面板与插槽面板**都在流里**：位置只由网格行决定，不靠位移、不量身、没有任何逐帧布局。加一行控件不需要重算任何东西。
-- **两态瞬切，不做滑动动画。** 弱机更稳，也没有「动画中途的可点区域」这个问题（§4）。
+- **两态瞬切，不做滑动动画。** 弱机更稳，也没有「动画中途的可点区域」这个问题（§4）。插槽面板也一样：退场不是淡出（§4 末条有实测数字）。
 - **插槽面板铺满到屏底**（`1fr`）：打字时看不见世界——已确认接受（`50-slot-panel.md` §9），换来的是「面板盖住世界」这条语义在打字期间始终成立。
 - 世界层仍然绝对定位铺满、在网格之下。相机 insets 照旧读**布局值**（`layoutTopOf` = `offsetTop` 累加 + `offsetHeight`）：布局值不吃 `transform`。
 - **底部占位用「面板自身高度」，不是「屏底 − 面板顶边」**：网格后打字态面板在屏幕上方，后者会把整块屏幕算成界面（取景变成整屏居中，而且退出打字没人重算）。两态下「面板高度」是同一个数（窄屏面板在空闲态本来就贴屏底），所以取景在两态之间不跳。
@@ -65,9 +65,12 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 
 ## 4. DOM 时序：可点性必须与视觉同源
 
-- **退场用 `visibility` 离散过渡**：`opacity` 与 `visibility` 挂同一条 transition，`transition-behavior: allow-discrete` 让 `visibility: hidden` 在动画末帧才生效。**不再用 `pointer-events` 立刻断开**——那会让面板在还看得见的 160ms 里把点击漏给画布（实测：`opacity: 1` 而 `pointer-events: none`，`elementFromPoint` 返回 `<canvas>`）。
-- 判据：退场动画的**每一帧**，面板覆盖区域内任意一点 `document.elementFromPoint` 都不得返回 `<canvas>`。
-- **世界层 tap 不变式**：`pointer.downElement !== game.canvas` 一律不派发。Phaser 4 只在 `downElement === canvas` 时才发 `POINTER_DOWN`（否则只发 `POINTER_DOWN_OUTSIDE`），这条是把那个判定抄成自己的兜底，将来任何 DOM 叠层都自动安全。
+- **可点性跟视觉走，但依据是「盒子在不在」**：关闭态由 `visibility: hidden`（挂同一条 `allow-discrete` 过渡）负责——不可命中、不可 Tab、不在读屏树里。**不用 `pointer-events`**（关得早：面板还看得见的 160ms 里点击就漏给画布，实测 `opacity: 1` 而 `elementFromPoint` 返回 `<canvas>`）；**也不要指望 `inert`**——它会让命中跳过整棵子树（同样实测返回 `<canvas>`），它只保证「不可 Tab / 不被读屏读到」。
+- **一次点按手势期间，不许把被点的盒子拿掉。** 触摸抬手的兼容鼠标事件（`mousedown` / `mouseup` / `click`）是**按抬手那一刻**重新做命中的：盒子若在 `pointerdown` 里就消失（布局切换 / 元素卸载），补发的 `mousedown` 就落到 `<canvas>` 上——而它确实是从画布起手的事件，`pointer.downElement !== canvas` 那道兜底拦不住，一次误点就往服务端发一条 `walk`（实测：点插槽面板空白，10 次漏 7 次；鼠标不补发这些事件，所以桌面看不出来）。两种合规做法，二选一：
+  1. 把手势期间的布局变化推到 `click`（点空白退场就是这么做的）；
+  2. 在 `pointerdown` 里 `preventDefault()`（浏览器据此不再派发兼容鼠标事件；顺带保住焦点）。
+- **世界层 tap 不变式**：`pointer.downElement !== game.canvas` 一律不派发。Phaser 4 只在 `downElement === canvas` 时才发 `POINTER_DOWN`（否则只发 `POINTER_DOWN_OUTSIDE`）。注意**它挡不住合成鼠标事件**（那种事件的目标本来就是 canvas），所以上面第二条约的是 DOM 侧的手势纪律，二者互补。
+- **退场不淡出。** 撤下 `data-open` 的那一帧盒子就换成 idle 那一行、内容同时卸掉，160ms 的 `opacity` 只作用在一块与聊天面板重合的空盒子上（实测数字见 `50-slot-panel.md` §5）。所以**别按「淡出期间还看得见 ⇒ 还挡得住」来做设计**，也别拿这条写测试（这正是旧 I7 测不到东西的原因）。
 - **齿轮浮层用 `popover`**：顶层渲染、light-dismiss、焦点管理全部由平台给，删掉手写的 `aria-expanded` + 点外关闭。
 
 ## 5. 画布：编辑会话期间冻结像素尺寸
@@ -89,7 +92,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 | I4 | `typing` 态屏幕内始终存在一个可见的 44px 出口控件 |
 | I5 | 任何可编辑控件获得焦点 → `composer === 'typing'`（无例外，含 `GO` 床号） |
 | I6 | `typing` 期间与退场当帧画布像素尺寸都不变（`canvas.width/height` 与 `scale.resize` 调用次数都不变） |
-| I7 | 面板退场动画的每一帧，面板区域内 `elementFromPoint` 都不是 canvas |
+| I7 | 点插槽面板空白**不产生 `walk`**：空白处的 `pointerdown` 被取消（`defaultPrevented`），且整次手势期间手指底下的盒子不换手 |
 | I8 | 世界层只接受 `downElement === canvas` 的 tap |
 | I9 | 相机取景只吃布局值（`layoutTopOf`），不吃 `getBoundingClientRect` |
 | I10 | 全仓不出现键盘高度推导（`innerHeight`/`visualViewport.height`/`clientHeight` 的差值） |
@@ -114,7 +117,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 | VirtualKeyboard API（`overlaysContent` + `env(keyboard-inset-height)`） | MDN 标 Limited availability、非 Baseline。**记进 `backlog.md`**：将来 Safari 落地后它能一举简化 |
 | 固定内部分辨率 + CSS 缩放（`Scale.FIT` 那一派） | 会让「1 世界像素 = 1 CSS 像素」失效，相机与触摸换算全要重算 |
 | View Transitions 做两态动画 | 整页快照，画布页首帧代价高；它解决「好看」，不解决「一致」 |
-| `input: { windowEvents: false }` | 不必要：Phaser 已经用 `downElement` 拦住了非画布起手的事件（§4） |
+| `input: { windowEvents: false }` | 不必要：Phaser 已经用 `downElement` 拦住了非画布起手的事件（§4）。但它拦不住触摸抬手后补发的合成鼠标事件，那条靠 DOM 侧的手势纪律（§4） |
 | 把输入框关进 iframe（PlayCanvas 圈的通行解法） | 唯一「结构性」根治键盘缩布局视口的办法，但 composer 整块要搬进 iframe（令牌、字体、安全区、焦点、a11y 全重来）。**留作第 3 层兜底**：L3 实测若仍有内核黑闪再上 |
 
 ## 9. 已知代价
@@ -133,7 +136,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 | 1 | `npm test` 里 `composerReducer` 序列穷举全绿：含「表情行替换输入行」「`GO` 夺焦」「断线」「发送」四条路径，每条都能回到 `idle` |
 | 2 | 手机视口下依次点：输入框 → 😀 → 面板空白 → 收起胶囊，四步都能把面板送回底部、画布可点 |
 | 3 | `typing` 全程与退场之后 `canvas.width` / `canvas.height` 都不变，且 `MutationObserver` 没看到画布尺寸属性变化；宽度 / DPR 变化则立即重算 |
-| 4 | 面板退场动画期间（`data-open` 已撤、`opacity > 0`）`elementFromPoint` 在面板区域内不返回 canvas |
+| 4 | 点插槽面板空白：空白处的 `pointerdown` 被取消（`defaultPrevented === true`），且连点 8 次一次 `walk` 都没有、每次都回到 `idle` |
 | 5 | 在 `typing` 态用 CDP/Playwright 派发一次画布起手的 tap → 有 `walk`；从面板起手的 tap → 没有 `walk` |
 | 6 | `GO` 床号输入聚焦后 `data-composer="typing"` 同样成立（同一个状态机） |
 
