@@ -5,8 +5,8 @@
  * 这里**没有**全局的「失焦即退场」——否则第二个源（统计按钮之类）打开时，用户点空白没有焦点可失，
  * 面板就关不掉。首版只有一个源：聊天输入行的焦点（`ChatPanel.tsx`）。
  *
- * 纯状态、不碰 DOM：界面层订阅它（`SlotPanel` 的显示、`App` 转发给世界层的冻结），
- * 世界层不 import 它——那根反向线走 `./world-handle.ts`。
+ * 纯状态、不碰 DOM：界面层订阅它决定 `SlotPanel` 的显示，
+ * 世界层不 import 它。
  */
 const sources = new Set<string>();
 const listeners = new Set<() => void>();

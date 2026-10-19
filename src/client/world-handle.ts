@@ -29,12 +29,3 @@ export function focusBed(bedNo: number): void {
 export function setZoomMode(mode: ZoomMode): void {
   world?.setZoomMode(mode);
 }
-
-/**
- * 插槽面板打开 / 关闭（见 `docs/design/50-slot-panel.md` §4）：打开期间世界层**画布尺寸冻结**
- * （键盘动画不再逐帧重建绘制缓冲），夹取与 `follow` 都不跑；关闭时先解冻、立即重建一次、再淡出。
- * 与上面几条一样，世界层还没起来（入场层期间）时什么都不做。
- */
-export function setSlotOpen(open: boolean): void {
-  world?.setSlotOpen(open);
-}
