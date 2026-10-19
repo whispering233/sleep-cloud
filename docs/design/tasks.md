@@ -14,31 +14,6 @@
 
 ---
 
-## 卡 2：面板 / 出口 / `GO` 接入状态机，退役 `slot.ts`
-
-**目标**：一切停靠与显隐只看 store 里的 `composer`；退场只有一个出口；打字态常驻「收起」胶囊。
-
-**做**
-1. `store.ts`：`ClientState` 加 `composer: ComposerState`；`emptyState()` 给 `'idle'`；导出 `setComposer(event)`（内部走 `composerReducer`，**同值不通知**）；导出 `exitComposer()`（幂等：置 `idle` + `blurFocusedEditable()`）。
-2. `focus.ts`：
-   - `isEditable(el)` 判定 `input` / `textarea` / `[contenteditable]`；**进入条件还要 `el.closest('.chat-panel')` 命中**（入场层的昵称输入框不在面板里，绝不能把打字态带进厅）
-   - `trackComposerFocus(shell)`：shell 级 `focusin`（`isEditable(event.target)` → `setComposer({ kind: 'focus-in' })`）+ `focusout` → **下一帧**检查 `document.activeElement` 是否仍落在 `.chat-panel` 内的可编辑控件 → 不在则 `setComposer({ kind: 'lost-focus' })`。返回解绑函数
-   - `blurFocusedEditable()` 保留（`exitComposer` 用它）
-3. `App.tsx`：`trackComposerFocus` 与已有的 `trackKeyboard` 一起装/卸。
-4. `ChatPanel.tsx`：`data-docked` 与 `SlotPanel` 的打开都读 `state.composer === 'typing'`；**删掉** `onFocus` / `onBlur` 里的 `setSlotSource`、`docked` 局部 state、`subscribeSlot`。
-5. `ActionRow.tsx`：`typing` 态右端把齿轮换成 44px「收起」胶囊（`aria-label="收起输入"`，外观沿用 `.hud-action`），`onClick` = `exitComposer()`。空闲态照旧显示齿轮。
-6. `slot.ts`：**删除**（源集合、`subscribeSlot`、`slotActive`、`slotHeightOf` 全走人）；`SlotPanel.tsx` 的 `active` 改为 prop（由 `ChatPanel` 传 `composer === 'typing'`），`onBlankPointerDown` = `exitComposer()`。
-7. 断线：订阅 store，**记住上一次的连接态**，只在转入 `offline` 的那一次调 `setComposer({ kind: 'offline' })`（位置节拍每秒十次，不要每次都过一遍 reducer；也不许新挂定时器）。
-8. `src/client/tests/slot.test.ts` 删掉 `slotHeightOf` 的用例（纯函数随实现一起退役）。
-
-**验收**
-- 手机视口手点：输入框 → 😀（输入框被替换）→ 面板空白 → 「收起」胶囊，四步之后 `data-docked` 都为 `undefined`、`document.activeElement` 不是可编辑控件
-- 输入框 → 😀 之后（旧 bug：卡死在顶部）能靠「收起」胶囊退出
-- `GO` 床号输入聚焦时 `data-docked === 'top'`
-- `npm run typecheck` + `npm test` 全绿
-
----
-
 ## 卡 3：布局改 Grid 两态，删掉所有量高
 
 **目标**：面板与插槽进流；删 `--dock-y`、`translateY`、量高的 `ResizeObserver`。
