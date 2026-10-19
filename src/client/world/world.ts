@@ -31,11 +31,12 @@ import {
   layoutTopOf,
   personPoint,
   shouldDrawName,
+  shouldResize,
   tapTargetFor,
   usableView,
   usableCenterOffset,
 } from './rules';
-import type { Occupant, PersonSpot, ViewInsets } from './rules';
+import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
 import {
   COLORS,
   SPRITES_KEY,
@@ -162,6 +163,8 @@ class WorldScene extends Phaser.Scene {
   private zoom = 1;
   /** 画布 DPR（`resizeToHost` 里算）：相机 zoom 的另一半，也是 insets 换算的基准 */
   private dpr = 1;
+  /** 打字态挡下的那次尺寸：`composer` 回 `idle` 时补算一次（不挂定时器，见 `docs/design/60-interaction-shell.md` §5） */
+  private pendingSize: Size | undefined;
   private observer: ResizeObserver | null = null;
   /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
   private insetElements: UiInsets = { top: null, bottom: null };
@@ -209,9 +212,11 @@ class WorldScene extends Phaser.Scene {
       this.buildBedIndex(bedCount);
       this.rebuildRegion();
     }
+    // 打字态挡下的那次尺寸：回 `idle` 这一帧补算（不挂定时器）
+    const pending = this.pendingSize;
+    if (state.composer === 'idle' && pending) this.applySize(pending);
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
-
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
     const online = state.connection === 'online';
     if (online && !this.wasOnline) this.alignCamera(state, this.everOnline);
@@ -571,13 +576,23 @@ class WorldScene extends Phaser.Scene {
     const rect = this.host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const pxW = Math.round(rect.width * dpr);
-    const pxH = Math.round(rect.height * dpr);
+    const next: Size = { width: Math.round(rect.width * dpr), height: Math.round(rect.height * dpr), dpr };
     // 尺寸与 DPR 都没变就别碰 `scale.resize`：那会重建整块绘制缓冲（纯位移不该付这个代价）
-    if (pxW === this.scale.width && pxH === this.scale.height && dpr === this.dpr) return;
-    this.dpr = dpr;
-    this.scale.zoom = 1 / dpr;
-    this.scale.resize(pxW, pxH);
+    if (next.width === this.scale.width && next.height === this.scale.height && dpr === this.dpr) return;
+    // 打字期间的高度变小 = 软键盘：挡住并记下，退出打字态那一帧补算
+    if (!shouldResize({ width: this.scale.width, height: this.scale.height, dpr: this.dpr }, next, getState().composer === 'typing')) {
+      this.pendingSize = next;
+      return;
+    }
+    this.applySize(next);
+  }
+
+  /** 唯一的 `scale.resize` 出口：尺寸真的落地了，待补的那次就作废（它至多是一个没跟上的旧值）。 */
+  private applySize(size: Size): void {
+    this.pendingSize = undefined;
+    this.dpr = size.dpr;
+    this.scale.zoom = 1 / size.dpr;
+    this.scale.resize(size.width, size.height);
     this.applyZoom();
   }
 

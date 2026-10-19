@@ -302,6 +302,22 @@ export function keyboardOf(viewport: { offsetTop: number } | null): KeyboardStat
   return { pan: Math.max(0, Math.round(viewport.offsetTop)) };
 }
 
+/** 画布像素尺寸的三个量：`resizeToHost` 算出来的那一份。 */
+export interface Size {
+  width: number;
+  height: number;
+  dpr: number;
+}
+
+/**
+ * 冻结门（`docs/design/60-interaction-shell.md` §5）：软键盘的指纹是**宽度不变、高度变小**——
+ * 打字期间这一种变化跳过 `scale.resize`（每次重建绘制缓冲就是一帧黑闪）。
+ * 其余一律重算：宽度变、高度变高、DPR 变（换屏）、旋屏（宽高互换）都不受冻结影响。
+ */
+export function shouldResize(prev: Size, next: Size, typing: boolean): boolean {
+  return !(typing && next.width === prev.width && next.height < prev.height && next.dpr === prev.dpr);
+}
+
 /** 八个方位（世界像素的罗盘：上 = 北）。动作行的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 /** 45° 一个扇区，从「东」起按屏幕顺时针排（`atan2` 的正方向在屏幕上朝下 = 南）。 */

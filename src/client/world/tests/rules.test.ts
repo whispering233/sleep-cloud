@@ -24,12 +24,13 @@ import {
   personHit,
   personPoint,
   shouldDrawName,
+  shouldResize,
   tapTargetFor,
   truncateToLines,
   usableView,
   usableCenterOffset,
 } from '../rules';
-import type { Occupant, PersonSpot, TapInput } from '../rules';
+import type { Occupant, PersonSpot, Size, TapInput } from '../rules';
 
 const sleeper: Person = { id: 'u_1', name: '小明', appearance: 'boy', state: 'asleep', bedNo: 7 };
 const walker: Person = { id: 'u_2', name: '阿夜', appearance: 'girl', state: 'roaming', x: 300, y: 280 };
@@ -573,5 +574,38 @@ describe('软键盘：只算 pan', () => {
   it('键盘弹起时视觉视口高度变小，但这已不影响任何写样式的结果', () => {
     // 改造前这里会算出 shrink = 336 并写 inset-block-end；现在这个量不存在了
     expect(keyboardOf({ offsetTop: 0 })).toEqual({ pan: 0 });
+  });
+});
+
+/**
+ * 冻结门（`docs/design/60-interaction-shell.md` §5）：打字期间跳过 `scale.resize`，其余一律重算。
+ * 手机 393×852 @3 → 画布 1179×2556。
+ */
+describe('画布尺寸重算的冻结门（`shouldResize`）', () => {
+  const full: Size = { width: 1179, height: 2556, dpr: 3 };
+  const shorter: Size = { width: 1179, height: 1500, dpr: 3 };
+
+  it('打字态 + 宽度不变 + 高度变小 = 软键盘指纹：冻结', () => {
+    expect(shouldResize(full, shorter, true)).toBe(false);
+  });
+
+  it('宽度变（分屏 / 拖窗）：立刻重算，不受冻结影响', () => {
+    expect(shouldResize(full, { ...shorter, width: 900 }, true)).toBe(true);
+  });
+
+  it('高度变高（键盘收起 / 地址栏收放）：立刻重算', () => {
+    expect(shouldResize(shorter, full, true)).toBe(true);
+  });
+
+  it('旋屏（宽高互换）：立刻重算', () => {
+    expect(shouldResize(full, { width: 2556, height: 1179, dpr: 3 }, true)).toBe(true);
+  });
+
+  it('DPR 变（换屏 / 缩放）：立刻重算', () => {
+    expect(shouldResize(full, { width: 786, height: 1704, dpr: 2 }, true)).toBe(true);
+  });
+
+  it('空闲态缩小不冻结：不是键盘，照常重算', () => {
+    expect(shouldResize(full, shorter, false)).toBe(true);
   });
 });
