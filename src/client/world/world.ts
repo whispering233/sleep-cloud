@@ -710,6 +710,10 @@ class WorldScene extends Phaser.Scene {
    * 用户点的是画布上的一个像素，而服务端只接受街网上的点。
    */
   private dispatchTap(pointer: Phaser.Input.Pointer): void {
+    // **只接受从画布起手的那一下**：不管 DOM 叠层以后怎么变（面板、浮层、减光层），
+    // 从它们上面起手的点击都不该让小人动（`docs/design/60-interaction-shell.md` §4 的 I8）。
+    // Phaser 只在 `downElement === canvas` 时发 `POINTER_DOWN`，这条是把那个判定抄成自己的兜底
+    if (pointer.downElement !== this.sys.game.canvas) return;
     if (this.loadedBedCount === undefined) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const point = { x: world.x, y: world.y };

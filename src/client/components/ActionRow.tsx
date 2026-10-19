@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { getState, exitComposer, setSwitching, showNotice } from '../store';
@@ -24,7 +24,7 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个向上展开的浮层：**更换床位** + 版本号），
+ * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个 `popover`：**更换床位** + 版本号），
  * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
  * 分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
@@ -48,22 +48,19 @@ export function ActionRow() {
    */
   const [gate, setGate] = useState<'none' | 'jump' | 'zoom'>('none');
   const [draft, setDraft] = useState('');
-  /** 齿轮浮层：遮罩 / `Esc` / 再点齿轮三条路径都收起（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
-  const [menuOpen, setMenuOpen] = useState(false);
+  /** 浮层本体：它的开关归平台（再点齿轮 / 点外面 / `Esc`），只有「换床」那一项要手关一次 */
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // 浮层或缩放选项开着时的 `Esc`：键盘用户不必靠鼠标点遮罩 / 再点那颗胶囊才能关
-  // （遮罩是 `aria-hidden` 的纯点击面）
+  // 缩放选项开着时的 `Esc`：键盘用户不必靠再点那颗胶囊才能关
+  // （齿轮浮层的 `Esc` 归 `popover` 自己，这里不再管）
   useEffect(() => {
-    if (!menuOpen && gate !== 'zoom') return undefined;
+    if (gate !== 'zoom') return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setMenuOpen(false);
-        setGate('none');
-      }
+      if (event.key === 'Escape') setGate('none');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, gate]);
+  }, [gate]);
 
   const closeGate = (): void => {
     setGate('none');
@@ -85,10 +82,6 @@ export function ActionRow() {
 
   return (
     <>
-      {/* 透明遮罩：只在浮层开着时存在。它**吃掉那一下点击**——否则点「外面」会同时关掉浮层
-          并让小人在世界层开始走路（Phaser 只在自己的画布上收指针事件，遮罩盖在画布之上就够了） */}
-      {menuOpen ? <div className="hud-scrim" aria-hidden="true" onClick={() => setMenuOpen(false)} /> : null}
-
       {/* 可点击组在左、齿轮在右，中间由齿轮的 `margin-inline-start: auto` 拉开（两端对齐） */}
       <div className="action-row">
         <div className="action-row-actions">
@@ -147,13 +140,9 @@ export function ActionRow() {
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                className="hud-settings-button"
-                aria-label="设置"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen(!menuOpen)}
-              >
+              {/* 齿轮就是浮层的触发源：`popoverTarget` = 平台开关（开 / 关 / 点外面 / `Esc` 全归它），
+                  `aria-expanded` 由浏览器自己往无障碍树上映射，不再手写 */}
+              <button type="button" className="hud-settings-button" aria-label="设置" popoverTarget="hud-menu">
                 {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
                     与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
                 <svg
@@ -171,27 +160,26 @@ export function ActionRow() {
                 </svg>
               </button>
 
-              {/* 浮层：`position: absolute` 锚在齿轮**上方**右对齐（定位基准是 `position: relative` 的
-                  `.hud-settings`）——齿轮已经在屏幕最底部，向下展开会直接出屏。
+              {/* 浮层：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
+                  也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
                   两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
-              {menuOpen ? (
-                <div className="hud-menu">
-                  <button
-                    type="button"
-                    className="hud-action hud-menu-action"
-                    aria-pressed={view.switching}
-                    onClick={() => {
-                      setSwitching(!view.switching);
-                      setMenuOpen(false);
-                      closeGate();
-                    }}
-                  >
-                    {view.switching ? '取消换床' : '更换床位'}
-                  </button>
-                  <div className="hud-menu-version">v{APP_VERSION}</div>
-                </div>
-              ) : null}
+              <div className="hud-menu" id="hud-menu" popover="auto" ref={menuRef}>
+                <button
+                  type="button"
+                  className="hud-action hud-menu-action"
+                  aria-pressed={view.switching}
+                  onClick={() => {
+                    setSwitching(!view.switching);
+                    // 选择即完成：浮层自己收起（其余路径全由平台管）
+                    menuRef.current?.hidePopover();
+                    closeGate();
+                  }}
+                >
+                  {view.switching ? '取消换床' : '更换床位'}
+                </button>
+                <div className="hud-menu-version">v{APP_VERSION}</div>
+              </div>
             </>
           )}
         </div>
