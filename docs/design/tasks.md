@@ -34,40 +34,40 @@
 | 3 | **不引动画库**，用 CSS `transform` / `opacity` + `transitionend` |
 | 4 | 相机可用视口的 `bottom` **不算面板**（面板贴顶时按空闲态同一大小占位，只是位置从屏底移到面板下沿） |
 
-### 卡 1：键盘层只留 pan（纯函数 + 单测）
+### 卡 1：键盘层只留 pan（纯函数 + 单测）— **已完成**
 
-- `rules.ts` 的 `keyboardOf` 去掉 `shrink`，只返回 `pan`；`KeyboardState` 同步。
-- `rules.test.ts` 重写「软键盘」那组断言（删 `shrink` 用例，保留并补 `pan` 用例，含负值归零）。
-- `keyboard.ts` 删 `shell.style.insetBlockEnd` 那一行，只留 `transform`。
-- 验收：`npm test` 绿；`npm run typecheck` 绿。
+`keyboardOf` 去掉 `shrink`、只返回 `pan`；`trackKeyboard` 只写 `transform`；`rules.test.ts` 相应重写。
 
-### 卡 2：聊天面板两种悬挂态（CSS + 组件的 `data-docked`）
+### 卡 2：世界层去掉冻结（先做，否则中间态是坏的）
 
-- `.chat-panel` 从 `inset-block-end: 0` 改成可用 `block-start` 控制；加 `data-docked="top"` 态。
-- 位置切换有 `transform` 过渡（只动 transform）。
-- 两块面板的边框接缝：上圆角归上块、下圆角归下块，交界处不重复画线。
-- 验收：手机视口下目视两种态，交界处只有一条线、无圆角凹口；键盘开合时画布不重建。
+**为什么要先做**：冻结是为「面板贴底、跟着键盘逐帧抬」设计的。面板一旦改到顶部，键盘不再驱动画布高度，冻结就成了纯负担——而且如果先改布局再删冻结，中间态会出现「面板已经挪走，但相机仍按旧位置冻结」这一坏状态。
 
-### 卡 3：插槽面板改挂下沿 + 几何重算 + `inert` 过渡
+- `world.ts`：删 `setSlotOpen` 方法、`slotOpen` 字段、以及 `resizeToHost` / `follow` / 夹取里三处 `if (this.slotOpen) return`。
+- `world-handle.ts`：删 `setSlotOpen` 导出。
+- `App.tsx`：删那一段 `setSlotOpen(slotActive())` + `subscribeSlot` 的 effect（以及 `world-handle` 的 import）。
+- `slot.ts` 顶部注释里「`App` 转发给世界层的冻结」那句一并改掉。
+- 顺手加一条早退：`resizeToHost` 里尺寸与 dpr 都没变就直接 return（旋屏之外的重复触发不该重建绘制缓冲）。
+- 验收：`npm test` / `npm run typecheck` 绿；手机视口下打字前后画面不闪。
 
-- `.slot-panel`：`inset-block-end: 100%` → `inset-block-start: 100%`。
-- `slotHeightOf` 换成「聊天面板下沿 → 可用视口下沿」。
-- 开关从 `hidden` 改 `inert` + `opacity` / `transform` 过渡，`transitionend` 收尾（**不许定时器**）。
-- 验收：点输入行 → 整组贴顶、面板在下面；点空白 → 退回底部；全程 `canvas.width/height` 不因键盘变。
+### 卡 3：聊天面板两种悬挂态 + 插槽面板改挂下沿（必须同一张卡）
 
-### 卡 4：删掉世界层的冻结机制
+**为什么必须合并**：只把 `.chat-panel` 挪到顶部、而 `.slot-panel` 仍挂在它**上沿**，插槽面板会跑到屏幕最上面盖住 HUD。两者是一对，分开提交没有可验证的中间态。
 
-- `world.ts`：`setSlotOpen`、`slotOpen` 字段、`resizeToHost` 里的早退、`follow` / 夹取里的早退全部删除。
-- `world-handle.ts` 的 `setSlotOpen` 与 `App.tsx` 里的订阅一并删除。
-- `SlotPanel` 不再需要通知世界层。
-- 验收：`npm test` / `typecheck` 绿；手机视口下打字前后世界不可见地闪、相机不跳。
+- `.chat-panel`：默认贴底；`data-docked="top"` 时贴 HUD 下方。位置切换用 `transform` 过渡（只动 transform，不触发布局）。
+- `.slot-panel`：`inset-block-end: 100%` → `inset-block-start: 100%`（改挂下沿）。
+- **边框接缝**：谁在上面谁拥有上圆角；下面那块上沿不画边、只画下沿。两块都同时画完整 1px 描边会在交界处留两道线与两个圆角凹口，视觉上割裂。
+- 开关从 `hidden` 改 `inert` + `opacity` / `transform` 过渡，`transitionend` 收尾（**不许定时器**，同 `Toast`）。
+- `slotHeightOf` 换语义：从「聊天面板上沿 → HUD 下沿」改成「聊天面板下沿 → 可用视口下沿」。注意 `@media` 两档（640 / 1024）的 `.chat-panel` 也要跟着改。
+- `SlotPanel.tsx` 里三个 `ResizeObserver` 的观察对象与算式跟着改。
+- 验收：手机视口下点输入行 → 整组贴顶、面板在聊天面板下面；点空白 → 退回底部；全程 `canvas.width/height` 不因键盘变；交界处只有一条线、无圆角凹口。
 
-### 卡 5：快捷用语两列网格
+### 卡 4：快捷用语两列网格
 
-- `.quick-phrases` 改 `display: grid; grid-template-columns: 1fr 1fr`。
-- 验收：393 宽下 8 条全可见不需滚动、每条 44px、最长的「有人吗？有人吗？」不溢出。
+- `.quick-phrases` 改 `display: grid; grid-template-columns: 1fr 1fr`（单列 8 条要 432px，两列只要 224px）。
+- 验收：393 宽下 8 条全可见、不需滚动；每条 44px；最长的「有人吗？有人吗？」不溢出。
 
-### 卡 6：收口文档与变更记录
+### 卡 5：收口文档与变更记录
 
-- `CHANGELOG.md` 的 `## [Unreleased]` 写行为变化（用户可见的语义，不写卡号）。
-- 核 `interactive-widget` / 键盘高度相关描述已无残留。
+- `CHANGELOG.md` 的 `## [Unreleased]` 写行为变化（用户可见语义，不写卡号）。
+- `test.md` 里那段「实测基线」提到「键盘收起时画布连重建 2 次」——改造后不再成立，更新掉。
+- 核一遍 `interactive-widget` / 键盘高度 / 「冻结」相关描述已无残留。

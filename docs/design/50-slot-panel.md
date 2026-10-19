@@ -74,7 +74,7 @@
 | 关闭 | 反方向同一条过渡 |
 | 旋屏 / 真实尺寸变化 | 按当时的宿主尺寸重建 |
 
-**动画用 CSS，不引动画库。** 两处过渡（聊天面板位移、插槽面板淡入淡出）只动 `transform` 与 `opacity`，不触发布局；中断（键盘连续开合、焦点来回）由 CSS 自然重定向，比 JS 动画自己写打断简单。退场用 `transitionend` 收尾，**不挂定时器**（同 `Toast` 的做法）。
+**动画用 CSS，不引动画库。** 两处过渡（聊天面板位移、插槽面板淡入淡出）只动 `transform` 与 `opacity`，不触发布局；中断（键盘连续开合、焦点来回）由 CSS 自然重定向，比 JS 动画自己写打断简单。**没有任何 JS 定时器参与**：不需要监听 `transitionend` 去做收尾，因为隐藏后内容只是留在那里、没有「拨掉」这一步要做（不像 `Toast` 需要自己卸下）。
 
 **不再用 `hidden` 做开关**：`hidden` 走 Tailwind preflight 的 `display:none !important`，过渡不了。改用 `inert`（关的时候不可点、不可 Tab、不被读屏读到，Chromium 102+ / Safari 15.5+）+ `opacity` / `transform`。
 
