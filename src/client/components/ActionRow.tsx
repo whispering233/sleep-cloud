@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
-import { getState, exitComposer, setSwitching, showNotice } from '../store';
+import { exitComposer } from '../focus';
+import { getState, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';

@@ -39,7 +39,7 @@ export function App() {
 
   const layoutVersion = session?.layoutVersion;
 
-  // 软键盘：视口缩小量与 pan 写到 `.app-shell` 上（画布与面板同吃这一份，见 `./keyboard.ts`）
+  // 软键盘：只把「视觉视口被 pan 了多少」写到 `.app-shell` 的 transform 上（不改尺寸，见 `./keyboard.ts`）
   useEffect(() => {
     const shell = shellRef.current;
     return shell ? trackKeyboard(shell) : undefined;

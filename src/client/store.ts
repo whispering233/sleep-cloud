@@ -21,7 +21,6 @@ import { composerReducer } from './composer';
 import type { ComposerEvent, ComposerState } from './composer';
 import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
-import { blurFocusedEditable } from './focus';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 import { readZoomMode, writeZoomMode } from './prefs';
@@ -225,15 +224,6 @@ export function setComposer(event: ComposerEvent): void {
   const next = composerReducer(state.composer, event);
   if (next === state.composer) return;
   setState({ composer: next });
-}
-
-/**
- * 输入会话的**唯一出口**：幂等，且**不看 `document.activeElement` 是谁**——
- * 当前控件可能已经被卸载了（表情行原地替换输入行），那时焦点早就不知去向。
- */
-export function exitComposer(): void {
-  setComposer({ kind: 'exit' });
-  blurFocusedEditable();
 }
 
 /**

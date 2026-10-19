@@ -8,9 +8,11 @@ import type { ReactNode } from 'react';
  *   它进流之后可用视口自动扣掉它，取景 / 夹取不需要额外信息。
  * - **开关**只看 `active`（= 输入会话是 `typing`，见 `docs/design/60-interaction-shell.md` §2），不看键盘
  *   ——键盘弹没弹在部分内核里测不出来。`hidden` 用不了（`display: none` 过渡不了）：换成 `data-open`
- *   （CSS 做 `opacity` / `transform` 过渡）+ `inert`（退场期间不可点、不可 Tab、不被读屏读到）。
- * - 它不是浮层：没有背景变暗、不做焦点陷阱、不抢焦点（打开时焦点仍在输入行）；出口是
- *   「点面板空白」，由 `onBlankPointerDown` 给出（面板盖住画布，画布那条出口在这一态不可达）。
+ *   （`opacity` 与 `visibility` 挂同一条过渡，`allow-discrete` 让隐藏发生在末帧——退场期间**仍然吃点击**，
+ *   否则那 160ms 里点击会穿到画布）+ `inert`（不可 Tab、不被读屏读到）。
+ * - 它不是浮层：没有背景变暗、不做焦点陷阱、不抢焦点（打开时焦点仍在输入行）。出口有两个：
+ *   「点面板空白」（由 `onBlankPointerDown` 给出）与动作行右端的「收起」胶囊——面板盖住画布，
+ *   所以画布那条出口在这一态不可达。
  */
 export function SlotPanel({
   active,

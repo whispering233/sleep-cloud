@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canExit, composerReducer, type ComposerEvent, type ComposerState } from '../composer';
+import { composerReducer, type ComposerEvent, type ComposerState } from '../composer';
 
 const EVENTS: ComposerEvent[] = [{ kind: 'focus-in' }, { kind: 'exit' }, { kind: 'lost-focus' }, { kind: 'offline' }];
 const EXIT_EVENT_KINDS = new Set(['exit', 'lost-focus', 'offline']);
@@ -34,9 +34,9 @@ describe('输入会话状态机', () => {
     }
   });
 
-  it('任意状态都可退出（没有死状态）', () => {
+  it('任意状态都有一条到 idle 的路（没有死状态）：存在某个事件一步到 idle', () => {
     for (const state of ['idle', 'typing'] as ComposerState[]) {
-      expect(canExit(state)).toBe(true);
+      expect(EVENTS.some((event) => composerReducer(state, event) === 'idle')).toBe(true);
     }
   });
 

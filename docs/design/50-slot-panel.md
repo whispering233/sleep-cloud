@@ -44,7 +44,7 @@
 
 ## 5. 动画与闪烁
 
-- **两态瞬切，不做位移动画**（`60-interaction-shell.md` §3）：没有 `--dock-y`、没有 `translateY`、没有量高度。
+- **两态瞬切，不做位移动画**（`60-interaction-shell.md` §3）：面板位置由网格行决定，没有位移、没有量高度、也没有任何逐帧布局。
 - **退场用 `visibility` 离散过渡**（`transition-behavior: allow-discrete`），让「可点性」跟着视觉走完：面板还看得见的时候，点它绝不会穿到世界层（`60-interaction-shell.md` §4）。
 - **没有任何 JS 定时器参与**：不需要监听 `transitionend` 做收尾（隐藏后内容留在那里，没有「拨掉」这一步）。
 - 不用 `hidden` 做开关：`display: none` 过渡不了。用 `data-open` + `inert`（关的时候不可点、不可 Tab、不被读屏读到）。

@@ -28,6 +28,15 @@ export function blurFocusedEditable(): void {
 }
 
 /**
+ * 输入会话的**唯一出口**：幂等，且**不看 `document.activeElement` 是谁**——当前控件可能已经被卸载了
+ * （表情行原地替换输入行），那时焦点早就不知去向。状态本身由 store 降级，收焦点只是顺手做的收尾。
+ */
+export function exitComposer(): void {
+  setComposer({ kind: 'exit' });
+  blurFocusedEditable();
+}
+
+/**
  * 把 DOM 焦点接成输入会话的**入口之一**（§2）：shell 级 `focusin` 进 `typing`，
  * `focusout` 之后**下一帧**对账（控件被卸载不发 `blur`、或焦点被 `GO` 之类的控件抢走）。
  * 对账必须晚一帧：`focusout` 那一刻焦点还没落到下一个控件上。

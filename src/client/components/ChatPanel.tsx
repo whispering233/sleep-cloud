@@ -4,7 +4,8 @@ import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_SHORTCUTS } from '../emotes';
-import { clearSelection, exitComposer, getState, subscribe } from '../store';
+import { exitComposer } from '../focus';
+import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ActionRow } from './ActionRow';
@@ -143,7 +144,7 @@ export function ChatPanel() {
             else sendChat(draft);
             setDraft('');
             // 发出去的内容只在世界里以气泡出现 → 必须让世界回来才看得见。走唯一的出口（不看 `activeElement`，
-            // 也不靠「按钮抢焦点」：那在 Chromium 成立、Safari 不一定，见 `50-slot-panel.md` §4）
+            // 也不靠「按钮抢焦点」：那在 Chromium 成立、Safari 不一定，见 `50-slot-panel.md` §7）
             exitComposer();
           }}
         >

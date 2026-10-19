@@ -12,7 +12,7 @@
 | :--- | :--- | :--- | :--- |
 | **画布像素尺寸** | 「非编辑会话时」的宿主尺寸 × DPR | `scale.resize` | 编辑会话期间任何 resize（§5） |
 | **画布显示位置** | `visualViewport.offsetTop` | `.app-shell` 的 `translateY` | 改尺寸、改 inset |
-| **面板停靠 / 插槽显隐** | `composer` 状态（store） | `data-docked` / `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
+| **面板停靠 / 插槽显隐** | `composer` 状态（store） | `.app-shell` 的 `data-composer`、面板的 `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
 | **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`）；底部占位 = **面板自身高度** | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑）；「屏底 − 面板顶边」（打字态会把整屏算成界面） |
 | **世界缩放** | `zoomMode` | `camera.zoom` | 键盘、面板 |
 
@@ -38,7 +38,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
   两处实现细节是实测踩出来的：① 胶囊在 `pointerdown` 里 `preventDefault()`（否则它一聚焦就触发对账、面板当场换位）；② 胶囊与齿轮**必须是两个 DOM 节点**（各带 `key`）——React 会原地复用同一颗 `<button>`，而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑，于是按「收起」会顺手弹出设置浮层。
 - **断线**（连接态转 `offline`）也走 `exitComposer()`：那一刻没有可发的东西，界面必须先把世界还给人。
 
-**纯逻辑**：`composerReducer(state, event)` 与 `canExit(state)` 是 DOM-free 纯函数，单测穷举事件序列（见 §7 的 L1）。
+**纯逻辑**：`composerReducer(state, event)` 是 DOM-free 纯函数（`composer.ts` 里**只有**它，唯一的写入路径在 store 的 `setComposer`，唯一的出口 `exitComposer()` 在 `focus.ts`——它要顺手收焦点，而 store 不该碰 DOM），单测穷举事件序列（见 §7 的 L1）。
 
 ## 3. 布局：Grid 两态，零测量
 
@@ -56,7 +56,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 ```
 
 - `.app-shell` 是 `display: grid`，两种态**只换 `grid-template-rows`**：`auto 1fr auto`（空闲）/ `auto auto 1fr`（打字）。
-- 面板与插槽面板**都在流里**。因此**删除**：`--dock-y` 位移、`translateY`、`slotHeightOf()`、量面板高的两个 `ResizeObserver`、`data-docked` 的 transform 分支。加一行控件不再需要任何重算。
+- 面板与插槽面板**都在流里**：位置只由网格行决定，不靠位移、不量身、没有任何逐帧布局。加一行控件不需要重算任何东西。
 - **两态瞬切，不做滑动动画。** 弱机更稳，也没有「动画中途的可点区域」这个问题（§4）。
 - **插槽面板铺满到屏底**（`1fr`）：打字时看不见世界——已确认接受（`50-slot-panel.md` §9），换来的是「面板盖住世界」这条语义在打字期间始终成立。
 - 世界层仍然绝对定位铺满、在网格之下。相机 insets 照旧读**布局值**（`layoutTopOf` = `offsetTop` 累加 + `offsetHeight`）：布局值不吃 `transform`。
@@ -85,7 +85,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 | # | 不变式 |
 | :--- | :--- |
 | I1 | `composer` 只能由 store 改；界面不得从 DOM 事件推导停靠态 |
-| I2 | 从 `typing` 出发，**任何**事件序列都必须在有限步内可达 `idle`（`canExit`） |
+| I2 | 从 `typing` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`——穷举长度 ≤ 4 的序列证明没有卡住的路 |
 | I3 | `exitComposer()` 幂等，且不依赖 `document.activeElement` 的具体类型 |
 | I4 | `typing` 态屏幕内始终存在一个可见的 44px 出口控件 |
 | I5 | 任何可编辑控件获得焦点 → `composer === 'typing'`（无例外，含 `GO` 床号） |
@@ -99,7 +99,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 
 | 层 | 环境 | 内容 |
 | :--- | :--- | :--- |
-| **L1** | vitest（`npm test`） | `composerReducer` / `canExit` 事件序列穷举；`shouldResize`、`slotHeightOf` 之类布局算术 |
+| **L1** | vitest（`npm test`） | `composerReducer` 的事件序列穷举；`shouldResize`、`keyboardOf`、`usableView` 之类布局算术 |
 | **L2** | Playwright（`npm run e2e`，手机视口，**不需要 IME**） | I4 / I6 / I7 / I8 的 DOM 契约；每个状态的出口可达 |
 | **L3** | 宿主 Android 模拟器（配方见 `test.md` §2） | 真 IME 下三个量的关系、`scale.resize` 次数、`screenrecord` 逐帧看闪烁 |
 | **L4** | 真机 | 手感、特定内核（夸克 / Via）、低亮度观感 |
@@ -137,7 +137,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 | 3 | `typing` 全程 `canvas.width` / `canvas.height` 不变，且 `MutationObserver` 没看到画布尺寸属性变化 |
 | 4 | 面板退场动画期间（`data-open` 已撤、`opacity > 0`）`elementFromPoint` 在面板区域内不返回 canvas |
 | 5 | 在 `typing` 态用 CDP/Playwright 派发一次画布起手的 tap → 有 `walk`；从面板起手的 tap → 没有 `walk` |
-| 6 | `GO` 床号输入聚焦后 `data-docked` 同样成立（同一个状态机） |
+| 6 | `GO` 床号输入聚焦后 `data-composer="typing"` 同样成立（同一个状态机） |
 
 ### 只能在真机 / 模拟器得结论
 

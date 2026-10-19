@@ -286,7 +286,7 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
  *
  * **不再算「键盘吃了多高」**。那一量在部分内核里根本测不出来（布局视口与视觉视口都不缩、或两者一起缩
  * 导致差值归零），而它曾被用来逐帧写 `.app-shell` 的 `inset-block-end`——那正是画布逐帧重建、闪烁的根。
- * 现在输入框聚焦时整组面板挪到顶部（`docs/design/50-slot-panel.md` §2），界面不需要知道键盘多高。
+ * 现在进入打字态时整组面板挪到顶部（`docs/design/60-interaction-shell.md` §2、§3），界面不需要知道键盘多高。
  *
  * `pan` 还是要读：iOS 聚焦时会平移视觉视口（`offsetTop > 0`），`.app-shell` 靠 `translateY` 把自己
  * 拉回屏幕。**这条只动 transform、不改尺寸**，因此不会引起画布重建。

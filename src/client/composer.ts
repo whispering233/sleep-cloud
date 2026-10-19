@@ -24,14 +24,3 @@ export function composerReducer(state: ComposerState, event: ComposerEvent): Com
       return state;
   }
 }
-
-/** 从该状态是否有路回 `idle`：两者都是（没有死状态）。 */
-export function canExit(state: ComposerState): boolean {
-  switch (state) {
-    case 'idle':
-    case 'typing':
-      return true;
-    default:
-      return false;
-  }
-}
