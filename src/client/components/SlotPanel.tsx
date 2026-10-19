@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { slotActive, slotHeightOf, subscribeSlot } from '../slot';
 
 /**
- * 插槽面板的壳（`docs/design/50-slot-panel.md` §2、§5）：挂在聊天面板**下沿**，高度撑到可用视口下沿。
+ * 插槽面板的壳（`docs/design/50-slot-panel.md` §3、§5、§6）：挂在聊天面板**下沿**，高度撑到可用视口下沿。
  *
  * - **位置**由 CSS 给定（`.chat-panel` 的绝对定位子元素、`inset-block-start: 100%`），
  *   高度 = 可用视口下沿 − 聊天面板下沿，由这里量出来写成一个 inline px（两个盒子各挂 ResizeObserver）。
@@ -68,7 +68,7 @@ export function SlotPanel({
       style={{ height: `${height}px` }}
       onPointerDown={(event) => {
         // 只有落在**面板自己**上的那一下算「点空白」：内容里的按钮冒泡上来不该顺手退场
-        // （内容要保住焦点的话仍须在 `pointerdown` 里 `preventDefault()`，见 §6）
+        // （内容要保住焦点的话仍须在 `pointerdown` 里 `preventDefault()`，见 §7）
         if (event.target === event.currentTarget) onBlankPointerDown();
       }}
     >

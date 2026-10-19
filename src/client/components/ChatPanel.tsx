@@ -174,7 +174,7 @@ export function ChatPanel() {
           else sendChat(draft);
           setDraft('');
           // 发出去的内容只在世界里以气泡出现 → 必须让世界回来才看得见。**显式**收焦点：
-          // 「按钮抢焦点」在 Chromium 成立、Safari 不一定，不能靠那个差异（`50-slot-panel.md` §3）
+          // 「按钮抢焦点」在 Chromium 成立、Safari 不一定，不能靠那个差异（`50-slot-panel.md` §4）
           blurFocusedEditable();
         }}
       >
