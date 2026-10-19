@@ -14,20 +14,6 @@
 
 ---
 
-## 卡 5：画布在编辑会话期间冻结像素尺寸
-
-**做**
-1. `world/rules.ts`：新纯函数 `shouldResize(prev, next, typing)`：`typing && next.width === prev.width && next.height < prev.height` → `false`；其余（宽变、高变、DPR 变、旋屏）→ `true`。
-2. `world.ts`：`resizeToHost` 里算完 `pxW/pxH/dpr` 后走 `shouldResize`；被挡掉时**记录待办**（存 `pendingSize`），在 `composer` 回 `idle` 时（`update` 里比一次）重算一次。
-3. 单测：`world/tests/rules.test.ts` 补 `shouldResize` 的 6 条（键盘指纹 / 宽度变 / 旋屏 / DPR 变 / 空闲态放大 / 空闲态缩小）。
-
-**验收**
-- 手机视口：聚焦输入框前后 `canvas.width/height` 不变（`MutationObserver` 观察 canvas 的 `width`/`height` 属性，零变化）
-- 退出打字态后仍能正常跟随窗口尺寸（手动改视口宽 → 画布跟着变）
-- `npm test` 全绿
-
----
-
 ## 卡 6：L2 契约 spec
 
 **做**
