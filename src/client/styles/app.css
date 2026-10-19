@@ -217,6 +217,17 @@
     white-space: nowrap;
   }
 
+  /* 老 Safari（没有 CSS anchor positioning）：退回「屏幕右下、面板上方」的固定位置。
+     不写这一块，UA 默认会把 popover 居中到屏幕正中——那比位置略差糟糕得多。
+     菜单是一次性入口（换床 / 看版本号），固定位置够用 */
+  @supports not (position-anchor: --hud-settings-gear) {
+    .hud-menu {
+      inset: auto;
+      inset-block-end: calc(var(--spacing-md) + 128px);
+      inset-inline-end: var(--spacing-md);
+    }
+  }
+
   /* 浮层里那一项：胶囊外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
      只额外把它撑满浮层一行、与下面的版本号拉开一档 */
   .hud-menu-action {

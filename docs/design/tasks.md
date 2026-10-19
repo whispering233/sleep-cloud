@@ -14,20 +14,6 @@
 
 ---
 
-## 卡 4：指针与退场时序（可点性跟视觉同源）+ 齿轮浮层改 `popover`
-
-**做**
-1. `.slot-panel`：退场改 `opacity` + `visibility` 同一条 transition（`transition-behavior: allow-discrete`），**删掉** `pointer-events` 抢跑；`inert` 保留。**注意**：关着的插槽面板与聊天面板同在一格（第 1 列第 3 行）重叠，所以隐藏必须靠 `visibility: hidden`（它不吃指针事件），否则关着的面板会盖住聊天面板、把点击全吃掉。
-2. `world.ts`：`dispatchTap` 先判 `pointer.downElement === this.game.canvas`，不是就 return（`this.game` 从 `scene.sys.game` 拿，别新存一份）。
-3. `ActionRow.tsx`：齿轮浮层改 `popover`（`popovertarget` / `popover="auto"`），删手写遮罩与点外关闭状态；`tone-layer` 仍在顶层之上（`popover` 走 top layer，需要给 `.tone-layer` 相应处理：确认减光是否仍盖得住，盖不住就在 `popover` 上加 `z-index` 并说明）。
-
-**验收**
-- Playwright/手检：点面板空白退场后，**同一帧**在面板原区域 `document.elementFromPoint` 不返回 `<canvas>`
-- 从面板上起手的一次点击不发 `walk`；从画布起手的照旧发
-- `npm run typecheck` + `npm test` 全绿
-
----
-
 ## 卡 5：画布在编辑会话期间冻结像素尺寸
 
 **做**
