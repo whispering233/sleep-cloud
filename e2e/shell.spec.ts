@@ -131,7 +131,7 @@ test('退场动画期间，面板区域不会把点击漏给画布', async ({ pa
   expect(hits).not.toContain('CANVAS');
 });
 
-test('打字期间画布像素尺寸冻结，退出后补算', async ({ page }) => {
+test('打字期间与退场之后画布像素尺寸都不动，宽度变化立即生效', async ({ page }) => {
   await enterHall(page);
   const sizeOf = () =>
     page.evaluate(() => {
@@ -167,8 +167,14 @@ test('打字期间画布像素尺寸冻结，退出后补算', async ({ page }) 
   await page.getByRole('button', { name: '收起输入' }).click();
   await expectComposer(page, 'idle');
   await page.waitForTimeout(400);
-  // 退出 typing 后的那一帧才补算：唯一的一次重排发生在这里
-  expect(await sizeOf()).toEqual({ width: 393 * 3, height: 700 * 3 });
+  // 退场也不补算：画布停在进打字态前的尺寸（补算会在键盘收起中途缩一次、再涨回来 = 两帧黑闪）
+  expect(await sizeOf()).toEqual(before);
+  expect(await resizes()).toBe(0);
+
+  // 真正的尺寸变化（不受冻结影响）：宽度一变就重算
+  await page.setViewportSize({ width: 400, height: 700 });
+  await page.waitForTimeout(400);
+  expect(await sizeOf()).toEqual({ width: 400 * 3, height: 700 * 3 });
   expect(await resizes()).toBeGreaterThan(0);
 });
 

@@ -10,7 +10,7 @@
 
 | 量 | 唯一来源 | 谁读 | 禁止 |
 | :--- | :--- | :--- | :--- |
-| **画布像素尺寸** | 「非编辑会话时」的宿主尺寸 × DPR | `scale.resize` | 编辑会话期间任何 resize（§5） |
+| **画布像素尺寸** | 「非编辑会话时」的宿主尺寸 × DPR（键盘引起的收缩永不跟进） | `scale.resize` | 编辑会话期间任何 resize（§5） |
 | **画布显示位置** | `visualViewport.offsetTop` | `.app-shell` 的 `translateY` | 改尺寸、改 inset |
 | **面板停靠 / 插槽显隐** | `composer` 状态（store） | `.app-shell` 的 `data-composer`、面板的 `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
 | **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`）；底部占位 = **面板自身高度** | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑）；「屏底 − 面板顶边」（打字态会把整屏算成界面） |
@@ -75,9 +75,8 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 - `.app-shell` 是 `position: fixed; inset: 0`，靠**布局视口**定位。iOS 聚焦时浏览器会平移视觉视口（`visualViewport.offsetTop > 0`），shell 用 `transform: translateY(offsetTop)` 把自己拉回屏幕——**只动 transform，不改尺寸**。
 - **冻结门**（纯函数 `shouldResize(prev, next, typing)`）：`typing && 宽度不变 && 高度变小` → **跳过** `scale.resize`。这正是键盘的指纹：键盘只会让高度变小，宽度不动。
   - 宽度变化、DPR 变化、旋屏 → **立即重算**（不受冻结影响）。
-  - 退出 typing 后**重算一次**——而且**重新从宿主量**，不要用冻结时记下的那个数：键盘收起与退场不同步，记下的常是过渡中途的快照（实测记的是 748、真值已回到 772，照抄会让画布比宿主矮 24px，而且此后没有事件来纠正）。
-    尺寸真的变了就发生一次重排（可见跳变一次，接受）。
-- 冻结期间若内核缩了布局视口，画布底部会有一截空白——被键盘盖住，看不见。这比「逐帧重建绘制缓冲 → 黑闪」便宜得多。
+  - **退出 typing 后不补算。** 退场与键盘收起不同步：退场那一帧量到的宿主还在收起中途，照它重算就是「先缩、再涨回」——**两次重建绘制缓冲 = 两帧黑闪**（模拟器实测：退场时量到 748、真值 772，录屏在画布区域抓到 2 帧全黑）。画布留在进打字态前的尺寸，宿主回到原值后 `ResizeObserver` 自己会来，尺寸相同就早退（不重建）。
+- 冻结期间画布比宿主高（内核缩了布局视口）：多出来那条被 `.app-shell` 裁掉，而它正好在键盘或面板底下，看不见。这比「重建绘制缓冲 → 黑闪」便宜得多。
 - **不声明 `interactive-widget`**（iOS 到 27.2 仍不支持，见 §8），**不读键盘高度**（§1）。
 
 ## 6. 不变式（每条都必须可测）
@@ -89,7 +88,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 | I3 | `exitComposer()` 幂等，且不依赖 `document.activeElement` 的具体类型 |
 | I4 | `typing` 态屏幕内始终存在一个可见的 44px 出口控件 |
 | I5 | 任何可编辑控件获得焦点 → `composer === 'typing'`（无例外，含 `GO` 床号） |
-| I6 | `typing` 期间画布像素尺寸不变（`canvas.width/height` 与 `scale.resize` 调用次数都不变） |
+| I6 | `typing` 期间与退场当帧画布像素尺寸都不变（`canvas.width/height` 与 `scale.resize` 调用次数都不变） |
 | I7 | 面板退场动画的每一帧，面板区域内 `elementFromPoint` 都不是 canvas |
 | I8 | 世界层只接受 `downElement === canvas` 的 tap |
 | I9 | 相机取景只吃布局值（`layoutTopOf`），不吃 `getBoundingClientRect` |
@@ -122,8 +121,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 
 - **两态瞬切，没有滑动动画。**
 - **打字时齿轮不可达**：typing 态右端被「收起」占位，换床 / 看版本要先收起（打字时开设置本来也无意义）。
-- **冻结期间画布底部可能留白**（被键盘盖住，看不见）。
-- **退出 typing 时可能重排一次**（内核真的缩过布局视口时）。
+- **画布不追键盘那次收缩**：打字期间与退场之后，画布都停在进打字态前的像素尺寸。内核若不恢复布局视口，画布就固定比宿主高那一条（底部被 `.app-shell` 裁掉，不可见）。
 - **打字时看不见世界**（插槽铺满的既有代价）。
 
 ## 10. 验收判据
@@ -134,7 +132,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 | :--- | :--- |
 | 1 | `npm test` 里 `composerReducer` 序列穷举全绿：含「表情行替换输入行」「`GO` 夺焦」「断线」「发送」四条路径，每条都能回到 `idle` |
 | 2 | 手机视口下依次点：输入框 → 😀 → 面板空白 → 收起胶囊，四步都能把面板送回底部、画布可点 |
-| 3 | `typing` 全程 `canvas.width` / `canvas.height` 不变，且 `MutationObserver` 没看到画布尺寸属性变化 |
+| 3 | `typing` 全程与退场之后 `canvas.width` / `canvas.height` 都不变，且 `MutationObserver` 没看到画布尺寸属性变化；宽度 / DPR 变化则立即重算 |
 | 4 | 面板退场动画期间（`data-open` 已撤、`opacity > 0`）`elementFromPoint` 在面板区域内不返回 canvas |
 | 5 | 在 `typing` 态用 CDP/Playwright 派发一次画布起手的 tap → 有 `walk`；从面板起手的 tap → 没有 `walk` |
 | 6 | `GO` 床号输入聚焦后 `data-composer="typing"` 同样成立（同一个状态机） |

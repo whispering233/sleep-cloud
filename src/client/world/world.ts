@@ -163,8 +163,6 @@ class WorldScene extends Phaser.Scene {
   private zoom = 1;
   /** 画布 DPR（`resizeToHost` 里算）：相机 zoom 的另一半，也是 insets 换算的基准 */
   private dpr = 1;
-  /** 打字态挡下的那次尺寸：`composer` 回 `idle` 时补算一次（不挂定时器，见 `docs/design/60-interaction-shell.md` §5） */
-  private pendingSize: Size | undefined;
   private observer: ResizeObserver | null = null;
   /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
   private insetElements: UiInsets = { top: null, bottom: null };
@@ -212,11 +210,6 @@ class WorldScene extends Phaser.Scene {
       this.buildBedIndex(bedCount);
       this.rebuildRegion();
     }
-    // 打字态挡下的那次尺寸：回 `idle` 这一帧补算（不挂定时器）。
-    // **不直接用记下的那个数**：键盘收起与退场不同步，记下的往往是过渡中途的快照
-    // （实测：记的是 748，真值已经回到 772，照抄就会让画布比宿主矮 24px 且再也没有事件来纠正）。
-    // 所以这里只是「补一次」，尺寸重新从宿主量。
-    if (state.composer === 'idle' && this.pendingSize) this.resizeToHost();
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
@@ -581,17 +574,15 @@ class WorldScene extends Phaser.Scene {
     const next: Size = { width: Math.round(rect.width * dpr), height: Math.round(rect.height * dpr), dpr };
     // 尺寸与 DPR 都没变就别碰 `scale.resize`：那会重建整块绘制缓冲（纯位移不该付这个代价）
     if (next.width === this.scale.width && next.height === this.scale.height && dpr === this.dpr) return;
-    // 打字期间的高度变小 = 软键盘：挡住并记下，退出打字态那一帧补算
-    if (!shouldResize({ width: this.scale.width, height: this.scale.height, dpr: this.dpr }, next, getState().composer === 'typing')) {
-      this.pendingSize = next;
-      return;
-    }
+    // 高度变小 = 软键盘：挡住，**退场后也不补做**。退场那一刻宿主往往还在键盘收起的中途
+    // （模拟器实测：量到 748，真值 772），照那个数重算就是先缩再涨 —— 两次重建绘制缓冲 = 两帧黑闪。
+    // 画布留在进打字态前的尺寸；宿主回到原值时 `ResizeObserver` 会来，尺寸相同就早退（无重建）。
+    if (!shouldResize({ width: this.scale.width, height: this.scale.height, dpr: this.dpr }, next, getState().composer === 'typing')) return;
     this.applySize(next);
   }
 
-  /** 唯一的 `scale.resize` 出口：尺寸真的落地了，待补的那次就作废。 */
+  /** 唯一的 `scale.resize` 出口。 */
   private applySize(size: Size): void {
-    this.pendingSize = undefined;
     this.dpr = size.dpr;
     this.scale.zoom = 1 / size.dpr;
     this.scale.resize(size.width, size.height);
