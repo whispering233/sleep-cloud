@@ -157,6 +157,9 @@ npm run dev:web
 npm test
 npm run typecheck
 
+# 界面壳层的契约 spec（手机视口；先 npm run dev 起站点，端口自动读 .wrangler/dev-port）
+npm run e2e
+
 # 位置同步观测：带 ?debug=1 打开页面，控制台每 10s 一行
 #   leadMs / regressPx / posAge / tickSpan 的 p50/p95/max；出现倒退整行前置 !!
 # 判据与口径见 docs/design/30-movement-sync.md §6.2
