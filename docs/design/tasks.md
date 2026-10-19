@@ -14,28 +14,6 @@
 
 ---
 
-## 卡 1：输入会话状态机（纯逻辑 + 穷举单测）
-
-**目标**：把「打字态」变成一个可单测的纯函数状态机，不动任何 UI。
-
-**做**
-1. 新文件 `src/client/composer.ts`（**DOM-free**，不 import 任何浏览器 API）：
-   - `type ComposerState = 'idle' | 'typing'`
-   - 事件：`focus-in`（可编辑控件获得焦点）、`exit`（显式退场：发送 / 收起键 / 点空白）、`lost-focus`（对账失败）、`offline`（断线）
-   - `composerReducer(state, event)`：`focus-in` → `typing`；`exit` / `lost-focus` / `offline` → `idle`；`idle` 收到退出类事件保持 `idle`（幂等）
-   - `canExit(state)`：返回「从该状态是否有一条到达 idle 的路径」（`idle` 与 `typing` 都为真，供单测断言「没有任何死状态」）
-   - 不引入 xstate 之类的库：三行 switch 就够
-2. 单测 `src/client/tests/composer.test.ts`：
-   - **穷举**：所有长度 ≤ 4 的事件序列（4 种事件，256 条）跑一遍，断言「序列里出现任一次退出类事件后状态必为 `idle`」且「任意状态都可退出」
-   - 四条真实路径：`focus-in → exit`、`focus-in → lost-focus`、`focus-in → offline`、`exit` 重复三次（幂等）
-   - 断言 reducer 是纯函数（同一输入两次调用结果相同）
-
-**不做**：store 接线、任何 `.tsx` / CSS 改动（那是卡 2）。
-
-**验收**：`npm test` 里新增文件全绿；`npm run typecheck` 干净；`composer.ts` 里 grep 不到 `document` / `window`。
-
----
-
 ## 卡 2：面板 / 出口 / `GO` 接入状态机，退役 `slot.ts`
 
 **目标**：一切停靠与显隐只看 store 里的 `composer`；退场只有一个出口；打字态常驻「收起」胶囊。
@@ -43,14 +21,14 @@
 **做**
 1. `store.ts`：`ClientState` 加 `composer: ComposerState`；`emptyState()` 给 `'idle'`；导出 `setComposer(event)`（内部走 `composerReducer`，**同值不通知**）；导出 `exitComposer()`（幂等：置 `idle` + `blurFocusedEditable()`）。
 2. `focus.ts`：
-   - `isEditable(el)` 判定 `input` / `textarea` / `[contenteditable]`
+   - `isEditable(el)` 判定 `input` / `textarea` / `[contenteditable]`；**进入条件还要 `el.closest('.chat-panel')` 命中**（入场层的昵称输入框不在面板里，绝不能把打字态带进厅）
    - `trackComposerFocus(shell)`：shell 级 `focusin`（`isEditable(event.target)` → `setComposer({ kind: 'focus-in' })`）+ `focusout` → **下一帧**检查 `document.activeElement` 是否仍落在 `.chat-panel` 内的可编辑控件 → 不在则 `setComposer({ kind: 'lost-focus' })`。返回解绑函数
    - `blurFocusedEditable()` 保留（`exitComposer` 用它）
 3. `App.tsx`：`trackComposerFocus` 与已有的 `trackKeyboard` 一起装/卸。
 4. `ChatPanel.tsx`：`data-docked` 与 `SlotPanel` 的打开都读 `state.composer === 'typing'`；**删掉** `onFocus` / `onBlur` 里的 `setSlotSource`、`docked` 局部 state、`subscribeSlot`。
 5. `ActionRow.tsx`：`typing` 态右端把齿轮换成 44px「收起」胶囊（`aria-label="收起输入"`，外观沿用 `.hud-action`），`onClick` = `exitComposer()`。空闲态照旧显示齿轮。
 6. `slot.ts`：**删除**（源集合、`subscribeSlot`、`slotActive`、`slotHeightOf` 全走人）；`SlotPanel.tsx` 的 `active` 改为 prop（由 `ChatPanel` 传 `composer === 'typing'`），`onBlankPointerDown` = `exitComposer()`。
-7. 断线：连接态转 `offline` 时调 `setComposer({ kind: 'offline' })`（放在已有的连接态订阅处，别新挂定时器）。
+7. 断线：订阅 store，**记住上一次的连接态**，只在转入 `offline` 的那一次调 `setComposer({ kind: 'offline' })`（位置节拍每秒十次，不要每次都过一遍 reducer；也不许新挂定时器）。
 8. `src/client/tests/slot.test.ts` 删掉 `slotHeightOf` 的用例（纯函数随实现一起退役）。
 
 **验收**
