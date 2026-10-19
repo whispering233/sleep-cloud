@@ -299,13 +299,14 @@
     pointer-events: auto;
   }
 
-  /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：竖排、每条一整个 44px 描边胶囊。
+  /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：两列、每条一整个 44px 描边胶囊。
+     两列是因为面板只有约 370px 高：8 条单列要 432px，两列只要 224px。
      胶囊外观直接沿用 `.hud-action`（项目里「这是个按钮」的既有答案，连 `focus-visible` 那圈也在），
-     这里只补「撑满一行」这一条，不再抄一遍描边 / 墨色 / 圆角。内边距是面板贴边留白：
+     这里只补「撑满一格」这一条，不再抄一遍描边 / 墨色 / 圆角。内边距是面板贴边留白：
      `.slot-panel` 自己不带 padding（高度由框架给），内容的留白归内容 */
   .quick-phrases {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: var(--spacing-sm);
     padding: var(--spacing-md);
   }
