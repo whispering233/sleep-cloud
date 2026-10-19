@@ -286,6 +286,8 @@
      `pointer-events: none`（不可 Tab、不被读屏读到由组件的 `inert` 负责）。空闲态它与聊天面板同在第 3 行，
      但 `opacity: 0` + `pointer-events: none` + 空内容，看不见也点不到 */
   .slot-panel {
+    /* 显式占第 1 列：两块面板都被自动放进第 3 行，不写列会被摆到隐式第 2 列去（整页会多出 2px 死条、世界少 2px） */
+    grid-column: 1;
     grid-row: 3;
     min-height: 0;
     overflow-y: auto;
@@ -331,6 +333,7 @@
 
   /* 排版归网格：空闲在第 3 行（贴底），打字态挪到第 2 行（插槽面板接在下面） */
   .chat-panel {
+    grid-column: 1;
     grid-row: 3;
     display: flex;
     flex-direction: column;

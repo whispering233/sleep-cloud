@@ -13,7 +13,7 @@
 | **画布像素尺寸** | 「非编辑会话时」的宿主尺寸 × DPR | `scale.resize` | 编辑会话期间任何 resize（§5） |
 | **画布显示位置** | `visualViewport.offsetTop` | `.app-shell` 的 `translateY` | 改尺寸、改 inset |
 | **面板停靠 / 插槽显隐** | `composer` 状态（store） | `data-docked` / `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
-| **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`） | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑） |
+| **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`）；底部占位 = **面板自身高度** | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑）；「屏底 − 面板顶边」（打字态会把整屏算成界面） |
 | **世界缩放** | `zoomMode` | `camera.zoom` | 键盘、面板 |
 
 **键盘高度不存在。** 不是「不重要」，是**这个量不许被推导出来**：`innerHeight − visualViewport.height`、`documentElement.clientHeight − visualViewport.height` 一类的差值一律禁止。理由见 `50-slot-panel.md` §2：部分内核既不缩布局视口也不缩视觉视口（或一起缩导致差值归零）。
@@ -58,7 +58,8 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 - 面板与插槽面板**都在流里**。因此**删除**：`--dock-y` 位移、`translateY`、`slotHeightOf()`、量面板高的两个 `ResizeObserver`、`data-docked` 的 transform 分支。加一行控件不再需要任何重算。
 - **两态瞬切，不做滑动动画。** 弱机更稳，也没有「动画中途的可点区域」这个问题（§4）。
 - **插槽面板铺满到屏底**（`1fr`）：打字时看不见世界——已确认接受（`50-slot-panel.md` §9），换来的是「面板盖住世界」这条语义在打字期间始终成立。
-- 世界层仍然绝对定位铺满、在网格之下。相机 insets 照旧读**布局值**（`layoutTopOf` = `offsetTop` 累加 + `offsetHeight`）：布局值不吃 `transform`，过渡进行中量到的是终点。
+- 世界层仍然绝对定位铺满、在网格之下。相机 insets 照旧读**布局值**（`layoutTopOf` = `offsetTop` 累加 + `offsetHeight`）：布局值不吃 `transform`。
+- **底部占位用「面板自身高度」，不是「屏底 − 面板顶边」**：网格后打字态面板在屏幕上方，后者会把整块屏幕算成界面（取景变成整屏居中，而且退出打字没人重算）。两态下「面板高度」是同一个数（窄屏面板在空闲态本来就贴屏底），所以取景在两态之间不跳。
 - 宽档（≥640）的居中 / 最大宽度由网格承担（`justify-self` + `max-width`），不再用 `inset` 微调位置。
 
 ## 4. DOM 时序：可点性必须与视觉同源
