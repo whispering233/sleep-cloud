@@ -13,6 +13,9 @@ dist/
 # 本机专属的 wrangler 配置：多一条带 zone 名的生产入口路由（zone 不公开）
 wrangler.local.jsonc
 
+# 本机专属的 Android SDK 路径（含 Windows 用户名，见 .android-env.example 与 docs/design/build.md §7）
+.android-env
+
 # 构建生成物（`npm run tokens` 从 docs/ui/DESIGN.md 导出，CSS 与 JSON 两份）
 src/client/styles/tokens.css
 src/client/styles/tokens.json

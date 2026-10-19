@@ -174,6 +174,60 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 基线设备：**iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）**。本地没有触摸屏、也拿不到 393 宽（见下），所以涉及**触摸 / 真机低亮度观感 / 低端机帧率 / 首次加载**的结论只能在真机（或生产用量面板）上得出来；DPR 3 本身本地可以真仿真。
 
+### 本地怎么看「真移动端浏览器行为」（Android 模拟器，跑在宿主 Windows 上）
+
+浏览器的窗口宽高反馈**仿真不了**软键盘：`visualViewport` 收不收、布局视口缩不缩、IME 自己的候选条都是内核行为。要拿到这些数只能起一台真的 Android。
+
+**模拟器跑在宿主 Windows，不跑在 WSL 里。** 判据只有一条：GPU。实测同一台机器、同一个页面：
+
+| 模拟器跑在哪 | 图形后端 | 页内 rAF |
+| :--- | :--- | :--- |
+| WSL 里 | `swiftshader_indirect`（WSL 只有 `/dev/dxg`，没有 `/dev/dri`，拿不到宿主 GPU 直通） | **24 fps**，qemu 吃满约 620% CPU |
+| 宿主 Windows | `-gpu host` → 实测落在宿主独显（`emulator` 日志 `Selecting Vulkan device:`、页内 WebGL 报同一块卡） | **60 fps** |
+
+所以：**帧率 / 掉帧 / 动画流畅度类的验收只能在宿主 Windows 上做**；WSL 里那套只能验逻辑、布局与键盘语义。
+
+**路径不入库。** SDK 的真实路径含宿主 Windows 用户名，写进文档既泄露也没法复用。改由本地文件提供（与 `.dev.vars` 同一套习惯）：
+
+```text
+cp .android-env.example .android-env     # 填进宿主 SDK 路径、AVD 名（.android-env 已 gitignore）
+. ./.android-env                          # 在要起模拟器的 shell 里 source 一次
+```
+
+**顺序**（一条命令一步，不要串管道）：
+
+```text
+"$EMULATOR" -list-avds                                  # 挑 AVD，填进 .android-env 的 AVD_NAME
+"$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-load   # 起模拟器（保留宿主 GUI 窗口）
+npm run dev                                             # 项目仍跑在 WSL 里（原生盘快）
+"$ADB" reverse tcp:<dev 端口> tcp:<dev 端口>               # 让设备里的 localhost 指到 WSL 的 dev server
+"$ADB" shell am start -a android.intent.action.VIEW -d 'http://localhost:<dev 端口>/' -n com.android.chrome/com.google.android.apps.chrome.Main
+```
+
+**设备侧读数**（CDP，不必装 Playwright：宿主 Node ≥ 22 自带 `WebSocket`）：
+
+```text
+"$ADB" forward tcp:9222 localabstract:chrome_devtools_remote
+# 然后对 http://127.0.0.1:9222/json/list 里的 webSocketDebuggerUrl 发 Runtime.evaluate
+```
+
+四个坑，都实测踩过：
+
+1. **页面不在前台就没有 60fps**。标签被切到后台时 `document.visibilityState === 'hidden'`，rAF 被节流到 30fps（实测 `{fps:28~31, vis:'hidden'}`）。量帧率前先 `Page.bringToFront`，量完顺手读一次 `visibilityState` 确认是 `visible`——**别把后台节流当成性能问题**。
+2. **`adb reverse` / `adb forward` 会沉默失效**。模拟器重启或 Chrome 被清数据后，`reverse --list` / `forward --list` 仍显示映射，但页面打不开。重跑一次即恢复；**排查顺序是「先重跑这两条」而不是先怀疑服务端**。
+3. **渲染进程会崩溃循环**，表现为整页空白：`logcat` 里是 `chromium: Child process died (type=6)` 反复出现，`Runtime.evaluate` 全部超时、而 `Page.captureScreenshot` 仍能出图。`am force-stop` 与 `pm clear` 都**救不回来**，只能 `"$ADB" emu kill` 重启模拟器。
+4. **`screenrecord` 才是可视证据的来源**。`Page.captureScreenshot` 与 `Page.startScreencast` 在合成器层会对同帧去重（实测连拍 10 张 md5 全同、screencast 收到 0 帧），抓不到「面板已撤、画布已清」那一瞬间。改用设备侧录屏再逐帧解：`"$ADB" shell screenrecord --bit-rate 16000000 /sdcard/r.mp4` → `ffmpeg -i r.mp4 -vf fps=60 f%03d.jpg`。
+
+**这条链路能得什么结论、不能得什么**：
+
+| 能 | 不能 |
+| :--- | :--- |
+| 软键盘弹起 / 收起时 `innerHeight` / `visualViewport.height` / `document.documentElement.clientHeight` 三者的真实关系（**判「缩视觉视口」还是「缩布局视口」**，这是夸克那类内核问题的唯一入口） | 真手指的触摸手感（`adb shell input tap` 是合成事件）、低端机帧率、真机低亮度观感 |
+| 画布尺寸在某一时刻被重建了几次（`MutationObserver` 盯 `canvas.width/height`）、面板 `hidden` 与重建的**先后顺序** | 用户装的那个具体内核（夸克、Via…）的行为——除非侧载它的 APK；模拟器里只有真 Chrome |
+| 真 Chrome 的完整语义、真 Gboard 的候选条占位 | `hw.keyboard=yes` 的 AVD 下部分输入框可能不弹软键盘（要验键盘就确认 AVD 这一项） |
+
+**实测基线（本项目当前代码，宿主独显 + Chrome 145 + Android 17，CSS 411×834 / DPR 2.625）**：键盘**弹起**期间画布尺寸**零次重建**（冻结有效）；键盘**收起**时画布连重建 **2 次**、且都发生在插槽面板 `hidden` 之后——即 `50-slot-panel.md` §4 期望的「先重建再淡出」在实现里并不成立。探头写法：`MutationObserver` 盯 `canvas` 的 `width`/`height` 与 `.slot-panel` 的 `hidden`，加上 `visualViewport` 的 `resize`，三条全部打时间戳。
+
 ### 本地怎么跑「真 DPR 3」
 
 合成器级的真 DPR 3（不是给页面塞一个假的 `devicePixelRatio`）：
