@@ -91,13 +91,17 @@ export function ChatPanel() {
   const { selectedId, targetName, meState } = view;
   const hint = bubbleHintOf(draft);
 
-  // 表情切换键：两态共用同一个按钮，两态位置相同（收起时在发送键左边、展开时钉在最右）
+  // 表情切换键：两态共用同一个按钮，两态位置相同（收起时在发送键左边、展开时钉在最右）。
+  // **必须保住焦点**：它在 docked 态位于屏幕上方，一旦被抢走焦点 → 触发源清 active →
+  // 整组面板下移五百多像素，而 emoji 行会跟着跑到屏幕底部（用户点了却像没反应）。
+  // 退场交给「点某个 emoji」那一下自然失焦——那时 emoji 已经发出、退场正是想要的
   const emoteToggle = (
     <button
       type="button"
       className="emote-toggle"
       aria-label="表情"
       aria-expanded={emoteOpen}
+      onPointerDown={(event) => event.preventDefault()}
       onClick={() => setEmoteOpen((open) => !open)}
     >
       😀
@@ -206,7 +210,13 @@ export function ChatPanel() {
               onBlur={() => setSlotSource('chat-input', false)}
             />
             {emoteToggle}
-            <PrimaryAction type="submit">发送</PrimaryAction>
+            {/* 发送按钮必须在这里保住焦点（同快捷用语）：它在 docked 态位于屏幕上方，
+                一旦被按钮抢走焦点 → 触发源清 active → 整组面板下移五百多像素 →
+                pointerup 落在空处，`click` 根本不触发，用户得再点一次。
+                发送后的退场由 `onSubmit` 里显式的 `blurFocusedEditable()` 负责，不靠这个默认行为 */}
+            <PrimaryAction type="submit" onPointerDown={(event) => event.preventDefault()}>
+              发送
+            </PrimaryAction>
           </>
         )}
       </form>
