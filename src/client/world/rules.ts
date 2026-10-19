@@ -203,9 +203,9 @@ export interface ViewInsets {
 /**
  * 元素相对**首屏**的布局顶边（只用 `offsetTop` / `offsetParent` 累加，**不读 `getBoundingClientRect`**）。
  *
- * 为什么要这个而不直接用 `getBoundingClientRect().top`：聊天面板贴到顶部时只走 `transform`（`inset` 一过渡
- * 就是逐帧布局，那是画布重建的老病根）。而 `getBoundingClientRect()` **吃得到** `transform`——过渡进行中量到的
- * 是滑到一半的位置，相机夹取就会跟着跳。`offsetTop` 是布局位置，不吃 `transform`，量到的始终是终点。
+ * 为什么要这个而不直接用 `getBoundingClientRect().top`：`.app-shell` 会带一层 `translateY`（iOS 聚焦时
+ * 会把视觉视口往下 pan，靠它拉回屏幕，见 `docs/design/60-interaction-shell.md` §1）。而 `getBoundingClientRect()`
+ * **吃得到** `transform`，取景、夹取就会跟着跳。`offsetTop` 是布局位置，不吃 `transform`。
  *
  * 签名用结构化类型而不是 `HTMLElement`：这个模块要能在不依赖 DOM 类型的环境里跑（`tsconfig` 的纯逻辑那份）。
  * `offsetParent` 为 `null` 时（`display:none` 或已在根）停止累加。

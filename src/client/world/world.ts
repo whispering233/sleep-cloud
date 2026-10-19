@@ -530,19 +530,24 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 界面实占的区域只从 DOM 的**实际**值读：面板随控件行的增减变高变矮、横屏面板底部还留 12px 外边距，
-   * 都不硬编码。所以量的是「**从视口边缘到界面内沿**」的距离，而不是元素自身高度。
+   * 界面实占的区域只从 DOM 的**实际**值读：面板随控件行的增减变高变矮、横屏面板底边还留一圈外边距，
+   * 都不硬编码。
    *
-   * 量的是**布局**值（`offsetTop` / `offsetHeight`），不是渲染值：聊天面板贴顶那一下只走 `transform`，
-   * 渲染位置会跳一大截。贴顶时占位应该与空闲态一样（只是位置从屏底挪到面板下沿，见 `task.md` 的四个决策），
-   * 所以这里必须用吃不到 transform 的量。
+   * 量的是**布局**值（`offsetTop` / `offsetHeight`），不是渲染值：`.app-shell` 可能带着 `translateY`
+   * （iOS 把视觉视口往下 pan，见 `docs/design/60-interaction-shell.md` §1），渲染位置与布局位置差一截，
+   * `getBoundingClientRect` 的差就白算了。
+   *
+   * 底部占位取面板**自身高度**而不是「屏底 − 面板顶边」：两态网格下打字态面板在**第 2 行**
+   * （插槽面板铺满到屏底），后者会把整块屏幕都算成界面，于是面板在打字态里一旦变高（床上动作行出现）
+   * 取景就会换成「整屏居中」而且退出后没人重算。取高度则两态同值（窄屏面板贴屏底，两者本来就相等；
+   * 宽档面板浮在屏底之上，底下那一圈本来就看得见）。
    */
   private measureInsets(): ViewInsets {
     const top = this.insetElements.top;
     const bottom = this.insetElements.bottom;
     this.insets = {
       top: top ? Math.max(0, layoutTopOf(top) + top.offsetHeight) : 0,
-      bottom: bottom ? Math.max(0, document.documentElement.clientHeight - layoutTopOf(bottom)) : 0,
+      bottom: bottom ? Math.max(0, bottom.offsetHeight) : 0,
     };
     return this.insets;
   }
