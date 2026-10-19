@@ -256,34 +256,24 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
 }
 
 /**
- * 软键盘吃掉的视口（`docs/ui/DESIGN.md`「软键盘」）：只算两个数，不碰 DOM。
- * `shrink` = `innerHeight − visualViewport.height`：**地址栏收放时两者同步变、差 ≈ 0**，所以这个判据
- * 不会被地址栏饵到；真键盘（iOS / Android）的差都在两百像素以上。
+ * 软键盘对界面的唯一影响：视觉视口被往下 pan 了多少（`docs/ui/DESIGN.md`「软键盘」）。不碰 DOM。
  *
- * **页面被捏合放大时一律判「没吃视口」**（`shrink = 0`）：不禁用户缩放（`AGENTS.md` 硬纪律 18），
- * 而放大后 `visualViewport.height ≈ innerHeight / scale`——不拦的话，在输入行上捏一下就会把整个外壳
- * 抬到半屏高。缩小（`scale < 1`，部分浏览器允许）不在此列：它让视觉视口比布局视口还高，`shrink`
- * 本来就是 0。
+ * **不再算「键盘吃了多高」**。那一量在部分内核里根本测不出来（布局视口与视觉视口都不缩、或两者一起缩
+ * 导致差值归零），而它曾被用来逐帧写 `.app-shell` 的 `inset-block-end`——那正是画布逐帧重建、闪烁的根。
+ * 现在输入框聚焦时整组面板挪到顶部（`docs/design/50-slot-panel.md` §2），界面不需要知道键盘多高。
+ *
+ * `pan` 还是要读：iOS 聚焦时会平移视觉视口（`offsetTop > 0`），`.app-shell` 靠 `translateY` 把自己
+ * 拉回屏幕。**这条只动 transform、不改尺寸**，因此不会引起画布重建。
  */
 export interface KeyboardState {
-  /** 底边被吃掉的高度（CSS px）= `innerHeight − visualViewport.height`；页面放大期间恒为 0 */
-  shrink: number;
   /** 视觉视口被往下 pan 的量（`visualViewport.offsetTop`）：iOS 聚焦输入框时会 pan */
   pan: number;
 }
 
-/** 纯函数：两个视口高度 → 键盘状态。`viewport` 为 `null`（桌面 / 老浏览器）与「视觉视口比布局视口还高（取整抖动）」都退回「没吃、没 pan」。 */
-export function keyboardOf(
-  innerHeight: number,
-  viewport: { height: number; offsetTop: number; scale: number } | null,
-): KeyboardState {
-  if (!viewport) return { shrink: 0, pan: 0 };
-  // 放大过的页面不是键盘（见上面那段）：宁可当成没吃视口，也不能把外壳抬成半屏
-  const zoomed = viewport.scale > 1.01;
-  return {
-    shrink: zoomed ? 0 : Math.max(0, Math.round(innerHeight - viewport.height)),
-    pan: Math.max(0, Math.round(viewport.offsetTop)),
-  };
+/** 纯函数：视觉视口 → pan 量。`viewport` 为 `null`（桌面 / 老浏览器）与 `offsetTop` 为负（取整抖动）都退回 0。 */
+export function keyboardOf(viewport: { offsetTop: number } | null): KeyboardState {
+  if (!viewport) return { pan: 0 };
+  return { pan: Math.max(0, Math.round(viewport.offsetTop)) };
 }
 
 /** 八个方位（世界像素的罗盘：上 = 北）。动作行的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';

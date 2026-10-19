@@ -545,46 +545,33 @@ describe('进厅 / 重连时相机对准谁', () => {
 });
 
 /**
- * 键盘吃掉多少视口：`visualViewport` 是视口变化的唯一来源（`docs/ui/DESIGN.md`「软键盘」）。
- * 只算两个数——`shrink`（外壳要抬多高）与 `pan`（iOS 聚焦时视觉视口往下挪的量）。
+ * 软键盘：界面只读视觉视口被 pan 了多少（`docs/ui/DESIGN.md`「软键盘」）。
+ *
+ * **不再算「键盘吃了多高」**：那一量在部分内核里测不出来，而它曾是逐帧写 `.app-shell`
+ * 的 `inset-block-end` 的来源——也就是画布逐帧重建、闪烁的根。现在输入框聚焦时整组面板挪到顶部，
+ * 界面不需要知道键盘多高。
  */
-describe('软键盘吃掉多少视口：shrink 与 pan', () => {
-  it('没有 visualViewport（桌面 / 老浏览器）：不缩、不 pan', () => {
-    expect(keyboardOf(852, null)).toEqual({ shrink: 0, pan: 0 });
+describe('软键盘：只算 pan', () => {
+  it('没有 visualViewport（桌面 / 老浏览器）：不 pan', () => {
+    expect(keyboardOf(null)).toEqual({ pan: 0 });
   });
 
-  it('键盘打开：缩小量 = innerHeight − 视觉视口高；iOS 聚焦时的 pan 取 offsetTop', () => {
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 })).toEqual({ shrink: 336, pan: 0 });
-    expect(keyboardOf(852, { height: 516, offsetTop: 100, scale: 1 })).toEqual({ shrink: 336, pan: 100 });
+  it('iOS 聚焦时视觉视口被往下挪：取 offsetTop', () => {
+    expect(keyboardOf({ offsetTop: 0 })).toEqual({ pan: 0 });
+    expect(keyboardOf({ offsetTop: 100 })).toEqual({ pan: 100 });
   });
 
-  it('地址栏收放：两个高度同步变、差 ≈ 0，所以外壳不动', () => {
-    expect(keyboardOf(852, { height: 852, offsetTop: 0, scale: 1 }).shrink).toBe(0);
-    expect(keyboardOf(744, { height: 744, offsetTop: 0, scale: 1 }).shrink).toBe(0);
-    expect(keyboardOf(800, { height: 802, offsetTop: 0, scale: 1 }).shrink).toBe(0);
+  it('offsetTop 为负（取整抖动）时归零，不留负数', () => {
+    expect(keyboardOf({ offsetTop: -3 }).pan).toBe(0);
   });
 
-  it('取整抖动：视觉视口比布局视口还高、或 offsetTop 为负时不留负数', () => {
-    expect(keyboardOf(852, { height: 853, offsetTop: 0, scale: 1 }).shrink).toBe(0);
-    expect(keyboardOf(852, { height: 516, offsetTop: -3, scale: 1 }).pan).toBe(0);
+  it('取整：不到一个 CSS 像素的抖动不该让外壳重排', () => {
+    expect(keyboardOf({ offsetTop: 0.4 })).toEqual({ pan: 0 });
+    expect(keyboardOf({ offsetTop: 0.6 })).toEqual({ pan: 1 });
   });
 
-  it('两个数都取整：不到一个 CSS 像素的抖动不该让外壳与面板逐帧重排', () => {
-    expect(keyboardOf(852, { height: 515.6, offsetTop: 0.4, scale: 1 })).toEqual({ shrink: 336, pan: 0 });
-    expect(keyboardOf(852, { height: 515.4, offsetTop: 0.6, scale: 1 })).toEqual({ shrink: 337, pan: 1 });
-  });
-});
-
-describe('键盘判据的护栏：页面被捏合放大时一律不算键盘', () => {
-  it('scale > 1 时缩小量归零（否则手指捏一下就把外壳抬成半屏）', () => {
-    // 852 / 2 = 426 → 差值 426；但只要 scale 是 2 就必须当成没吃视口
-    expect(keyboardOf(852, { height: 426, offsetTop: 0, scale: 2 })).toEqual({ shrink: 0, pan: 0 });
-    // 放大一点点也算：852 × (1 − 1/1.2) ≈ 142
-    expect(keyboardOf(852, { height: 710, offsetTop: 0, scale: 1.2 }).shrink).toBe(0);
-  });
-
-  it('scale 的取整抖动（1.001 / 正好 1）照常算', () => {
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1 }).shrink).toBe(336);
-    expect(keyboardOf(852, { height: 516, offsetTop: 0, scale: 1.001 }).shrink).toBe(336);
+  it('键盘弹起时视觉视口高度变小，但这已不影响任何写样式的结果', () => {
+    // 改造前这里会算出 shrink = 336 并写 inset-block-end；现在这个量不存在了
+    expect(keyboardOf({ offsetTop: 0 })).toEqual({ pan: 0 });
   });
 });
