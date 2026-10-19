@@ -18,4 +18,8 @@
 
 打字态状态机、网格两态、退场时序、画布冻结与 L2 契约 spec 全部落地。
 
-哪类验收该在哪个环境做见 `test.md`。当前只差 L3 / L4：真 IME 下 `visualViewport` 三量的关系、键盘动画观感、`scale.resize` 次数（模拟器），以及真手指手感、低端机帧率、特定内核（夸克 / Via）。
+哪类验收该在哪个环境做见 `test.md`。
+
+**L3 已过**（宿主 Android 模拟器，真 Chrome + 真 Gboard）：键盘全开时 `innerHeight 748` / `visualViewport.height 405` / `documentElement.clientHeight 748`——布局视口只因地址栏缩 24px、**不跟键盘缩**；打字全程画布像素尺寸不变，整段只有退出后的 2 次缓冲重建；键盘由系统收起而焦点仍在时，面板留在打字态且「收起」可退。
+
+**只差 L4**（只有真机能得结论）：iOS Safari 的视觉视口 pan、真手指触摸手感、低端机帧率、自研内核（夸克 / Via）；以及「键盘动画逐帧观感」这类主观项。
