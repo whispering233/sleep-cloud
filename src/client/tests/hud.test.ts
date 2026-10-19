@@ -39,6 +39,7 @@ describe('HUD 派生视图', () => {
       rttMs: undefined,
       switching: false,
       zoomMode: { kind: 'free' },
+      composer: 'idle',
     });
   });
 

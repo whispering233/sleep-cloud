@@ -32,35 +32,58 @@
 @layer components {
   /* ——— 布局骨架：世界铺满视口，界面只占边缘（视野中央留给大厅本身） ——— */
 
+  /* 两态只有一份布局，只换行（`docs/design/60-interaction-shell.md` §3）：
+     空闲 `auto 1fr auto` = HUD / 世界 / 面板；打字 `auto auto 1fr` = HUD / 面板 / 插槽面板（铺满到屏底）。
+     `data-composer` 由 `ChatPanel` 写在 shell 上——两块面板都是 shell 的网格项，选择器必须从这儿够过去 */
   .app-shell {
     position: fixed;
     inset: 0;
     overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
   }
 
+  .app-shell[data-composer='typing'] {
+    grid-template-rows: auto auto 1fr;
+  }
+
+  /* 世界层不进流（绝对定位）且铺满所有行。`z-index: -1`：两块面板现在是**静态**网格项，绝对定位的层
+     会画在它们之上——负层级把它退到同层叠上下文的最底（`.app-shell` 是 `position: fixed`，本身就建层叠上下文，
+     不会掉到 body 后面）。`tone-layer`（顶层 `popover`）仍然盖得住它 */
   .world-layer {
     position: absolute;
+    grid-area: 1 / 1 / -1 / -1;
     inset: 0;
+    z-index: -1;
     background-color: var(--color-outside);
   }
 
   /* 三档减光层：整屏一层中性黑，`opacity` 跟着我自己的显示态（漫游 / 躺下 / 睡下，α 在 `src/client/tone.ts`）。
-     它**同时盖住画布与 DOM**（界面也是亮面），所以层级压在面板里遮罩 / 浮层 / 齿轮的 1/2/3 之上；
-     `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡（`docs/ui/DESIGN.md` 的 `tone-layer` 行） */
+     它**同时盖住画布与 DOM**（界面也是亮面，`docs/ui/DESIGN.md` 的 `tone-layer` 行）。
+     这一层自己也是个 `popover`（`manual`，由 `ToneLayer` 常驻打开）：齿轮浮层走 `popover` 进顶层，
+     而顶层元素之间**不吃 `z-index`**、只按入场顺序画——减光层只有自己也在顶层才压得住它，
+     并且要由 `ToneLayer` 在别的浮层入场后把自己重新推上去（那条注释在组件里）。
+     `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡。
+     `margin` / `width` / `height` / `border` / `padding` 是抹掉 UA 给 `[popover]` 的居中 / 收缩 / 边线默认值：
+     不抹掉，减光就变成屏幕中间的一个小黑框 */
   .tone-layer {
     position: fixed;
     inset: 0;
-    z-index: 4;
+    margin: 0;
+    width: auto;
+    height: auto;
+    border: 0;
+    padding: 0;
     background-color: #000;
     pointer-events: none;
     transition: opacity 900ms ease-out;
   }
 
-  /* 顶部区域（HUD + 提示条）是同一条自上而下的流：提示条不必去猜 HUD 有多高 */
+  /* 顶部区域（HUD + 提示条）是同一条自上而下的流：提示条不必去猜 HUD 有多高。
+     它是网格第 1 行——`auto` 行高就是它的实占，打字态面板接在它下面 */
   .hud-stack {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline: 0;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
@@ -138,9 +161,8 @@
     border-radius: var(--radius-full);
   }
 
-  /* 设置齿轮：钉在动作行右端（`margin-inline-start: auto` 把中间拉开），也是浮层的定位基准 */
+  /* 设置齿轮：钉在动作行右端（`margin-inline-start: auto` 把中间拉开） */
   .hud-settings {
-    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -148,12 +170,10 @@
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
-     图标颜色吃 `neutral-muted`（齿轮是次要入口，与 `GO` 的 `neutral` 拉开一档） */
+     图标颜色吃 `neutral-muted`（齿轮是次要入口，与 `GO` 的 `neutral` 拉开一档）。
+     `anchor-name` 是浮层唯一的定位来源（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
   .hud-settings-button {
-    /* 齿轮自己也在遮罩之上（层级 3 > 浮层 2 > 遮罩 1）：「再点齿轮也关」就是按钮自己的 `onClick`，
-       而不是碰巧被遮罩吃掉那一下 */
-    position: relative;
-    z-index: 3;
+    anchor-name: --hud-settings-gear;
     width: 44px;
     height: 44px;
     padding: 0;
@@ -170,15 +190,20 @@
     height: 20px;
   }
 
-  /* 齿轮浮层：**向上**展开（`inset-block-end: 100%`，定位基准是齿轮那一格 `.hud-settings`）、
-     右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
-     层级 2 压过遮罩的 1（两者都在根层叠上下文里：`.hud-settings` / `.chat-panel` 都不是层叠上下文） */
+  /* 齿轮浮层：`popover`（顶层渲染、light-dismiss、`Esc` 全部由平台给，
+     `docs/design/60-interaction-shell.md` §4）——所以这里没有遮罩，也没有手写的点外关闭。
+     位置**只有一个来源：锚在齿轮上**（CSS anchor positioning）。顶层元素的定位盒是视口，
+     「靠祖先 `position: relative` 手算」在顶层里不成立（实测：`inset-block-end: 100%` 会按视口算，浮层跑到屏幕外）。
+     向上展开、右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
+     `inset: auto` / `margin` 是抹掉 UA 给 `[popover]` 的 `inset: 0` / `margin: auto`：
+     那两条会让浮层铺满视口或者居中 */
   .hud-menu {
-    position: absolute;
-    inset-block-end: 100%;
-    inset-inline-end: 0;
-    margin-block-end: var(--spacing-xs);
-    z-index: 2;
+    position: fixed;
+    position-anchor: --hud-settings-gear;
+    inset: auto;
+    inset-block-end: anchor(top);
+    inset-inline-end: anchor(right);
+    margin: 0 0 var(--spacing-xs);
     padding: var(--spacing-sm);
     color: var(--color-neutral-muted);
     background-color: var(--color-secondary);
@@ -192,14 +217,15 @@
     white-space: nowrap;
   }
 
-  /* 透明遮罩：盖满视口、吃掉那一下点击（否则点「外面」会同时关掉浮层并让小人开始走路）。
-     背景透明——它不是一层变暗的模态，只是「点在浮层外面」的落点 */
-  .hud-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    background-color: transparent;
-    pointer-events: auto;
+  /* 老 Safari（没有 CSS anchor positioning）：退回「屏幕右下、面板上方」的固定位置。
+     不写这一块，UA 默认会把 popover 居中到屏幕正中——那比位置略差糟糕得多。
+     菜单是一次性入口（换床 / 看版本号），固定位置够用 */
+  @supports not (position-anchor: --hud-settings-gear) {
+    .hud-menu {
+      inset: auto;
+      inset-block-end: calc(var(--spacing-md) + 128px);
+      inset-inline-end: var(--spacing-md);
+    }
   }
 
   /* 浮层里那一项：胶囊外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
@@ -262,20 +288,24 @@
     line-height: var(--text-label--line-height);
   }
 
-  /* 插槽面板（`docs/ui/DESIGN.md` 的 `slot-panel` 行、`../design/50-slot-panel.md`）：挂在聊天面板**整块**下沿
-     （`inset-block-start: 100%` 的定位基准是 `.chat-panel` 的 padding box）。
-     **不写固定高度**——高度由 `SlotPanel` 量出来写成 inline px；绝对定位不撑开父容器，可用视口不受影响。
-     层级在世界层之上、`tone-layer`(4) 之下（不写 `z-index`：DOM 里它在 `.world-layer` 之后、且 `.chat-panel`
+  /* 插槽面板（`docs/ui/DESIGN.md` 的 `slot-panel` 行、`../design/50-slot-panel.md`）：**网格第 3 行**，
+     打字态的 `1fr` 让它铺满到屏底。它与聊天面板同一栏，所以两边的边框天然对齐（不再用负的 `inset` 去补
+     `.chat-panel` 的 1px 边框）。高度由网格给，`min-height: 0` 才让内容自己在块方向滚动。
+     层级在世界层之上、`tone-layer` 之下（不写 `z-index`：DOM 里它在 `.world-layer` 之后、且 `.chat-panel`
      不是层叠上下文）。它是下面那块，所以**下圆角 + 下边框**；上沿不画边（交接处那条线由聊天面板的下边画，
      两块都画就是两道线 + 两个圆角凹口，§3）。
-     开关不用 `hidden`（`display: none` 过渡不了）：靠 `data-open` 切 `opacity` / `transform`，隐藏时
-     `pointer-events: none`（不可 Tab、不被读屏读到由组件的 `inert` 负责） */
+     开关不用 `hidden`（`display: none` 过渡不了）：靠 `data-open` 切 `opacity` / `transform`，隐藏靠
+     `visibility: hidden`（不可 Tab、不被读屏读到另外还有组件的 `inert`）。空闲态它与聊天面板同在第 3 行，
+     但 `opacity: 0` + `visibility: hidden` + 空内容，看不见也点不到。
+     **为什么必须是 `visibility` 而不是 `pointer-events`**：两块面板同在第 1 列第 3 行完全重叠，
+     「看不见但还占位」的那个盒子会把聊天面板的点击全吃掉；而 `pointer-events: none` 一旦在退场一开始就挂上，
+     面板还看得见的 160ms 里点击会穿到画布（`docs/design/60-interaction-shell.md` §4）。
+     `visibility` 挂同一条过渡 + `allow-discrete`：退场期间它仍是 `visible`（照旧吃点击），动画末帧才消失 */
   .slot-panel {
-    position: absolute;
-    /* 负的边框宽度：绝对定位的 inset 基准是父元素的 **padding box**，而 `.chat-panel` 自带 1px 边框。
-       写 0 会让插槽面板比 chat-panel 两边各窄 1px，两块左边框就错开成一个小台阶 */
-    inset-inline: -1px;
-    inset-block-start: 100%;
+    /* 显式占第 1 列：两块面板都被自动放进第 3 行，不写列会被摆到隐式第 2 列去（整页会多出 2px 死条、世界少 2px） */
+    grid-column: 1;
+    grid-row: 3;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     color: var(--color-neutral);
@@ -289,16 +319,18 @@
     opacity: 0;
     /* 往上错一档：出现时从聊天面板下沿「落下来」 */
     transform: translateY(-8px);
-    pointer-events: none;
+    visibility: hidden;
     transition:
       opacity 160ms ease-out,
-      transform 160ms ease-out;
+      transform 160ms ease-out,
+      visibility 160ms ease-out;
+    transition-behavior: allow-discrete;
   }
 
   .slot-panel[data-open] {
     opacity: 1;
     transform: none;
-    pointer-events: auto;
+    visibility: visible;
   }
 
   /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：两列、每条一整个 44px 描边胶囊。
@@ -317,10 +349,10 @@
     width: 100%;
   }
 
+  /* 排版归网格：空闲在第 3 行（贴底），打字态挪到第 2 行（插槽面板接在下面） */
   .chat-panel {
-    position: absolute;
-    inset-block-end: 0;
-    inset-inline: 0;
+    grid-column: 1;
+    grid-row: 3;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
@@ -332,19 +364,14 @@
     border-block-end: 0;
     border-start-start-radius: var(--radius-md);
     border-start-end-radius: var(--radius-md);
-    /* 贴顶的位移只走 `transform`：`inset` 一过渡就是逐帧布局（画布重建的老病根）。
-       `--dock-y` = HUD 下沿 − 面板在布局里的顶边，值由 `ChatPanel` 从 DOM 量出来（不硬编码 HUD 高度） */
-    transition: transform 160ms ease-out;
   }
 
-  /* 悬挂态「贴顶」：输入行聚焦时整个底部组合挪到 HUD 下沿（`../design/50-slot-panel.md` §2），
-     顶部与键盘天然不重叠，界面不再需要知道键盘多高。
-     位移只走 `transform`（`--dock-y` = HUD 下沿 − 布局顶边，由 `ChatPanel` 量出来）：`inset` 一过渡就是
-     逐帧布局，那是画布重建的老病根。所以 `@media` 里的贴底定位**不用改**——布局仍锚在屏底，transform 盖在上面。
+  /* 打字态：整块底部组合挪到 HUD 下沿（`../design/60-interaction-shell.md` §2、§3），顶部与键盘天然不重叠，
+     界面不需要知道键盘多高。位置由网格行给（第 2 行），**没有位移、没有过渡**——两态瞬切（§3 §9）。
      边框接缝（§3）：它现在是上面那块 → 拥有整块的上边（这里紧贴 HUD，所以不画）与**交接处那条线**（下边），
      下圆角归插槽面板、上角不圆（上面是 HUD，圆角是给两块之间那个接缝的） */
-  .chat-panel[data-docked='top'] {
-    transform: translateY(var(--dock-y, 0px));
+  .app-shell[data-composer='typing'] .chat-panel {
+    grid-row: 2;
     border-block-start: 0;
     border-block-end: 1px solid var(--color-claimed);
     border-start-start-radius: 0;
@@ -467,13 +494,23 @@
     gap: var(--spacing-sm);
   }
 
-  /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽 */
+  /* 中档（手机横屏 / 平板）：宽度受限并居中，不被拉伸到全宽。
+     位置全部交给网格（`justify-self` + `max-width` + `margin`），不再用 `inset` 微调；两块面板同一栏，规则一起写 */
   @media (min-width: 640px) {
-    .chat-panel {
-      inset-inline: var(--spacing-md);
-      inset-block-end: var(--spacing-md);
+    .chat-panel,
+    .slot-panel {
+      justify-self: center;
+      width: 100%;
       max-width: 560px;
-      margin-inline: auto;
+      margin-inline: var(--spacing-md);
+    }
+
+    /* 屏底那道留白只属于空闲态：打字态插槽面板接在聊天面板下面，中间不该漏出世界 */
+    .app-shell:not([data-composer='typing']) .chat-panel {
+      margin-block-end: var(--spacing-md);
+    }
+
+    .chat-panel {
       border-block-end: 1px solid var(--color-claimed);
       border-radius: var(--radius-md);
     }
@@ -481,12 +518,16 @@
 
   /* 宽档（桌面）：靠右停靠；世界仍然全屏，只是视野变宽 */
   @media (min-width: 1024px) {
-    .chat-panel {
-      inset-inline-start: auto;
-      inset-inline-end: var(--spacing-lg);
-      inset-block-end: var(--spacing-lg);
+    .chat-panel,
+    .slot-panel {
+      justify-self: end;
       width: 380px;
       max-width: none;
+      margin-inline: 0 var(--spacing-lg);
+    }
+
+    .app-shell:not([data-composer='typing']) .chat-panel {
+      margin-block-end: var(--spacing-lg);
     }
   }
 

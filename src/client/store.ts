@@ -17,6 +17,8 @@ import { CHAT_BUBBLE_MS, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../sha
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
+import { composerReducer } from './composer';
+import type { ComposerEvent, ComposerState } from './composer';
 import type { Connection } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
@@ -105,6 +107,11 @@ export interface ClientState {
    * 它与 `switching` 无关：缩放是视角，不是模式，两个可以同时开。
    */
   zoomMode: ZoomMode;
+  /**
+   * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
+   * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
+   */
+  composer: ComposerState;
 }
 
 const emptyState = (): ClientState => ({
@@ -115,6 +122,7 @@ const emptyState = (): ClientState => ({
   clockOffsetMs: 0,
   bubbles: new Map(),
   switching: false,
+  composer: 'idle',
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
   zoomMode: readZoomMode(),
 });
@@ -209,6 +217,13 @@ export function setBedDirection(direction: BedDirection | undefined): void {
 export function setSwitching(on: boolean): void {
   if (state.switching === on) return;
   setState({ switching: on });
+}
+
+/** 输入会话的**唯一**写入路径（状态机在 `composer.ts`）。同值不通知：焦点事件会重复来。 */
+export function setComposer(event: ComposerEvent): void {
+  const next = composerReducer(state.composer, event);
+  if (next === state.composer) return;
+  setState({ composer: next });
 }
 
 /**

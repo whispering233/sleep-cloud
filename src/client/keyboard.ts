@@ -1,7 +1,7 @@
 /**
  * 软键盘（`docs/ui/DESIGN.md`「软键盘」）：界面**不读键盘高度**，只读视觉视口被 pan 了多少。
  *
- * 输入框聚焦时整个底部组合挪到 HUD 下方（插槽面板规格 `docs/design/50-slot-panel.md` §2），
+ * 进入打字态时整个底部组合挪到 HUD 下方（`docs/design/60-interaction-shell.md` §2、§3），
  * 顶部与键盘天然不重叠，所以「键盘吃掉多高」这个量整个不需要了——而它正是画布逐帧重建、闪烁的根。
  *
  * 唯一留下的写成一处：iOS 聚焦时浏览器会平移视觉视口，`position: fixed` 的 `.app-shell`

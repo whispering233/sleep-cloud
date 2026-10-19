@@ -203,9 +203,9 @@ export interface ViewInsets {
 /**
  * 元素相对**首屏**的布局顶边（只用 `offsetTop` / `offsetParent` 累加，**不读 `getBoundingClientRect`**）。
  *
- * 为什么要这个而不直接用 `getBoundingClientRect().top`：聊天面板贴到顶部时只走 `transform`（`inset` 一过渡
- * 就是逐帧布局，那是画布重建的老病根）。而 `getBoundingClientRect()` **吃得到** `transform`——过渡进行中量到的
- * 是滑到一半的位置，相机夹取就会跟着跳。`offsetTop` 是布局位置，不吃 `transform`，量到的始终是终点。
+ * 为什么要这个而不直接用 `getBoundingClientRect().top`：`.app-shell` 会带一层 `translateY`（iOS 聚焦时
+ * 会把视觉视口往下 pan，靠它拉回屏幕，见 `docs/design/60-interaction-shell.md` §1）。而 `getBoundingClientRect()`
+ * **吃得到** `transform`，取景、夹取就会跟着跳。`offsetTop` 是布局位置，不吃 `transform`。
  *
  * 签名用结构化类型而不是 `HTMLElement`：这个模块要能在不依赖 DOM 类型的环境里跑（`tsconfig` 的纯逻辑那份）。
  * `offsetParent` 为 `null` 时（`display:none` 或已在根）停止累加。
@@ -286,7 +286,7 @@ export function usableCenterOffset(view: Rect, insets: ViewInsets): { x: number;
  *
  * **不再算「键盘吃了多高」**。那一量在部分内核里根本测不出来（布局视口与视觉视口都不缩、或两者一起缩
  * 导致差值归零），而它曾被用来逐帧写 `.app-shell` 的 `inset-block-end`——那正是画布逐帧重建、闪烁的根。
- * 现在输入框聚焦时整组面板挪到顶部（`docs/design/50-slot-panel.md` §2），界面不需要知道键盘多高。
+ * 现在进入打字态时整组面板挪到顶部（`docs/design/60-interaction-shell.md` §2、§3），界面不需要知道键盘多高。
  *
  * `pan` 还是要读：iOS 聚焦时会平移视觉视口（`offsetTop > 0`），`.app-shell` 靠 `translateY` 把自己
  * 拉回屏幕。**这条只动 transform、不改尺寸**，因此不会引起画布重建。
@@ -300,6 +300,22 @@ export interface KeyboardState {
 export function keyboardOf(viewport: { offsetTop: number } | null): KeyboardState {
   if (!viewport) return { pan: 0 };
   return { pan: Math.max(0, Math.round(viewport.offsetTop)) };
+}
+
+/** 画布像素尺寸的三个量：`resizeToHost` 算出来的那一份。 */
+export interface Size {
+  width: number;
+  height: number;
+  dpr: number;
+}
+
+/**
+ * 冻结门（`docs/design/60-interaction-shell.md` §5）：软键盘的指纹是**宽度不变、高度变小**——
+ * 打字期间这一种变化跳过 `scale.resize`（每次重建绘制缓冲就是一帧黑闪）。
+ * 其余一律重算：宽度变、高度变高、DPR 变（换屏）、旋屏（宽高互换）都不受冻结影响。
+ */
+export function shouldResize(prev: Size, next: Size, typing: boolean): boolean {
+  return !(typing && next.width === prev.width && next.height < prev.height && next.dpr === prev.dpr);
 }
 
 /** 八个方位（世界像素的罗盘：上 = 北）。动作行的方向字形与 `bedDirection` 的结果是同一个概念。 */export type BedDirection = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';

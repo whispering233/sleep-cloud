@@ -31,11 +31,12 @@ import {
   layoutTopOf,
   personPoint,
   shouldDrawName,
+  shouldResize,
   tapTargetFor,
   usableView,
   usableCenterOffset,
 } from './rules';
-import type { Occupant, PersonSpot, ViewInsets } from './rules';
+import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
 import {
   COLORS,
   SPRITES_KEY,
@@ -162,6 +163,8 @@ class WorldScene extends Phaser.Scene {
   private zoom = 1;
   /** 画布 DPR（`resizeToHost` 里算）：相机 zoom 的另一半，也是 insets 换算的基准 */
   private dpr = 1;
+  /** 打字态挡下的那次尺寸：`composer` 回 `idle` 时补算一次（不挂定时器，见 `docs/design/60-interaction-shell.md` §5） */
+  private pendingSize: Size | undefined;
   private observer: ResizeObserver | null = null;
   /** 界面实占的那两个元素，以及它们当前的实占高度（可用视口的 insets） */
   private insetElements: UiInsets = { top: null, bottom: null };
@@ -209,9 +212,13 @@ class WorldScene extends Phaser.Scene {
       this.buildBedIndex(bedCount);
       this.rebuildRegion();
     }
+    // 打字态挡下的那次尺寸：回 `idle` 这一帧补算（不挂定时器）。
+    // **不直接用记下的那个数**：键盘收起与退场不同步，记下的往往是过渡中途的快照
+    // （实测：记的是 748，真值已经回到 772，照抄就会让画布比宿主矮 24px 且再也没有事件来纠正）。
+    // 所以这里只是「补一次」，尺寸重新从宿主量。
+    if (state.composer === 'idle' && this.pendingSize) this.resizeToHost();
     // 可用视口的 insets 要在回中之前拿到（回中按可用视口的中心对准）
     this.syncInsets();
-
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
     const online = state.connection === 'online';
     if (online && !this.wasOnline) this.alignCamera(state, this.everOnline);
@@ -530,19 +537,24 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 界面实占的区域只从 DOM 的**实际**值读：面板随控件行的增减变高变矮、横屏面板底部还留 12px 外边距，
-   * 都不硬编码。所以量的是「**从视口边缘到界面内沿**」的距离，而不是元素自身高度。
+   * 界面实占的区域只从 DOM 的**实际**值读：面板随控件行的增减变高变矮、横屏面板底边还留一圈外边距，
+   * 都不硬编码。
    *
-   * 量的是**布局**值（`offsetTop` / `offsetHeight`），不是渲染值：聊天面板贴顶那一下只走 `transform`，
-   * 渲染位置会跳一大截。贴顶时占位应该与空闲态一样（只是位置从屏底挪到面板下沿，见 `task.md` 的四个决策），
-   * 所以这里必须用吃不到 transform 的量。
+   * 量的是**布局**值（`offsetTop` / `offsetHeight`），不是渲染值：`.app-shell` 可能带着 `translateY`
+   * （iOS 把视觉视口往下 pan，见 `docs/design/60-interaction-shell.md` §1），渲染位置与布局位置差一截，
+   * `getBoundingClientRect` 的差就白算了。
+   *
+   * 底部占位取面板**自身高度**而不是「屏底 − 面板顶边」：两态网格下打字态面板在**第 2 行**
+   * （插槽面板铺满到屏底），后者会把整块屏幕都算成界面，于是面板在打字态里一旦变高（床上动作行出现）
+   * 取景就会换成「整屏居中」而且退出后没人重算。取高度则两态同值（窄屏面板贴屏底，两者本来就相等；
+   * 宽档面板浮在屏底之上，底下那一圈本来就看得见）。
    */
   private measureInsets(): ViewInsets {
     const top = this.insetElements.top;
     const bottom = this.insetElements.bottom;
     this.insets = {
       top: top ? Math.max(0, layoutTopOf(top) + top.offsetHeight) : 0,
-      bottom: bottom ? Math.max(0, document.documentElement.clientHeight - layoutTopOf(bottom)) : 0,
+      bottom: bottom ? Math.max(0, bottom.offsetHeight) : 0,
     };
     return this.insets;
   }
@@ -566,13 +578,23 @@ class WorldScene extends Phaser.Scene {
     const rect = this.host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const pxW = Math.round(rect.width * dpr);
-    const pxH = Math.round(rect.height * dpr);
+    const next: Size = { width: Math.round(rect.width * dpr), height: Math.round(rect.height * dpr), dpr };
     // 尺寸与 DPR 都没变就别碰 `scale.resize`：那会重建整块绘制缓冲（纯位移不该付这个代价）
-    if (pxW === this.scale.width && pxH === this.scale.height && dpr === this.dpr) return;
-    this.dpr = dpr;
-    this.scale.zoom = 1 / dpr;
-    this.scale.resize(pxW, pxH);
+    if (next.width === this.scale.width && next.height === this.scale.height && dpr === this.dpr) return;
+    // 打字期间的高度变小 = 软键盘：挡住并记下，退出打字态那一帧补算
+    if (!shouldResize({ width: this.scale.width, height: this.scale.height, dpr: this.dpr }, next, getState().composer === 'typing')) {
+      this.pendingSize = next;
+      return;
+    }
+    this.applySize(next);
+  }
+
+  /** 唯一的 `scale.resize` 出口：尺寸真的落地了，待补的那次就作废。 */
+  private applySize(size: Size): void {
+    this.pendingSize = undefined;
+    this.dpr = size.dpr;
+    this.scale.zoom = 1 / size.dpr;
+    this.scale.resize(size.width, size.height);
     this.applyZoom();
   }
 
@@ -705,6 +727,10 @@ class WorldScene extends Phaser.Scene {
    * 用户点的是画布上的一个像素，而服务端只接受街网上的点。
    */
   private dispatchTap(pointer: Phaser.Input.Pointer): void {
+    // **只接受从画布起手的那一下**：不管 DOM 叠层以后怎么变（面板、浮层、减光层），
+    // 从它们上面起手的点击都不该让小人动（`docs/design/60-interaction-shell.md` §4 的 I8）。
+    // Phaser 只在 `downElement === canvas` 时发 `POINTER_DOWN`，这条是把那个判定抄成自己的兜底
+    if (pointer.downElement !== this.sys.game.canvas) return;
     if (this.loadedBedCount === undefined) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const point = { x: world.x, y: world.y };

@@ -1,7 +1,7 @@
 # 本机专用：复制成 .android-env 再改路径（.android-env 不进仓库，与 .dev.vars 同一套习惯）。
 #
 # 为什么需要这个文件：Android SDK 装在**宿主 Windows** 上（模拟器要用宿主 GPU，理由见
-# docs/design/build.md §7「Android 模拟器」），而项目跑在 WSL 里。SDK 的真实路径含 Windows
+# docs/design/test.md §2「宿主 Windows 上的 Android 模拟器（移动端验收的默认环境）」），而项目跑在 WSL 里。SDK 的真实路径含 Windows
 # 用户名，不能写进文档也不能入库，所以由这个本地文件提供。
 #
 # 用法：在要起模拟器 / 连 adb 的那一层 shell 里 source 一次
