@@ -32,10 +32,10 @@ export function subscribeSlot(listener: () => void): () => void {
 }
 
 /**
- * 插槽面板高度 = 聊天面板上沿 − HUD 下沿（§2 的「shell 高 − HUD 高 − 聊天面板高」）。
- * 按两侧**实边**相减而不是三个高度相减：宽档下聊天面板底部有外边距，三个高度相减会多算那一段、
- * 让面板盖到 HUD 上。HUD 还没挂上（入场层期间）时退化成整个 shell 的高度。
+ * 插槽面板高度 = 可用视口下沿 − 聊天面板下沿（§3）：它挂在聊天面板**下沿**，撑到屏幕底。
+ * 两个盒子都会变（提示条只在断连时占位、私聊行只在有目标时出现），所以调用方随变化重算。
+ * 夹到 0 是因为面板比视口还高时不该出现负高度。
  */
-export function slotHeightOf(edges: { shellTop: number; hudBottom: number | undefined; panelTop: number }): number {
-  return Math.max(0, edges.panelTop - (edges.hudBottom ?? edges.shellTop));
+export function slotHeightOf(edges: { panelBottom: number; viewportBottom: number }): number {
+  return Math.max(0, edges.viewportBottom - edges.panelBottom);
 }

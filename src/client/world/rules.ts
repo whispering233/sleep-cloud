@@ -201,6 +201,32 @@ export interface ViewInsets {
 }
 
 /**
+ * 元素相对**首屏**的布局顶边（只用 `offsetTop` / `offsetParent` 累加，**不读 `getBoundingClientRect`**）。
+ *
+ * 为什么要这个而不直接用 `getBoundingClientRect().top`：聊天面板贴到顶部时只走 `transform`（`inset` 一过渡
+ * 就是逐帧布局，那是画布重建的老病根）。而 `getBoundingClientRect()` **吃得到** `transform`——过渡进行中量到的
+ * 是滑到一半的位置，相机夹取就会跟着跳。`offsetTop` 是布局位置，不吃 `transform`，量到的始终是终点。
+ *
+ * 签名用结构化类型而不是 `HTMLElement`：这个模块要能在不依赖 DOM 类型的环境里跑（`tsconfig` 的纯逻辑那份）。
+ * `offsetParent` 为 `null` 时（`display:none` 或已在根）停止累加。
+ */
+export function layoutTopOf(element: LayoutOffsetNode): number {
+  let top = 0;
+  let node: LayoutOffsetNode | null = element;
+  while (node) {
+    top += node.offsetTop;
+    node = node.offsetParent as LayoutOffsetNode | null;
+  }
+  return top;
+}
+
+/** `layoutTopOf` 的入参形状：只要 `offsetTop` 与 `offsetParent`，不依赖 DOM 类型（同上一段）。 */
+export interface LayoutOffsetNode {
+  offsetTop: number;
+  offsetParent: Element | null;
+}
+
+/**
  * 相机比例的夹取：**只缩不放**——上限恒为 1×（放大必然被放大采样而糊，见 `docs/ui/DESIGN.md`），
  * 下限是 `ZOOM_MIN`。非有限值（两指恰好重合时算出的 `Infinity` / `NaN`）退回 1×。
  */

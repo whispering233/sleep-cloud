@@ -42,15 +42,11 @@ describe('插槽面板的触发源登记', () => {
 });
 
 describe('插槽面板高度', () => {
-  it('= 聊天面板上沿 − HUD 下沿（shell 高 − HUD 高 − 聊天面板高的实边写法）', () => {
-    expect(slotHeightOf({ shellTop: 0, hudBottom: 29, panelTop: 600 })).toBe(571);
+  it('= 可用视口下沿 − 聊天面板下沿', () => {
+    expect(slotHeightOf({ panelBottom: 348, viewportBottom: 852 })).toBe(504);
   });
 
-  it('HUD 还没挂上时退化成整个 shell 的高度', () => {
-    expect(slotHeightOf({ shellTop: 0, hudBottom: undefined, panelTop: 600 })).toBe(600);
-  });
-
-  it('外壳被键盘缩到比 HUD 还矮时退成 0，不给负高度', () => {
-    expect(slotHeightOf({ shellTop: 40, hudBottom: 80, panelTop: 50 })).toBe(0);
+  it('面板下沿已经越过视口下沿时退成 0，不给负高度', () => {
+    expect(slotHeightOf({ panelBottom: 900, viewportBottom: 852 })).toBe(0);
   });
 });

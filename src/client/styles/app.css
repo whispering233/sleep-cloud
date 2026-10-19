@@ -262,23 +262,41 @@
     line-height: var(--text-label--line-height);
   }
 
-  /* 插槽面板（`docs/ui/DESIGN.md` 的 `slot-panel` 行、`../design/50-slot-panel.md`）：挂在聊天面板**整块**上沿
-     （`inset-block-end: 100%` 的定位基准是 `.chat-panel` 的 padding box），跟随输入行一起抬到键盘上沿。
+  /* 插槽面板（`docs/ui/DESIGN.md` 的 `slot-panel` 行、`../design/50-slot-panel.md`）：挂在聊天面板**整块**下沿
+     （`inset-block-start: 100%` 的定位基准是 `.chat-panel` 的 padding box）。
      **不写固定高度**——高度由 `SlotPanel` 量出来写成 inline px；绝对定位不撑开父容器，可用视口不受影响。
      层级在世界层之上、`tone-layer`(4) 之下（不写 `z-index`：DOM 里它在 `.world-layer` 之后、且 `.chat-panel`
-     不是层叠上下文）。描边 / 底色与 `.chat-panel` 同族，上沿圆角、下沿不画边——两块拼成一整块 */
+     不是层叠上下文）。它是下面那块，所以**下圆角 + 下边框**；上沿不画边（交接处那条线由聊天面板的下边画，
+     两块都画就是两道线 + 两个圆角凹口，§3）。
+     开关不用 `hidden`（`display: none` 过渡不了）：靠 `data-open` 切 `opacity` / `transform`，隐藏时
+     `pointer-events: none`（不可 Tab、不被读屏读到由组件的 `inert` 负责） */
   .slot-panel {
     position: absolute;
     inset-inline: 0;
-    inset-block-end: 100%;
+    inset-block-start: 100%;
     overflow-y: auto;
     overscroll-behavior: contain;
     color: var(--color-neutral);
     background-color: var(--color-secondary);
     border: 1px solid var(--color-claimed);
-    border-block-end: 0;
-    border-start-start-radius: var(--radius-md);
-    border-start-end-radius: var(--radius-md);
+    border-block-start: 0;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+    border-end-start-radius: var(--radius-md);
+    border-end-end-radius: var(--radius-md);
+    opacity: 0;
+    /* 往上错一档：出现时从聊天面板下沿「落下来」 */
+    transform: translateY(-8px);
+    pointer-events: none;
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out;
+  }
+
+  .slot-panel[data-open] {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
   }
 
   /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：竖排、每条一整个 44px 描边胶囊。
@@ -311,6 +329,25 @@
     border-block-end: 0;
     border-start-start-radius: var(--radius-md);
     border-start-end-radius: var(--radius-md);
+    /* 贴顶的位移只走 `transform`：`inset` 一过渡就是逐帧布局（画布重建的老病根）。
+       `--dock-y` = HUD 下沿 − 面板在布局里的顶边，值由 `ChatPanel` 从 DOM 量出来（不硬编码 HUD 高度） */
+    transition: transform 160ms ease-out;
+  }
+
+  /* 悬挂态「贴顶」：输入行聚焦时整个底部组合挪到 HUD 下沿（`../design/50-slot-panel.md` §2），
+     顶部与键盘天然不重叠，界面不再需要知道键盘多高。
+     位移只走 `transform`（`--dock-y` = HUD 下沿 − 布局顶边，由 `ChatPanel` 量出来）：`inset` 一过渡就是
+     逐帧布局，那是画布重建的老病根。所以 `@media` 里的贴底定位**不用改**——布局仍锚在屏底，transform 盖在上面。
+     边框接缝（§3）：它现在是上面那块 → 拥有整块的上边（这里紧贴 HUD，所以不画）与**交接处那条线**（下边），
+     下圆角归插槽面板、上角不圆（上面是 HUD，圆角是给两块之间那个接缝的） */
+  .chat-panel[data-docked='top'] {
+    transform: translateY(var(--dock-y, 0px));
+    border-block-start: 0;
+    border-block-end: 1px solid var(--color-claimed);
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
   }
 
   /* 输入行 / 表情行合用的行容器：收起是 `输入框 + 😀 + 发送`，展开原地换成 `😀 + 5 个 emoji`。

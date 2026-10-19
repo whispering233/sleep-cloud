@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import type { PersonState } from '../../shared/protocol';
 import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_SHORTCUTS } from '../emotes';
 import { blurFocusedEditable } from '../focus';
-import { setSlotSource } from '../slot';
+import { setSlotSource, slotActive, subscribeSlot } from '../slot';
 import { clearSelection, getState, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
@@ -46,9 +47,14 @@ const sameView = (a: PanelView, b: PanelView): boolean =>
   a.selectedId === b.selectedId && a.targetName === b.targetName && a.meState === b.meState;
 
 export function ChatPanel() {
+  const panelRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<PanelView>(() => viewOf(getState()));
   const [draft, setDraft] = useState('');
   const [emoteOpen, setEmoteOpen] = useState(false);
+  /** 插槽面板开着 = 悬挂态：整个底部组合挪到 HUD 下沿 */
+  const [docked, setDocked] = useState(slotActive);
+  /** 贴顶的位移（px，向上为负）：`--dock-y` 与插槽面板的高度都要它 */
+  const [dockShift, setDockShift] = useState(0);
 
   useEffect(() => {
     setView(viewOf(getState()));
@@ -56,6 +62,30 @@ export function ChatPanel() {
       const next = viewOf(state);
       setView((prev) => (sameView(prev, next) ? prev : next));
     });
+  }, []);
+
+  useEffect(() => {
+    setDocked(slotActive());
+    return subscribeSlot(() => setDocked(slotActive()));
+  }, []);
+
+  // 贴顶的位移只走 transform（`inset` 一过渡就是逐帧布局，那是画布重建的老病根）。
+  // 量的是**布局**值：`offsetTop` / `offsetHeight` 不吃 transform，所以量到的是终点位置而不是滑到一半的位置。
+  // HUD 高度随安全区变，面板随提示条 / 私聊行变高变矮，两个盒子都要重算
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const shell = panel.closest<HTMLElement>('.app-shell');
+    const hud = shell?.querySelector<HTMLElement>('.hud');
+    if (!shell || !hud) return;
+    const sync = (): void => {
+      const hudBottom = hud.getBoundingClientRect().bottom - shell.getBoundingClientRect().top;
+      setDockShift(hudBottom - panel.offsetTop);
+    };
+    const observer = new ResizeObserver(sync);
+    for (const box of [shell, hud, panel]) observer.observe(box);
+    sync();
+    return () => observer.disconnect();
   }, []);
 
   const { selectedId, targetName, meState } = view;
@@ -75,10 +105,17 @@ export function ChatPanel() {
   );
 
   return (
-    <section className="chat-panel" aria-label="聊天与操作">
-      {/* 插槽面板挂在整块面板上沿（绝对定位，不撑开这里）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
-          点一条只改草稿、不发送、不退场 */}
-      <SlotPanel onBlankPointerDown={blurFocusedEditable}>
+    <section
+      ref={panelRef}
+      className="chat-panel"
+      aria-label="聊天与操作"
+      // 悬挂态：`top` = 整个底部组合贴到 HUD 下沿（位置靠 `--dock-y` 的 transform，见 `../styles/app.css`）
+      data-docked={docked ? 'top' : undefined}
+      style={{ '--dock-y': `${dockShift}px` } as CSSProperties}
+    >
+      {/* 插槽面板挂在整块面板**下沿**（绝对定位，不撑开这里）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
+          点一条只改草稿、不发送、不退场。`dockShift` 只在贴顶时传：那是它量高度时要加上的位移 */}
+      <SlotPanel onBlankPointerDown={blurFocusedEditable} dockShift={docked ? dockShift : 0}>
         <QuickPhrases onFill={setDraft} />
       </SlotPanel>
 

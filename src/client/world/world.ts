@@ -28,6 +28,7 @@ import {
   followStep,
   isFaded,
   isMoving,
+  layoutTopOf,
   personPoint,
   shouldDrawName,
   tapTargetFor,
@@ -531,14 +532,17 @@ class WorldScene extends Phaser.Scene {
   /**
    * 界面实占的区域只从 DOM 的**实际**值读：面板随控件行的增减变高变矮、横屏面板底部还留 12px 外边距，
    * 都不硬编码。所以量的是「**从视口边缘到界面内沿**」的距离，而不是元素自身高度。
+   *
+   * 量的是**布局**值（`offsetTop` / `offsetHeight`），不是渲染值：聊天面板贴顶那一下只走 `transform`，
+   * 渲染位置会跳一大截。贴顶时占位应该与空闲态一样（只是位置从屏底挪到面板下沿，见 `task.md` 的四个决策），
+   * 所以这里必须用吃不到 transform 的量。
    */
   private measureInsets(): ViewInsets {
-    const host = this.host.getBoundingClientRect();
-    const top = this.insetElements.top?.getBoundingClientRect();
-    const bottom = this.insetElements.bottom?.getBoundingClientRect();
+    const top = this.insetElements.top;
+    const bottom = this.insetElements.bottom;
     this.insets = {
-      top: top ? Math.max(0, top.bottom - host.top) : 0,
-      bottom: bottom ? Math.max(0, host.bottom - bottom.top) : 0,
+      top: top ? Math.max(0, layoutTopOf(top) + top.offsetHeight) : 0,
+      bottom: bottom ? Math.max(0, document.documentElement.clientHeight - layoutTopOf(bottom)) : 0,
     };
     return this.insets;
   }
