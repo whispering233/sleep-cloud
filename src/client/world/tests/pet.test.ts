@@ -210,9 +210,9 @@ describe('猫的速度与动画（§3.3、§4）', () => {
 });
 
 describe('猫的问候（§3.4）', () => {
-  it('说「欢迎进来」、停 4 秒', () => {
+  it('说「欢迎回来」、停 4 秒', () => {
     expect(PET_GREET_MS).toBe(4000);
-    expect(PET_GREET_TEXT).toBe('欢迎进来');
+    expect(PET_GREET_TEXT).toBe('欢迎回来');
   });
 
   it('到期前画、到期即不画、还没问候过也不画', () => {
