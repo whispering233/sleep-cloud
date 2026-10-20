@@ -264,14 +264,16 @@ test('没有 Popover API 的内核能进厅，齿轮菜单靠手写开关走完�
   await expect(page.getByText('点一张空床搬过去')).toBeVisible();
   await expect(menu).toHaveCount(0);
 
-  // ④ 点外面关：顶部 HUD 是 `pointer-events: none` 的显示条，点落到画布上 = 点外面
+  // ④ 点外面关：点面板本体（`downElement !== canvas`，不会顺带发世界上行）。菜单锚在底部，点在面板上就算外面
   await gear.click();
   await expect(menu).toBeVisible();
-  const hud = await page.locator('.hud').boundingBox();
-  if (!hud) throw new Error('量不到顶部 HUD');
-  await page.touchscreen.tap(hud.x + 4, hud.y + hud.height / 2);
+  const outside = await pointOn(page, '.chat-panel');
+  const framesBefore = (await framesOf(page)).length;
+  await page.touchscreen.tap(outside.x, outside.y);
   await expect(menu).toHaveCount(0);
   await expect(gear).toHaveAttribute('aria-expanded', 'false');
+  // 点外关闭只是关菜单：一条上行都不该有（换床模式还开着）
+  expect((await framesOf(page)).length).toBe(framesBefore);
 
   // 全程不抛错：降级路径不许裸调那三个方法
   expect(errors).toEqual([]);
