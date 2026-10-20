@@ -97,9 +97,52 @@ describe('内容过滤', () => {
     });
   });
 
+  describe('联系方式与引流（打码，不拒绝）', () => {
+    it('手机号：11 位数字与数字之间的分隔符一起打码，长度不变', () => {
+      // `电话` 本身在广告类词表里（既有行为），这里只看数字与长度。
+      const input = '我的电话 138-1234-5678';
+      expect(mask(input)).toBe(`我的** ${'*'.repeat(13)}`);
+      expect(mask(input)).toHaveLength(input.length);
+      expect(mask('138 1234 5678')).toBe('*************');
+    });
+
+    it('手机号：中间夹中文不是分隔符，不得拼成假手机号', () => {
+      expect(mask('床号 12345 明天 67890')).toBe('床号 12345 明天 67890');
+    });
+
+    it('小数不是手机号', () => {
+      expect(mask('3.14 和 2.71')).toBe('3.14 和 2.71');
+    });
+
+    it('平台引流：整段（含冒号与空白）成星号', () => {
+      expect(mask('加 vx: abc1234')).toBe('加 ***********');
+      expect(mask('QQ 12345678')).toBe('***********');
+    });
+
+    it('邮箱必须有域名点', () => {
+      expect(mask('发我 abc@qq.com')).toBe('发我 **********');
+      expect(mask('a@b')).toBe('a@b');
+    });
+
+    it('URL 与裸域名', () => {
+      expect(mask('看 https://sleep.cloud')).toBe('看 *******************');
+      expect(mask('www.qq.com')).toBe('**********');
+      expect(mask('去 example.com 找我')).toBe('去 *********** 找我');
+    });
+
+    it('英文词尾不误伤（裸域名靠点判定，不靠后缀猜）', () => {
+      for (const word of ['internet', 'laptop', 'home', 'radio']) expect(mask(word)).toBe(word);
+    });
+
+    it('打码不影响昵称判定（联系方式不进 detect）', () => {
+      expect(detect('13812345678')).toBeNull();
+      expect(detect('abc@qq.com')).toBeNull();
+    });
+  });
+
   describe('词库产物', () => {
-    it('手工表恰 33 条，外来词条总数不少于 24,000（生成脚本见 tools/words/）', () => {
-      expect(words.curated).toHaveLength(33);
+    it('手工表恰 39 条，外来词条总数不少于 24,000（生成脚本见 tools/words/）', () => {
+      expect(words.curated).toHaveLength(39);
       const total = Object.values(words.categories).flat().length;
       expect(total).toBeGreaterThanOrEqual(24_000);
     });

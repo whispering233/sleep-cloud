@@ -10,6 +10,9 @@ import words from './blocked-words.json';
  *   误伤代价只是几个星号，所以用全部类目。
  *
  * 匹配前剥离干扰字符与空白、全角转半角、统一小写，因此 `傻·逼`、`傻 逼`、`ＦＵＣＫ` 都会被命中。
+ *
+ * 联系方式与引流（手机号 / 邮箱 / URL / 平台号）另有一套正则，同一份归一化但**保留 `. - _ :`**，
+ * 同样只打码不拒绝（把人带出厅的写法管不住，词库再大也没用）。
  */
 
 /** 昵称用的九类：需要持续收紧的是色情 / 政治类，其余六类只用于聊天打码。 */
@@ -47,6 +50,30 @@ const INTERFERENCE_CHARS =
 
 const interference = new Set([...INTERFERENCE_CHARS, ...ZERO_WIDTH]);
 
+/** 联系方式用同一份归一化，但**保留 `. - _ :`**：邮箱 / URL / 裸域名的判定依赖它们真的在文本里。 */
+const CONTACT_INTERFERENCE = new Set(
+  [...interference].filter((char) => !'.-_:'.includes(char)),
+);
+
+/**
+ * 联系方式与引流：命中一律走 `mask` 打码，不拒绝。跑在保留 `. - _ :` 的归一化文本上，
+ * 因此 `138-1234-5678` 的分隔符在区间内、被一起打码；`mask` 仍是等长替换。
+ * 反例见 `tests/content-filter.test.ts`：`internet` / `laptop` / `home` / `radio` 不得命中，
+ * 所以裸域名的 TLD 表小而保守。
+ */
+const CONTACT_PATTERNS = [
+  // 手机号：`1[3-9]` 开头的 11 位，分隔符只允许出现在数字之间（两侧有中文就是硬边界）。
+  /(?<![0-9])1[3-9](?:[-_.]?[0-9]){9}(?![0-9])/g,
+  // 邮箱：必须有域名点，`a@b` 不算。
+  /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g,
+  /https?:\/\/[\w./:@%&=+-]+/g,
+  /www\.[\w-]+(?:\.[\w-]+)+/g,
+  // 裸域名：点必须真在文本里。TLD 表小而保守，`me` / `co` / `so` 会让 `home` / `radio` 这类英文词尾命中。
+  /(?<![\w.-])(?:[\w-]+\.)+(?:com|cn|net|org|io|cc|tv|info|top|vip|shop|site|app|xyz|club|link|live)(?![\w-])/g,
+  // 平台引流：`qq` / `微信` / `vx` 等后面跟 4 位以上数字或字母，整段打码。
+  /(?:qq|微信|vx|v信|企微|威信):?[a-z0-9]{4,}/g,
+];
+
 const { categories, curated } = words;
 
 /** 聊天词集：全部类目 + 手工表。 */
@@ -74,14 +101,17 @@ function halfWidth(char: string): string {
   return code >= 0xff01 && code <= 0xff5e ? String.fromCharCode(code - 0xfee0) : char;
 }
 
-function normalize(input: string): { text: string; positions: number[] } {
+function normalize(
+  input: string,
+  strip: ReadonlySet<string> = interference,
+): { text: string; positions: number[] } {
   let text = '';
   const positions: number[] = [];
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index] as string;
     const folded = halfWidth(char);
     // 干扰字符在折叠后判定：否则全角标点（`～` `－` `＿` `．`）会绕过剥离（`傻～逼` vs `傻~逼`）。
-    if (/\s/.test(folded) || interference.has(char) || interference.has(folded)) continue;
+    if (/\s/.test(folded) || strip.has(char) || strip.has(folded)) continue;
     text += folded.toLowerCase();
     positions.push(index);
   }
@@ -93,7 +123,22 @@ function normalizeWords(list: readonly string[]): string[] {
   return list.map((word) => normalize(word).text).filter((word) => word.length > 0);
 }
 
-/** 找出所有命中的原文区间（重叠或相接的合并为一个，避免重复替换）。 */
+/** 重叠或相接的区间合并为一个，避免重复替换。 */
+function mergeSpans(spans: Span[]): Span[] {
+  spans.sort((a, b) => a.start - b.start);
+  const merged: Span[] = [];
+  for (const span of spans) {
+    const last = merged[merged.length - 1];
+    if (last && span.start <= last.end) {
+      if (span.end > last.end) last.end = span.end;
+      continue;
+    }
+    merged.push({ ...span });
+  }
+  return merged;
+}
+
+/** 找出所有命中的原文区间。 */
 function findSpans(input: string, wordList: readonly string[]): Span[] {
   const { text, positions } = normalize(input);
   const spans: Span[] = [];
@@ -112,17 +157,26 @@ function findSpans(input: string, wordList: readonly string[]): Span[] {
     }
   }
 
-  spans.sort((a, b) => a.start - b.start);
-  const merged: Span[] = [];
-  for (const span of spans) {
-    const last = merged[merged.length - 1];
-    if (last && span.start <= last.end) {
-      if (span.end > last.end) last.end = span.end;
-      continue;
+  return mergeSpans(spans);
+}
+
+/** 联系方式 / 引流命中的原文区间（同一套 `positions` 映回原坐标）。 */
+function findContactSpans(input: string): Span[] {
+  const { text, positions } = normalize(input, CONTACT_INTERFERENCE);
+  const spans: Span[] = [];
+
+  for (const pattern of CONTACT_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      const at = match.index as number;
+      spans.push({
+        start: positions[at] as number,
+        end: (positions[at + match[0].length - 1] as number) + 1,
+        word: match[0],
+      });
     }
-    merged.push({ ...span });
   }
-  return merged;
+
+  return mergeSpans(spans);
 }
 
 function replaceSpans(input: string, spans: Span[]): string {
@@ -140,12 +194,12 @@ export function detect(input: string): string | null {
   return findSpans(input, NICKNAME_WORDS)[0]?.word ?? null;
 }
 
-/** 打码入口（聊天用，全部类目）：命中词替换为等长的 `*`，循环到不再命中为止，其它内容原样保留。 */
+/** 打码入口（聊天用：全部类目 + 联系方式 / 引流）：命中替换为等长的 `*`，循环到不再命中为止，其它内容原样保留。 */
 export function mask(input: string): string {
   let out = input;
   // 上限只是防御：替换成 `*` 不会再构成新词，正常一轮就结束。
   for (let round = 0; round < 5; round += 1) {
-    const spans = findSpans(out, CHAT_WORDS);
+    const spans = mergeSpans([...findSpans(out, CHAT_WORDS), ...findContactSpans(out)]);
     if (spans.length === 0) return out;
     out = replaceSpans(out, spans);
   }
