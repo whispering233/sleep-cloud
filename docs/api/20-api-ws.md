@@ -81,7 +81,7 @@
 | **`resize`** | `bedCount` | **厅的床位数变化**：升级（外圈加床）或降级（砍掉最外圈）。见 §4.6 |
 | `chat` | `id`, `text`, `ts` | 全局消息（发给厅内所有人，**含发送者本人**）。客户端以**气泡 8 秒**呈现（同人后来的消息覆盖前一条） |
 | `whisper` | `fromId`, `toId`, `text`, `ts` | 私聊：**只发给发送者与接收者，两边各一条**，第三人零流量。同样以气泡呈现（只在这两人头上，加「悄悄话」前缀） |
-| `error` | `code` | 见 `error-code.md` |
+| `error` | `code` + `untilAt?`（仅 `5002`：封禁到期时刻，`null` = 永久） | 见 `error-code.md` |
 | `pong` | `ts` | **探活回执**：只回给发出 `ping` 的那一条连接，不广播。`ts` 是服务端回执时刻（客户端不用它校准时钟——时钟锚点只有 `snapshot.serverTs`） |
 
 **`online`（在线人数）只挂在会改变它的三条消息上**：`join` / `leave` / `state`（外加 `snapshot` 里的 `hall.online`）。

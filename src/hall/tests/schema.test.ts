@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
 import * as schema from '../schema';
-import { BED_INDEX_SQL, BED_TABLE_SQL, META_KEYS, META_TABLE_SQL } from '../schema';
+import {
+  ADMIN_AUDIT_TABLE_SQL,
+  BED_INDEX_SQL,
+  BED_TABLE_SQL,
+  BLOCK_TABLE_SQL,
+  IDENTITY_INDEX_SQL,
+  IDENTITY_TABLE_SQL,
+  META_KEYS,
+  META_TABLE_SQL,
+} from '../schema';
 
 /** 文档里的 `bed` 表字段（`docs/db/schema.md` §2） */
 const docFields = tableRows(readDoc('db/schema.md'), '## 2. 表：`bed`', '### 状态取值语义').map(
@@ -69,5 +78,41 @@ describe('meta 表与 docs/db/schema.md §3 一致', () => {
   it('DDL 是每个 key 一行的键值表', () => {
     expect(META_TABLE_SQL).toMatch(/key TEXT PRIMARY KEY/);
     expect(META_TABLE_SQL).toMatch(/value INTEGER NOT NULL/);
+  });
+});
+
+describe('风控与台账三张表与 docs/db/schema.md §4 一致', () => {
+  const section = (from: string, to: string) =>
+    tableRows(readDoc('db/schema.md'), from, to).map(([field, required, type]) => ({
+      name: (field ?? '').replaceAll('`', ''),
+      required: required ?? '',
+      type: (type ?? '').toUpperCase(),
+    }));
+
+  const ddlFieldsOf = (ddl: string) =>
+    [...ddl.matchAll(/^\s*(\w+)\s+(INTEGER|TEXT)/gm)].map(([, name, type]) => ({ name: name as string, type: type as string }));
+
+  it.each([
+    ['identity', IDENTITY_TABLE_SQL, '### 4.1 表：`identity`', '### 4.2 表：`block`'],
+    ['block', BLOCK_TABLE_SQL, '### 4.2 表：`block`', '### 4.3 表：`admin_audit`'],
+    ['admin_audit', ADMIN_AUDIT_TABLE_SQL, '### 4.3 表：`admin_audit`', '### 4.4 三张表的读写点'],
+  ])('%s：字段逐个对齐（名称、顺序、类型）与可空性', (_table, ddl, from, to) => {
+    // 文档里 `kind` / `value` 共用一个单元格（它们总是成对出现），DDL 里是两列
+    const fields = section(from, to).flatMap(({ name, type, required }) =>
+      name.split(' / ').map((part) => ({ name: part, type, required })),
+    );
+    expect(ddlFieldsOf(ddl)).toEqual(fields.map(({ name, type }) => ({ name, type })));
+    for (const field of fields) {
+      const nullable = new RegExp(`^\\s*${field.name}\\s+(INTEGER|TEXT)\\s*(,|$)`, 'm').test(ddl);
+      expect(nullable, `${field.name} 的可空性与文档「是否必选=${field.required}」不符`).toBe(field.required !== '是');
+    }
+  });
+
+  it('索引与主键：identity 两个索引，block 的联合主键就是判定路径', () => {
+    const indexes = IDENTITY_INDEX_SQL.join('\n');
+    expect(indexes).toContain('identity_last_ip');
+    expect(indexes).toContain('identity_last_seen_at');
+    expect(BLOCK_TABLE_SQL).toContain('PRIMARY KEY (kind, value)');
+    expect(ADMIN_AUDIT_TABLE_SQL).toContain('id INTEGER PRIMARY KEY');
   });
 });

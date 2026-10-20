@@ -36,7 +36,7 @@
 | "4002" | "rate limited" | 上行超过 5 条/秒 | 静默丢弃（不提示，避免错误反馈本身成为放大器） |
 | "4003" | "empty message" | 空消息 | 静默丢弃 |
 | "5001" | "muted" | **预留**：用户被禁言 | 「你暂时不能发言」 |
-| "5002" | "blocked" | 命中封禁：`user` 或 `ip` 维度任一命中且未到期（`until_at` 为空 = 永久）。**响应与下行都带 `data.untilAt`**（毫秒 epoch；`null` = 永久），见 `../design/70-privacy-risk.md` §5.4 | 「你暂时无法进入」+ 到期时间 |
+| "5002" | "blocked" | 命中封禁：`user` 或 `ip` 维度任一命中且未到期（`until_at` 为空 = 永久）。**到期时刻随报文一起下发**：HTTP 在 `data.untilAt`，WebSocket 在 `error` 报文的**顶层** `untilAt`（毫秒 epoch；`null` = 永久）。见 `../design/70-privacy-risk.md` §5.4 | 「你暂时无法进入」+ 到期时间 |
 | "5003" | "reported" | **预留**：举报已记录 | 「已收到你的反馈」 |
 | "9001" | "internal error" | 服务端内部错误 | 「出了点问题，稍后再试」 |
 | "9002" | "hall unavailable" | 房间服务暂时不可用（部署中/超额） | 「大厅暂时进不去，稍后再试」 |

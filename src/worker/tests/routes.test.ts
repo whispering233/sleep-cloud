@@ -12,27 +12,41 @@ interface ApiBody {
 }
 
 interface FakeHall {
-  entryStatus(): Promise<{ bedCount: number; full: boolean }>;
+  entryStatus(source: { userId: string; ip?: string }): Promise<{
+    bedCount: number;
+    full: boolean;
+    blocked: { untilAt: number | null } | null;
+  }>;
   fetch(request: Request): Promise<Response>;
 }
 
 /** 假房间服务：只实现本卡片用到的两个入口（真房间服务需要平台的 DO 运行时）。 */
-function makeEnv(options: { ownedBeds?: number; full?: boolean } = {}): Env {
-  const stub: FakeHall = {
-    entryStatus: () => Promise.resolve({ bedCount: 114, full: options.full ?? false }),
-    fetch: (request: Request) =>
-      Promise.resolve(new Response(JSON.stringify({ forwarded: headersOf(request) }), { status: 200 })),
-  };
-  return {
-    SESSION_SECRET: 'test-secret',
-    HALL: { getByName: (name: string) => ({ ...stub, name }) } as unknown as Env['HALL'],
-  };
+type TestEnv = Env & { lastSource?: { userId: string; ip?: string } };
+
+/** 假房间服务：只实现本卡片用到的两个入口（真房间服务需要平台的 DO 运行时）。 */
+function makeEnv(options: { full?: boolean; blocked?: { untilAt: number | null } } = {}): TestEnv {
+  const env = { SESSION_SECRET: 'test-secret' } as TestEnv;
+  env.HALL = {
+    getByName: (name: string) => ({
+      name,
+      entryStatus: (source: { userId: string; ip?: string }) => {
+        env.lastSource = source;
+        return Promise.resolve({ bedCount: 114, full: options.full ?? false, blocked: options.blocked ?? null });
+      },
+      fetch: (request: Request) =>
+        Promise.resolve(new Response(JSON.stringify({ forwarded: headersOf(request) }), { status: 200 })),
+    }),
+  } as unknown as Env['HALL'];
+  return env;
 }
 
 const headersOf = (request: Request): Record<string, string> => ({
   userId: request.headers.get('x-sleep-user-id') ?? '',
   name: decodeURIComponent(request.headers.get('x-sleep-name') ?? ''),
   appearance: request.headers.get('x-sleep-appearance') ?? '',
+  ip: request.headers.get('x-sleep-ip') ?? '',
+  country: request.headers.get('x-sleep-country') ?? '',
+  uaHash: request.headers.get('x-sleep-ua-hash') ?? '',
 });
 
 const body = async (res: Response): Promise<ApiBody> => (await res.json()) as ApiBody;
@@ -99,6 +113,40 @@ describe('匿名会话接口', () => {
 
     expect(res.code).toBe('2002');
     expect(res.data?.userId).toBeDefined();
+  });
+
+  it('命中封禁 → 5002，且 data.untilAt 与厅给的一致（null = 永久）', async () => {
+    const untilAt = 1_800_000_000_000;
+
+    for (const blocked of [{ untilAt }, { untilAt: null }]) {
+      const env = makeEnv({ blocked });
+      const res = await body(await app.request('/api/me', {}, env));
+
+      expect(res.code).toBe('5002');
+      expect(res.data?.untilAt).toBe(blocked.untilAt);
+      // 会话照常返回：入场层拿它渲染「你暂时无法进入」，不是重新签发
+      expect(res.data?.userId).toBeDefined();
+    }
+  });
+
+  it('封禁优先于厅满（两个都命中时给「不能进」这条）', async () => {
+    const env = makeEnv({ full: true, blocked: { untilAt: null } });
+    expect((await body(await app.request('/api/me', {}, env))).code).toBe('5002');
+  });
+
+  it('入场判定拿到的来源 = 平台 IP + 会话身份（只入台账与封禁判定）', async () => {
+    const env = makeEnv();
+    const res = await app.request('/api/me', { headers: { 'cf-connecting-ip': '1.1.1.1' } }, env);
+    const session = ((await res.json()) as ApiBody).data as Record<string, unknown>;
+
+    expect(env.lastSource).toEqual({ userId: session.userId, ip: '1.1.1.1' });
+  });
+
+  it('来源永不下发给客户端', async () => {
+    const env = makeEnv();
+    const session = (await currentSession(env, await newCookie(env))) as Record<string, unknown>;
+
+    for (const key of ['ip', 'lastIp', 'country', 'uaHash']) expect(session).not.toHaveProperty(key);
   });
 
   it('篡改 cookie 视为新会话（1001，并换发新 cookie）', async () => {
@@ -196,7 +244,7 @@ describe('WebSocket 升级', () => {
     const forwarded = ((await res.json()) as { forwarded: Record<string, string> }).forwarded;
 
     expect(forwarded.name).toBe('阿雅');
-    expect(forwarded.userId).toMatch(/^u_[0-9a-f]{10}$/);
+    expect(forwarded.userId).toMatch(/^u_[0-9a-f]{16}$/);
   });
 
   it('选过形象时身份头带所选值；没选过则不带（厅那边按 user_id 派生）', async () => {
@@ -207,6 +255,37 @@ describe('WebSocket 升级', () => {
 
     const chosen = (await postSession('/api/appearance', env, cookie, { appearance: 'girl' })).cookie;
     expect((await forwardedHeaders(env, chosen)).appearance).toBe('girl');
+  });
+
+  it('来源头由 Worker 依据平台信息写入：客户端伪造的同名头被覆盖', async () => {
+    const env = makeEnv();
+    const cookie = await enter(env);
+    const res = await app.request(
+      '/api/ws',
+      {
+        headers: {
+          cookie,
+          'cf-connecting-ip': '1.1.1.1',
+          'user-agent': 'sleep-cloud-test-agent',
+          'x-sleep-ip': '9.9.9.9',
+          'x-sleep-ua-hash': 'forged',
+        },
+      },
+      env,
+    );
+    const forwarded = ((await res.json()) as { forwarded: Record<string, string> }).forwarded;
+
+    expect(forwarded.ip).toBe('1.1.1.1');
+    expect(forwarded.uaHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(forwarded.uaHash).not.toBe('forged');
+  });
+
+  it('来源不可知时删掉内部头（客户端伪造的 IP 头不会被厅采信）', async () => {
+    const env = makeEnv();
+    const cookie = await enter(env);
+    const res = await app.request('/api/ws', { headers: { cookie, 'x-sleep-ip': '9.9.9.9' } }, env);
+
+    expect((((await res.json()) as { forwarded: Record<string, string> }).forwarded).ip).toBe('');
   });
 
   it('未自述 → 1002；未设昵称 → 1003（都不升级连接）', async () => {

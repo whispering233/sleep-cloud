@@ -107,6 +107,8 @@ export interface WhisperMessage {
 export interface ErrorMessage {
   t: 'error';
   code: ErrorCode;
+  /** 封禁（`5002`）的到期时刻（epoch 毫秒）；`null` = 永久。其余错误码不带。 */
+  untilAt?: number | null;
 }
 
 /** 探活回执：只回给发出 `ping` 的那条连接（不广播）。`ts` 是服务端回执时刻。 */

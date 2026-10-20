@@ -54,7 +54,17 @@ import { advanceMover } from '../shared/movement';
 import type { MoverState } from '../shared/movement';
 import { findPath } from '../shared/pathfinding';
 import { consumeUpstream } from './rate-limit';
-import { BED_INDEX_SQL, BED_TABLE_SQL, META_TABLE_SQL } from './schema';
+import { blockStateOf, recordIdentity } from './risk';
+import type { EntrySource } from './risk';
+import {
+  ADMIN_AUDIT_TABLE_SQL,
+  BED_INDEX_SQL,
+  BED_TABLE_SQL,
+  BLOCK_TABLE_SQL,
+  IDENTITY_INDEX_SQL,
+  IDENTITY_TABLE_SQL,
+  META_TABLE_SQL,
+} from './schema';
 import { createDueHeap } from './scheduler';
 import type { DueEvent } from './scheduler';
 import { buildSnapshot, onlineCountOf, splitLive } from './snapshot';
@@ -115,6 +125,10 @@ export class Hall extends DurableObject<Env> {
     sql.exec(BED_TABLE_SQL);
     for (const statement of BED_INDEX_SQL) sql.exec(statement);
     sql.exec(META_TABLE_SQL);
+    sql.exec(IDENTITY_TABLE_SQL);
+    for (const statement of IDENTITY_INDEX_SQL) sql.exec(statement);
+    sql.exec(BLOCK_TABLE_SQL);
+    sql.exec(ADMIN_AUDIT_TABLE_SQL);
   }
 
   /** 当前床位数（读 `meta` + 内存缓存）。 */
@@ -136,12 +150,21 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 入场前的「厅满」判定（`docs/api/10-api-http.md`）：最后一档且**没有可认领的床**时返回 `full`
-   * （每次入场真正的判定在握手时再走一遍）。
+   * 入场前的判定（见 `docs/api/10-api-http.md`、`docs/design/70-privacy-risk.md` §5.2）：
+   * 「厅满」与「封禁」合并成**同一次调用**——这是入场前唯一的判定点，多开一处就会漂成两个结论。
+   * `blocked` 为 `null` = 没被封；命中时 `untilAt` 为 `null` = 永久。
    */
-  async entryStatus(): Promise<{ bedCount: number; full: boolean }> {
+  async entryStatus(
+    source: EntrySource,
+  ): Promise<{ bedCount: number; full: boolean; blocked: { untilAt: number | null } | null }> {
     const bedCount = this.bedCount();
-    return { bedCount, full: isHallFull(bedCount, this.hasClaimableBed(Date.now())) };
+    const now = Date.now();
+    const blocked = blockStateOf(this.ctx.storage.sql, source, now);
+    return {
+      bedCount,
+      full: isHallFull(bedCount, this.hasClaimableBed(now)),
+      blocked: blocked && { untilAt: blocked.untilAt },
+    };
   }
 
   /** WebSocket 升级由 Worker 转发进来（前置校验已在 Worker 完成）。 */
@@ -154,6 +177,10 @@ export class Hall extends DurableObject<Env> {
     const name = decodeName(request.headers.get(IDENTITY_HEADERS.name));
     if (!userId || !name) return new Response('缺少连接身份', { status: 400 });
     const appearance = appearanceFromHeader(request.headers.get(IDENTITY_HEADERS.appearance), userId);
+    // 来源三项由 Worker 依据平台信息写入，客户端伪造的同名头在 Worker 那边已被覆盖或删除
+    const ip = request.headers.get(IDENTITY_HEADERS.ip) ?? undefined;
+    const country = request.headers.get(IDENTITY_HEADERS.country) ?? undefined;
+    const uaHash = request.headers.get(IDENTITY_HEADERS.uaHash) ?? undefined;
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
@@ -162,6 +189,9 @@ export class Hall extends DurableObject<Env> {
       userId,
       name,
       appearance,
+      ip,
+      country,
+      uaHash,
       // 位置在握手时定（出生点 / 宽限恢复 / 从睡痕醒来都要查库），这里先给一个合法的占位点
       x: frontPointOf(0)?.x ?? 0,
       y: frontPointOf(0)?.y ?? 0,
@@ -189,6 +219,14 @@ export class Hall extends DurableObject<Env> {
         this.reject(ws, verdict.code);
         return;
       case 'hello': {
+        // **封禁判定排在最前**：先拒，再谈升级与宽限恢复——否则被封的人会因为一次握手让厅多长一级、
+        // 或多写几行床位状态（见 `docs/api/20-api-ws.md` §2）。
+        const now = Date.now();
+        const blocked = blockStateOf(this.ctx.storage.sql, connection, now);
+        if (blocked) {
+          this.reject(ws, '5002', blocked.untilAt);
+          return;
+        }
         // 入场前判定升级：已用率到阈值就先长一档，新来的人有床可躺（`10-hall-runtime.md` §8）
         this.growIfNeeded();
         const resumed = this.resumeSession(connection);
@@ -196,6 +234,8 @@ export class Hall extends DurableObject<Env> {
           this.reject(ws, '2002'); // 触顶且无空床：不入场
           return;
         }
+        // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」
+        recordIdentity(this.ctx.storage.sql, connection, now);
 
         const ready: ConnectionState = { ...resumed, ready: true };
         // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
@@ -313,10 +353,15 @@ export class Hall extends DurableObject<Env> {
     return true;
   }
 
-  /** 标记某种拒绝：回错误码再断开（`2003` / `2004` / `2002` —— 客户端应刷新页面）。 */
-  private reject(ws: WebSocket, code: ErrorCode): void {
-    this.send(ws, JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
-    ws.close(1000, code);
+  /**
+   * 标记某种拒绝：回错误码再断开（`2003` / `2004` / `2002` / `5002`）。
+   * 封禁必须用**带语义的 close**（`1008` + `blocked`）：客户端据此停止重连，否则被封的人会
+   * 每 15 秒撞一次入场判定（见 `docs/design/70-privacy-risk.md` §5.3）。其余保持 `1000` + 码。
+   */
+  private reject(ws: WebSocket, code: ErrorCode, untilAt?: number | null): void {
+    this.send(ws, JSON.stringify({ t: 'error', code, untilAt } satisfies ErrorMessage));
+    if (code === '5002') ws.close(1008, 'blocked');
+    else ws.close(1000, code);
   }
 
   /** 静默类错误：只回错误码，不断开，也不提示（客户端点了墙面属于正常误触）。 */

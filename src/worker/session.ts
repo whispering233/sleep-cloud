@@ -58,9 +58,19 @@ function isSecureRequest(request: Request): boolean {
 
 function createSession(): Session {
   return {
-    userId: `u_${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}`,
+    // 64 bit 随机：**不是安全参数**（冒充要签名密钥，与 id 长度无关），位数只决定两人被签成同一身份的
+    // 撞号概率（见 `docs/design/70-privacy-risk.md` §2.2）。
+    // **不要写成 `randomUUID().slice(0, 16)`**：UUIDv4 的第 13 个 hex 字符是版本位（恒 `4`），那样只有 60 bit。
+    userId: `u_${randomHex(16)}`,
     ageConfirmed: false,
   };
+}
+
+/** `length` 个十六进制字符（`length` 必须是偶数）：每个字节出两个字符。 */
+function randomHex(length: number): string {
+  return [...crypto.getRandomValues(new Uint8Array(length / 2))]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function parseSession(raw: string): Session | null {

@@ -2,7 +2,15 @@
 /// <reference types="@cloudflare/workers-types" />
 import { DatabaseSync } from 'node:sqlite';
 
-import { BED_INDEX_SQL, BED_TABLE_SQL, META_TABLE_SQL } from '../schema';
+import {
+  ADMIN_AUDIT_TABLE_SQL,
+  BED_INDEX_SQL,
+  BED_TABLE_SQL,
+  BLOCK_TABLE_SQL,
+  IDENTITY_INDEX_SQL,
+  IDENTITY_TABLE_SQL,
+  META_TABLE_SQL,
+} from '../schema';
 
 /**
  * 判定写在 SQL 里的那些函数（`bed-store.ts`）用**真 SQL** 测：用本机 Node 自带的 `node:sqlite`
@@ -15,6 +23,10 @@ export function freshSql(): SqlStorage {
   db.exec(BED_TABLE_SQL);
   for (const statement of BED_INDEX_SQL) db.exec(statement);
   db.exec(META_TABLE_SQL);
+  db.exec(IDENTITY_TABLE_SQL);
+  for (const statement of IDENTITY_INDEX_SQL) db.exec(statement);
+  db.exec(BLOCK_TABLE_SQL);
+  db.exec(ADMIN_AUDIT_TABLE_SQL);
 
   return {
     exec: (query: string, ...bindings: unknown[]) => {

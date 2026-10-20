@@ -37,3 +37,49 @@ export const META_TABLE_SQL = `CREATE TABLE IF NOT EXISTS meta (
 
 /** 键名（DDL 与读写共用同一份拼写）。**没有「有主床数」**：判据是与出生点同一个「有没有可认领的床」查询。 */
 export const META_KEYS = { bedCount: 'bed_count', dailyWakeAt: 'daily_wake_at' } as const;
+
+/**
+ * 风控与台账三张表（唯一权威，见 `docs/db/schema.md` §4）。
+ *
+ * `identity` 是**来源的载体，不是用户档案**：昵称与形象仍只落在 `bed` 行上。
+ * `block` 与 `identity` 无外键——台账被清理（或从来没有过）时，黑名单照样生效。
+ */
+export const IDENTITY_TABLE_SQL = `CREATE TABLE IF NOT EXISTS identity (
+  user_id TEXT PRIMARY KEY,
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  last_ip TEXT,
+  last_country TEXT,
+  ua_hash TEXT
+)`;
+
+/** 索引：按网络反查（`last_ip`）与留存扫描（`last_seen_at`）。 */
+export const IDENTITY_INDEX_SQL: readonly string[] = [
+  'CREATE INDEX IF NOT EXISTS identity_last_ip ON identity (last_ip)',
+  'CREATE INDEX IF NOT EXISTS identity_last_seen_at ON identity (last_seen_at)',
+];
+
+/**
+ * 黑名单本体：`kind` = `user` / `ip`，命中任一即拒（见 `docs/design/70-privacy-risk.md` §5.1）。
+ * `until_at` 为空 = 永久；是否生效由读取时推导（`until_at > now`），不挂定时器。
+ */
+export const BLOCK_TABLE_SQL = `CREATE TABLE IF NOT EXISTS block (
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  until_at INTEGER,
+  reason TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (kind, value)
+)`;
+
+/** 运维动作流水（只写不改）：首版只有 `block` / `unblock`，`actor` 恒为 `admin`（单令牌，没有账号表）。 */
+export const ADMIN_AUDIT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS admin_audit (
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  until_at INTEGER,
+  reason TEXT,
+  actor TEXT NOT NULL
+)`;

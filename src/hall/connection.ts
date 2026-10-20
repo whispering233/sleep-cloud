@@ -36,6 +36,14 @@ export interface ConnectionState {
   /** 完成 `hello` 握手之前，不向该连接转发任何房间消息 */
   ready: boolean;
   /**
+   * 来源（L3）：IP、国家、UA 哈希。由 Worker 依据平台信息写入内部头，客户端伪造无效
+   * （**永不下发给其它用户**，见 `docs/design/70-privacy-risk.md` §2）。
+   * 本地开发可能拿不到 IP / 国家 → 缺省，只影响来源台账与 ip 维度的封禁判定。
+   */
+  ip?: string;
+  country?: string;
+  uaHash?: string;
+  /**
    * 上行限流的固定窗口计数（见 `rate-limit.ts`）。放附件里是因为它必须**跨休眠存活**：
    * 另开一张内存表会在对象被驱逐后清零，限流就被绕过了。
    */
@@ -92,6 +100,9 @@ export const IDENTITY_HEADERS = {
   userId: 'x-sleep-user-id',
   name: 'x-sleep-name',
   appearance: 'x-sleep-appearance',
+  ip: 'x-sleep-ip',
+  country: 'x-sleep-country',
+  uaHash: 'x-sleep-ua-hash',
 } as const;
 
 /**

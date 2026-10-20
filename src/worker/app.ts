@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 
 import { HALL_ID, NICKNAME_MAX_LEN } from '../shared/constants';
 import { detect } from '../shared/content-filter';
 import { LAYOUT_VERSION } from '../shared/layout';
 import { APPEARANCES } from '../shared/protocol';
 import { appearanceFor, IDENTITY_HEADERS } from '../hall/connection';
+import type { EntrySource } from '../hall/risk';
 import type { Env } from './env';
 import { fail, ok } from './respond';
 import { readExistingSession, readSession, writeSession } from './session';
@@ -47,16 +49,51 @@ function stripControl(input: string): string {
   return input.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 }
 
+/** UA 哈希：SHA-256 的前 8 字节（16 个十六进制字符）。**是遮挡不是匿名化**（见 §3.2）。 */
+async function uaHashOf(userAgent: string | undefined): Promise<string | undefined> {
+  if (!userAgent) return undefined;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(userAgent));
+  return [...new Uint8Array(digest).slice(0, 8)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 来源（L3）：平台给的 IP / 国家 + UA 哈希。**只入台账与封禁判定，永不下发**
+ * （见 `docs/design/70-privacy-risk.md` §2）。本地 dev 可能没有 `CF-Connecting-IP` → 来源未知。
+ */
+async function originOf(c: Context<{ Bindings: Env }>): Promise<Omit<EntrySource, 'userId'>> {
+  const country = c.req.raw.cf?.country;
+  return {
+    ip: c.req.header('cf-connecting-ip') || undefined,
+    // `cf` 在本地 dev / 单测里可能缺失，`CF-IPCountry` 的取值也可能被平台省略
+    country: typeof country === 'string' ? country : undefined,
+    uaHash: await uaHashOf(c.req.header('user-agent')),
+  };
+}
+
+/**
+ * 内部头只由 Worker 依据平台信息写：**来源不可知时必须删掉**，否则客户端自带的同名头会被厅采信
+ * （转发的是客户端那份请求，伪造的头默认在里面）。
+ */
+function setInternalHeader(headers: Headers, name: string, value: string | null | undefined): void {
+  if (value) headers.set(name, value);
+  else headers.delete(name);
+}
+
 /**
  * 读取当前会话（无会话则签发匿名会话）。
  *
- * 顺手做**入场前的厅满判定**（见 `docs/api/error-code.md` §3）：级表触顶且床全部有主或有占用时
- * 返回 `2002`，不让人建连再被踢。会话仍然照常返回，前端据此显示「厅满了」。
+ * 顺手做**入场前判定**（见 `docs/api/error-code.md` §3、`docs/design/70-privacy-risk.md` §5.2）：
+ * 厅满 `2002`、封禁 `5002`（带 `untilAt`）都在这里给出，不让人建连再被踢。会话仍然照常返回。
  */
 app.get('/api/me', async (c) => {
   const { session, invalid, secret } = await readSession(c);
   await writeSession(c, session, secret);
-  const status = await c.env.HALL.getByName(HALL_ID).entryStatus();
+  const status = await c.env.HALL.getByName(HALL_ID).entryStatus({
+    userId: session.userId,
+    ...(await originOf(c)),
+  });
+  // 封禁优先于厅满：两个都命中时「你暂时无法进入」比「厅满了」更接近事实
+  if (status.blocked) return fail(c, '5002', { ...sessionView(session), untilAt: status.blocked.untilAt });
   if (status.full) return fail(c, '2002', sessionView(session));
   // 验签失败：已静默换成新会话，前端重新拉取即可
   return invalid ? fail(c, '1001', sessionView(session)) : ok(c, sessionView(session));
@@ -117,6 +154,12 @@ app.get('/api/ws', async (c) => {
   forwarded.headers.set(IDENTITY_HEADERS.name, encodeURIComponent(session.nickname));
   // 没选过形象时不带这个头：厅那边按 `user_id` 派生（唯一真源在 `appearanceFromHeader`）
   if (session.appearance) forwarded.headers.set(IDENTITY_HEADERS.appearance, session.appearance);
+
+  // 来源三项同样由 Worker 写入（客户端那一份不可信）
+  const origin = await originOf(c);
+  setInternalHeader(forwarded.headers, IDENTITY_HEADERS.ip, origin.ip);
+  setInternalHeader(forwarded.headers, IDENTITY_HEADERS.country, origin.country);
+  setInternalHeader(forwarded.headers, IDENTITY_HEADERS.uaHash, origin.uaHash);
 
   return c.env.HALL.getByName(HALL_ID).fetch(forwarded);
 });

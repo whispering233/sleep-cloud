@@ -69,12 +69,14 @@
 | ageConfirmed | 是 | boolean | — | 是否已完成 18 岁自述 |
 | needsNickname | 是 | boolean | — | 是否需要先设昵称才能进入 |
 | layoutVersion | 是 | string | 如 `room-1` | 布局版本号；与前端编译期常量不一致时应提示刷新 |
+| untilAt | 否 | number \| null | epoch 毫秒 | **仅在 `5002` 时出现**：封禁到期时刻，`null` = 永久。其它 code 不带这个字段 |
 
 | code | 场景 |
 | :--- | :--- |
 | `"0"` | 成功（首次访问没有 cookie 时也是这个：直接签发新会话） |
 | `"1001"` | cookie 存在但验签失败：已静默签发新会话，**`data` 里就是那个新会话**，前端可以直接用 |
 | `"2002"` | **厅满**：已到最后一档且没有可认领的床。`data` 仍带会话内容（入场层显示提示） |
+| `"5002"` | **封禁**：命中 `user` 或 `ip` 维度且未到期（见 `../design/70-privacy-risk.md` §5）。`data` 仍带会话内容，**额外带 `untilAt`**（毫秒 epoch；`null` = 永久）。入场层必须显示提示与到期时间 |
 
 ```json
 {
