@@ -98,10 +98,15 @@ async function readCookieSession(
   c: Context<{ Bindings: Env }>,
 ): Promise<{ session: Session | null; secret: string }> {
   const secret = sessionSecret(c);
-  const raw = await getSignedCookie(c, secret, COOKIE_NAME);
-  if (typeof raw === 'string') {
-    const session = parseSession(raw);
-    if (session) return { session, secret };
+  const prev = c.env.SESSION_SECRET_PREV;
+  // 密钥环（见 `docs/design/config.md` §4）：验签先试当前密钥，失败再试上一把
+  for (const candidate of prev && prev !== secret ? [secret, prev] : [secret]) {
+    const raw = await getSignedCookie(c, candidate, COOKIE_NAME);
+    if (typeof raw === 'string') {
+      const session = parseSession(raw);
+      // 回写恒用当前密钥（重签发生在验签通过之后，轮换期里才收敛到新密钥）
+      if (session) return { session, secret };
+    }
   }
   return { session: null, secret };
 }

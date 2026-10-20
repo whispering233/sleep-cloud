@@ -4,9 +4,14 @@ import type { Hall } from '../hall/hall';
 export interface Env {
   /**
    * 会话 cookie 的 HMAC 签名密钥。生产环境**必须**通过平台密钥存储注入：
-   * 缺失时只有本机地址才会回落到开发密钥，其他情况直接失败（绝不静默使用可猜的密钥）。
+   * **任何环境缺失都直接失败**（绝不静默使用可猜的密钥）。
    */
   SESSION_SECRET?: string;
+  /**
+   * 上一把签名密钥，**只用于验签**（密钥环，见 `docs/design/config.md` §4）：轮换时把旧密钥放这里，
+   * 旧 cookie 验签通过后重签成 `SESSION_SECRET`。正常时为空。
+   */
+  SESSION_SECRET_PREV?: string;
   /**
    * 后台登录令牌（见 `docs/api/30-api-admin.md` §2.1）。**缺失时后台接口一律 401**，
    * 绝不回落到某个默认值。
