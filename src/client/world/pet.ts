@@ -19,14 +19,37 @@ export const PET_SPEED_MIN = 260;
 export const PET_SPEED_MAX = 1320;
 /** 跑动阈值（px/s）：超过它才跑（§3.3）。 */
 export const PET_RUN_THRESHOLD = 300;
-/** 跟随偏移：先试左右（我旁边），再试前后——
- * **四个方向都要试**，因为走道只有 56px 宽：竖走道里左右可行、横走道里前后可行，一次乱下会落到床上。
- * 侧向带一点向下，是为了让猫的头落在我的头**下面**，两张脸不叠。 */
-export const PET_FOLLOW_SIDE_X = 26;
-export const PET_FOLLOW_SIDE_Y = 16;
-/** 正下（脚前）与正上（我背后）：尺寸取到「不进床位、也不压脸」。 */
-export const PET_FOLLOW_FRONT = 40;
-export const PET_FOLLOW_BACK = 34;
+/** 跟在我**身后**多远：两条贴图都不重叠的距离。
+ * 小人与猫都是脚底锚点，前者 48.5×56.5、后者 46.5×58.5 —— 走道只 56 宽，并排放不下（需 47.5 中心距），
+ * 所以只能沿**同一轴**拉开：`60 > 58.5` 就够，且在竖走道与横走道里都能找到可走点。 */
+export const PET_TRAIL_DISTANCE = 60;
+
+/** 走道轴：街网只有四向，所以「身后」只需两个轴 × 两个符号。 */
+export type PetAxis = 'x' | 'y';
+
+export interface PetTrail {
+  axis: PetAxis;
+  sign: 1 | -1;
+}
+
+/** 单个候选点：沿某轴、某方向拉开 `PET_TRAIL_DISTANCE`。 */
+function trailPoint(self: Point, trail: PetTrail): Point {
+  return trail.axis === 'y'
+    ? { x: self.x, y: self.y + trail.sign * PET_TRAIL_DISTANCE }
+    : { x: self.x + trail.sign * PET_TRAIL_DISTANCE, y: self.y };
+}
+
+/**
+ * 「身后」候选（**顺序即优先级**）：沿当前轴的反侧 → 同轴另一侧 → 另一轴两侧。
+ * 竖走道里 y 轴优先，横走道里那个 y 候选会出界，自动落到 x 轴的候选上——所以不需要单独的「判断我在哪种走道」分支。
+ */
+export function petTrailSpots(self: Point, trail: PetTrail | undefined): { point: Point; trail: PetTrail }[] {
+  const first: PetTrail = trail ?? { axis: 'y', sign: -1 };
+  const flip: PetTrail = { axis: first.axis, sign: first.sign === 1 ? -1 : 1 };
+  const other: PetAxis = first.axis === 'y' ? 'x' : 'y';
+  const candidates: PetTrail[] = [first, flip, { axis: other, sign: 1 }, { axis: other, sign: -1 }];
+  return candidates.map((each) => ({ point: trailPoint(self, each), trail: each }));
+}
 /** 到位容差（px）：剩余路程小于它就算站定——不给它「来回抽一步」的机会（§3.3）。 */
 export const PET_ARRIVE_PX = 6;
 /** 重算阈值：目标点移动超过它才重算折线（§3.3）。 */
@@ -41,16 +64,11 @@ export const PET_GREET_MS = 4_000;
 export const PET_GREET_TEXT = '欢迎进来';
 
 /**
- * 我可以把猫放在哪里的候选位置（**顺序即优先级**）：右 → 左 → 前 → 后。
+ * 我可以把猫放在哪里的候选位置（**顺序即优先级**）：沿用给的 `trail`，否则从 y 轴后方开始。
  * 调用方取第一条**可走**的；四条都不可走才退回我自己的位置（例如贴墙的夹缝里）。
  */
-export function petFollowCandidates(self: Point): Point[] {
-  return [
-    { x: self.x + PET_FOLLOW_SIDE_X, y: self.y + PET_FOLLOW_SIDE_Y },
-    { x: self.x - PET_FOLLOW_SIDE_X, y: self.y + PET_FOLLOW_SIDE_Y },
-    { x: self.x, y: self.y + PET_FOLLOW_FRONT },
-    { x: self.x, y: self.y - PET_FOLLOW_BACK },
-  ];
+export function petFollowCandidates(self: Point, trail: PetTrail | undefined): Point[] {
+  return petTrailSpots(self, trail).map((spot) => spot.point);
 }
 
 /** 剩余**折线**长度（不是直线距离）：绕过拐角时速度与动画都按真正要走的路算（§3.3）。 */
@@ -66,12 +84,14 @@ export function petRemainingOf(mover: { x: number; y: number; path: Point[] }): 
   return total;
 }
 
-/** 持续目标的种类：窝里（我躺下）与我脚前（其余情形，含还没有床）。 */
+/** 持续目标的种类：窝里（我躺下）与跟在我身后（其余情形，含还没有床）。 */
 export type PetTargetKind = 'home' | 'user';
 
 export interface PetTarget {
   kind: PetTargetKind;
   point: Point;
+  /** `user` 那一支选中的身后方向；调用方存下来，下一帧优先沿它，否则猫会在两条轴之间反复横跳 */
+  trail?: PetTrail;
 }
 
 /** 四组循环动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）。`cat-sleep` 只在窝里到位时播。 */
@@ -91,8 +111,13 @@ export function petHomeOf(me: SelfPerson | undefined): Point | undefined {
  *
  * 跟随点正好压在走道边界上（不可走）时退回**我自己的位置**，而不是让 `findPath` 落空（§3.3）。
  */
-export function petTargetFor(input: { me: SelfPerson | undefined; self: Point; bedCount: number }): PetTarget | undefined {
-  const { me, self, bedCount } = input;
+export function petTargetFor(input: {
+  me: SelfPerson | undefined;
+  self: Point;
+  bedCount: number;
+  trail?: PetTrail;
+}): PetTarget | undefined {
+  const { me, self, bedCount, trail } = input;
   if (me === undefined) return undefined;
 
   if (me.state === 'lying' || me.state === 'asleep') {
@@ -100,8 +125,10 @@ export function petTargetFor(input: { me: SelfPerson | undefined; self: Point; b
     if (home !== undefined) return { kind: 'home', point: home };
   }
 
-  const beside = petFollowCandidates(self).find((point) => isWalkable(point.x, point.y, bedCount));
-  return { kind: 'user', point: beside ?? { x: self.x, y: self.y } };
+  const spot = petTrailSpots(self, trail).find((candidate) =>
+    isWalkable(candidate.point.x, candidate.point.y, bedCount),
+  );
+  return { kind: 'user', point: spot?.point ?? { x: self.x, y: self.y }, trail: spot?.trail };
 }
 
 /**

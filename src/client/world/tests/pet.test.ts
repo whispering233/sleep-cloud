@@ -6,10 +6,6 @@ import type { Point } from '../../../shared/layout';
 import type { SelfPerson } from '../../../shared/protocol';
 import {
   PET_ARRIVE_PX,
-  PET_FOLLOW_BACK,
-  PET_FOLLOW_FRONT,
-  PET_FOLLOW_SIDE_X,
-  PET_FOLLOW_SIDE_Y,
   PET_GREET_MS,
   PET_GREET_TEXT,
   PET_RUN_THRESHOLD,
@@ -17,6 +13,7 @@ import {
   PET_SPEED_FACTOR,
   PET_SPEED_MAX,
   PET_SPEED_MIN,
+  PET_TRAIL_DISTANCE,
   petAnimFor,
   petFollowCandidates,
   petGreetVisible,
@@ -27,7 +24,9 @@ import {
   petSpawnPoint,
   petSpeedFor,
   petTargetFor,
+  petTrailSpots,
 } from '../pet';
+import type { PetTrail } from '../pet';
 import type { PetTarget } from '../pet';
 
 /** 第一档（9 × 13 = 117 张床）：够放下面这些格号。 */
@@ -66,40 +65,55 @@ describe('猫的持续目标：由我的显示态直接决定（§3.2）', () =>
     expect(isWalkable(home.x, home.y, BED_COUNT)).toBe(true);
   });
 
-  it('漫游且有窝 → 站我旁边（右侧候选：不遮我的脸）', () => {
+  it('漫游且有窝 → 跟在我身后（默认 y 轴、床脚反侧）', () => {
     expect(petTargetFor({ me: roamingAt(STREET, 7), self: STREET, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
+      point: { x: STREET.x, y: STREET.y - PET_TRAIL_DISTANCE },
+      trail: { axis: 'y', sign: -1 },
     });
   });
 
-  it('还没有床 → 同样站我旁边（它会从起跑点跑过来）', () => {
+  it('还没有床 → 同样跟在我身后（它会从起跑点跑过来）', () => {
     expect(petTargetFor({ me: roamingAt(STREET), self: STREET, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
+      point: { x: STREET.x, y: STREET.y - PET_TRAIL_DISTANCE },
+      trail: { axis: 'y', sign: -1 },
     });
   });
 
-  it('右侧候选落在床上（不可走）→ 改取左侧候选：**四个方向真的要试**', () => {
-    // 横走道里、靠右半边的点：右侧 +26 已经进了房间列，左侧仍在走道里
+  it('给了 trail 就沿它拉开：往 +y 走 → 猫在 −y（身后）', () => {
+    expect(
+      petTargetFor({ me: roamingAt(STREET, 7), self: STREET, bedCount: BED_COUNT, trail: { axis: 'y', sign: 1 } }),
+    ).toEqual({ kind: 'user', point: { x: STREET.x, y: STREET.y + PET_TRAIL_DISTANCE }, trail: { axis: 'y', sign: 1 } });
+  });
+
+  it('横走道里 y 轴两侧都出界 → 自动落到 x 轴（不需要另写「我在哪种走道」的分支）', () => {
+    // IN_ROW 在横走道里：y ± 60 都落到床位区；x + 60 仍在走道带上（街行横贯整厅）
     expect(isWalkable(IN_ROW.x, IN_ROW.y, BED_COUNT)).toBe(true);
-    expect(isWalkable(IN_ROW.x + PET_FOLLOW_SIDE_X, IN_ROW.y + PET_FOLLOW_SIDE_Y, BED_COUNT)).toBe(false);
+    expect(isWalkable(IN_ROW.x, IN_ROW.y - PET_TRAIL_DISTANCE, BED_COUNT)).toBe(false);
+    expect(isWalkable(IN_ROW.x, IN_ROW.y + PET_TRAIL_DISTANCE, BED_COUNT)).toBe(false);
     expect(petTargetFor({ me: roamingAt(IN_ROW, 7), self: IN_ROW, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: { x: IN_ROW.x - PET_FOLLOW_SIDE_X, y: IN_ROW.y + PET_FOLLOW_SIDE_Y },
+      point: { x: IN_ROW.x + PET_TRAIL_DISTANCE, y: IN_ROW.y },
+      trail: { axis: 'x', sign: 1 },
     });
   });
 
-  it('候选顺序就是优先级：右 → 左 → 前 → 后（猫站在旁边，不站在我身上）', () => {
-    expect(petFollowCandidates(STREET)).toEqual([
-      { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
-      { x: STREET.x - PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
-      { x: STREET.x, y: STREET.y + PET_FOLLOW_FRONT },
-      { x: STREET.x, y: STREET.y - PET_FOLLOW_BACK },
+  it('候选顺序：当前轴反侧 → 同轴另一侧 → 另一轴两侧；**每个点都离我 60，贴图不会重叠**', () => {
+    const trail: PetTrail = { axis: 'y', sign: -1 };
+    expect(petTrailSpots(STREET, trail).map((spot) => spot.point)).toEqual([
+      { x: STREET.x, y: STREET.y - PET_TRAIL_DISTANCE },
+      { x: STREET.x, y: STREET.y + PET_TRAIL_DISTANCE },
+      { x: STREET.x + PET_TRAIL_DISTANCE, y: STREET.y },
+      { x: STREET.x - PET_TRAIL_DISTANCE, y: STREET.y },
     ]);
-    // 每个候选都离我足够远，不会把小人盖住
-    for (const point of petFollowCandidates(STREET)) {
-      expect(Math.hypot(point.x - STREET.x, point.y - STREET.y)).toBeGreaterThanOrEqual(26);
+    // 不重叠的几何前提：两条贴图都是脚底锚点，猫高 58.5 > 小人高 56.5
+    expect(PET_TRAIL_DISTANCE).toBeGreaterThan(58.5);
+    for (const point of petFollowCandidates(STREET, trail)) {
+      const dx = Math.abs(point.x - STREET.x);
+      const dy = Math.abs(point.y - STREET.y);
+      expect(Math.min(dx, dy)).toBe(0);
+      expect(Math.max(dx, dy)).toBe(PET_TRAIL_DISTANCE);
     }
   });
 

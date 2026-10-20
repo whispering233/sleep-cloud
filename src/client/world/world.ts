@@ -41,6 +41,7 @@ import {
 } from './rules';
 import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
 import { PET_ARRIVE_PX, PET_GREET_MS, PET_REPATH_PX, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petRemainingOf, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
+import type { PetTrail } from './pet';
 import {
   COLORS,
   SPRITES_KEY,
@@ -167,6 +168,13 @@ class WorldScene extends Phaser.Scene {
   /** 上一次折线的目标点与当时的床位数：目标移动 > 24px 或床位数变了才重算（`70-reserve-decor.md` §3.3） */
   private petTargetPoint: Point | undefined;
   private petBedCount: number | undefined;
+  /**
+   * 猫现在跟在哪一侧（沿哪个轴、哪个方向拉开 60px）：由我的**移动方向**推得，停下来就保持不变。
+   * 不存这个的话，两条轴都可行时它会每帧挑一次，看起来像来回横跳。
+   */
+  private petTrail: PetTrail | undefined;
+  /** 上一帧我自己的位置：只用来推「我从哪边来」（世界层已有同一个点，不另外取样） */
+  private petSelf: Point | undefined;
   /**
    * 首次进厅那一次举起的「要不要问候」旗子：猫第一次跑到我旁边时用掉（`70-reserve-decor.md` §3.4）。
    * 只在 `everOnline` 还是 `false` 的那一帧置上，所以重连不会重举（§3.5），本次会话最多问候一次。
@@ -403,12 +411,16 @@ class WorldScene extends Phaser.Scene {
       hidePet(pet);
       return;
     }
-    const target = petTargetFor({ me, self, bedCount });
+    // 「我从哪边来」→ 猫跟在哪一侧：移动时取主方向的**反侧**，停下来保持上一次
+    // （两条轴都可行时不定下来，它就会逐帧在两侧之间横跳，`70-reserve-decor.md` §3.3）
+    const preferred = this.petPreferredTrail(self);
+    const target = petTargetFor({ me, self, bedCount, trail: preferred ?? this.petTrail });
     // 没有目标 / 睡痕：不画（睡痕是「人已经走了」，猫不该留在那儿）
     if (target === undefined || me.state === 'trace') {
       hidePet(pet);
       return;
     }
+    if (target.trail !== undefined) this.petTrail = target.trail;
 
     // 首次落位：有窝从窝里开始（我躺下时它本来就在那儿），没有窝从沿街网 120px 的起跑点开始（§3.5）；
     // 之后一律由目标 + 折线推进——**起点不因为目标没变就被当成终点**（无床时这就是「从旁边跑来」）
@@ -461,6 +473,22 @@ class WorldScene extends Phaser.Scene {
     // 拉远到文字阈值以下：问候气泡与其它世界文字一起退役（猫本体照画，§3.4）
     const greet = this.zoom >= ZOOM_TEXT_MIN && petGreetVisible(this.petGreetUntil, now);
     placePet(pet, { x: move.x, y: move.y, depth: DEPTH.person + move.y, anim, greet });
+  }
+
+  /**
+   * 把「我刚才往哪走」换成猫该待的那一侧：往 +y 走 → 猫在 −y（身后），依此类推；
+   * 位移小于半像素（站着不动 / 插值抖动）就返回 `undefined`，让调用方继续用上一次的方向。
+   */
+  private petPreferredTrail(self: Point): PetTrail | undefined {
+    const last = this.petSelf;
+    this.petSelf = { x: self.x, y: self.y };
+    if (!last) return undefined;
+    const dx = self.x - last.x;
+    const dy = self.y - last.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return undefined;
+    return Math.abs(dy) >= Math.abs(dx)
+      ? { axis: 'y', sign: dy > 0 ? -1 : 1 }
+      : { axis: 'x', sign: dx > 0 ? -1 : 1 };
   }
 
   private syncPeople(state: ClientState, serverNow: number, selfPoint: Point | undefined): void {
