@@ -18,25 +18,32 @@
         font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
       }
       main {
-        max-width: 640px;
+        max-width: 960px;
         margin: 0 auto;
       }
       h1 {
         font-size: 20px;
         margin: 0 0 16px;
       }
+      h2 {
+        font-size: 17px;
+        margin: 32px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
       label {
         display: block;
         margin: 0 0 6px;
       }
       input,
+      select,
       button {
         font: inherit;
         min-height: 44px;
         box-sizing: border-box;
       }
-      input {
-        width: 100%;
+      input,
+      select {
         padding: 8px 12px;
         border: 1px solid var(--line);
         border-radius: 4px;
@@ -52,10 +59,37 @@
         cursor: default;
         opacity: 0.6;
       }
-      .row {
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: end;
+        margin-block: 12px;
+      }
+      .bar input {
+        width: 200px;
+      }
+      .pager {
         display: flex;
         gap: 8px;
-        margin-block: 12px;
+        margin-block: 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        word-break: break-all;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
       }
       #status {
         min-height: 1.5em;
@@ -64,12 +98,6 @@
       }
       #status[data-tone='bad'] {
         color: var(--bad);
-      }
-      #result {
-        margin-top: 24px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
-        white-space: pre-wrap;
       }
       [hidden] {
         display: none !important;
@@ -85,23 +113,125 @@
           <label for="token">后台令牌</label>
           <input id="token" name="token" type="password" autocomplete="current-password" required />
         </div>
-        <div class="row">
+        <div class="bar">
           <button type="submit">登录</button>
           <button type="button" id="logout" hidden>登出</button>
         </div>
       </form>
 
       <p id="status" role="status"></p>
-      <div id="result"></div>
+
+      <div id="sections" hidden>
+        <section>
+          <h2>台账</h2>
+          <div class="bar">
+            <label for="ipFilter">按 IP 反查<input id="ipFilter" placeholder="1.2.3.4" autocomplete="off" /></label>
+            <button type="button" id="ipSearch">反查</button>
+            <button type="button" id="ipClear">清除</button>
+          </div>
+          <div class="pager">
+            <button type="button" id="identitiesPrev" disabled>上一页</button>
+            <button type="button" id="identitiesNext" disabled>下一页</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>身份</th>
+                <th>最近出现</th>
+                <th>IP</th>
+                <th>国家</th>
+                <th>床号</th>
+                <th>在线</th>
+                <th>封禁</th>
+              </tr>
+            </thead>
+            <tbody id="identities"></tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>黑名单</h2>
+          <form id="blockForm">
+            <div class="bar">
+              <label for="blockKind">维度<select id="blockKind"><option value="user">user</option><option value="ip">ip</option></select></label>
+              <label for="blockValue">值<input id="blockValue" required autocomplete="off" /></label>
+              <label for="blockMinutes">时长（分钟，留空 = 永久）<input id="blockMinutes" type="number" min="1" inputmode="numeric" /></label>
+              <label for="blockReason">原因<input id="blockReason" required maxlength="64" autocomplete="off" /></label>
+              <button type="submit">封禁</button>
+            </div>
+          </form>
+          <table>
+            <thead>
+              <tr>
+                <th>维度</th>
+                <th>值</th>
+                <th>到期</th>
+                <th>原因</th>
+                <th>创建</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="blocks"></tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>审计</h2>
+          <div class="pager">
+            <button type="button" id="auditPrev" disabled>上一页</button>
+            <button type="button" id="auditNext" disabled>下一页</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>动作</th>
+                <th>维度</th>
+                <th>值</th>
+                <th>到期</th>
+                <th>原因</th>
+                <th>操作者</th>
+              </tr>
+            </thead>
+            <tbody id="audit"></tbody>
+          </table>
+        </section>
+      </div>
     </main>
 
     <script>
+      const PAGE = 50;
+      /** 「封 IP 之前的连坐确认」最多反查 10 页（1000 条）：确认框只用量级，不值得把整张台账搬一遍。 */
+      const COUNT_PAGES = 10;
+
       const loginForm = document.getElementById('login');
       const tokenField = document.getElementById('tokenField');
       const tokenInput = document.getElementById('token');
       const logoutButton = document.getElementById('logout');
       const statusLine = document.getElementById('status');
-      const resultArea = document.getElementById('result');
+      const sections = document.getElementById('sections');
+
+      const ipFilter = document.getElementById('ipFilter');
+      const identityRows = document.getElementById('identities');
+      const identitiesPrev = document.getElementById('identitiesPrev');
+      const identitiesNext = document.getElementById('identitiesNext');
+
+      const blockForm = document.getElementById('blockForm');
+      const blockKind = document.getElementById('blockKind');
+      const blockValue = document.getElementById('blockValue');
+      const blockMinutes = document.getElementById('blockMinutes');
+      const blockReason = document.getElementById('blockReason');
+      const blockRows = document.getElementById('blocks');
+
+      const auditRows = document.getElementById('audit');
+      const auditPrev = document.getElementById('auditPrev');
+      const auditNext = document.getElementById('auditNext');
+
+      /** 每页的起始游标（第 0 页是 `null`）：上一页靠它回退，下一页靠响应里的 `next` 推进。 */
+      let identityCursors = [null];
+      let identityIndex = 0;
+      let auditCursors = [null];
+      let auditIndex = 0;
 
       /** 未授权只有 401、超限 429：后台接口不套 `{code,msg,data}`，所以按 HTTP 状态码分支。 */
       function say(text, bad) {
@@ -113,6 +243,7 @@
         tokenField.hidden = loggedIn;
         loginForm.querySelector('button[type="submit"]').hidden = loggedIn;
         logoutButton.hidden = !loggedIn;
+        sections.hidden = !loggedIn;
       }
 
       async function post(path, body) {
@@ -124,16 +255,252 @@
         });
       }
 
-      /** 刷新后还登着吗：受保护的 `/api/admin/me` 是最好的判据（cookie 未过期就 200）。 */
-      async function syncState() {
+      /** 受保护的数据接口统一走这里：401 = cookie 过期，退回登录态。 */
+      async function dataFetch(path, options) {
+        let res;
         try {
-          const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
-          showLoggedIn(res.status === 200);
-          if (res.status === 200) say('已登录。');
+          res = await fetch(path, { credentials: 'same-origin', ...options });
         } catch {
           say('无法连接服务器。', true);
+          return null;
         }
+        if (res.status === 401) {
+          showLoggedIn(false);
+          say('登录已过期，请重新登录。', true);
+          return null;
+        }
+        return res;
       }
+
+      const fmtTime = (ms) => (ms === null || ms === undefined ? '—' : new Date(ms).toLocaleString());
+      const fmtUntil = (ms) => (ms === null || ms === undefined ? '永久' : new Date(ms).toLocaleString());
+
+      function cell(text) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        return td;
+      }
+
+      function render(tbody, rows, build, columns) {
+        if (rows.length === 0) {
+          const tr = document.createElement('tr');
+          const td = cell('（空）');
+          td.colSpan = columns;
+          tr.append(td);
+          tbody.replaceChildren(tr);
+          return;
+        }
+        tbody.replaceChildren(...rows.map(build));
+      }
+
+      function blockText(block) {
+        if (!block) return '—';
+        const until = block.untilAt === null ? '永久' : `到 ${new Date(block.untilAt).toLocaleString()}`;
+        return `${block.kind} · ${until} · ${block.reason}`;
+      }
+
+      function identityRow(item) {
+        const tr = document.createElement('tr');
+        tr.append(
+          cell(item.userId),
+          cell(fmtTime(item.lastSeenAt)),
+          cell(item.lastIp ?? '—'),
+          cell(item.lastCountry ?? '—'),
+          cell(item.bedNo === null ? '—' : String(item.bedNo)),
+          cell(item.online ? '是' : '—'),
+          cell(blockText(item.block)),
+        );
+        return tr;
+      }
+
+      function auditRow(item) {
+        const tr = document.createElement('tr');
+        tr.append(
+          cell(fmtTime(item.at)),
+          cell(item.action),
+          cell(item.kind),
+          cell(item.value),
+          cell(fmtUntil(item.untilAt)),
+          cell(item.reason ?? '—'),
+          cell(item.actor),
+        );
+        return tr;
+      }
+
+      function blockRow(item) {
+        const tr = document.createElement('tr');
+        tr.append(
+          cell(item.kind),
+          cell(item.value),
+          cell(fmtUntil(item.untilAt)),
+          cell(item.reason),
+          cell(fmtTime(item.createdAt)),
+        );
+        const action = document.createElement('td');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = '解封';
+        button.addEventListener('click', () => unblock(item.kind, item.value));
+        action.append(button);
+        tr.append(action);
+        return tr;
+      }
+
+      async function loadIdentities(index) {
+        const cursor = identityCursors[index] ?? null;
+        const params = new URLSearchParams({ limit: String(PAGE) });
+        const ip = ipFilter.value.trim();
+        if (ip) params.set('ip', ip);
+        if (cursor) {
+          params.set('before', String(cursor.before));
+          params.set('beforeId', cursor.beforeId);
+        }
+
+        const res = await dataFetch(`/api/admin/identities?${params.toString()}`);
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`台账读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        identityIndex = index;
+        if (data.next) identityCursors[index + 1] = data.next;
+        identitiesPrev.disabled = index === 0;
+        identitiesNext.disabled = !data.next;
+        render(identityRows, data.items, identityRow, 7);
+      }
+
+      async function loadBlocks() {
+        const res = await dataFetch('/api/admin/blocks');
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`黑名单读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        render(blockRows, data.items, blockRow, 6);
+      }
+
+      async function loadAudit(index) {
+        const cursor = auditCursors[index] ?? null;
+        const params = new URLSearchParams({ limit: String(PAGE) });
+        if (cursor) params.set('before', String(cursor.before));
+
+        const res = await dataFetch(`/api/admin/audit?${params.toString()}`);
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`审计读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        auditIndex = index;
+        if (data.next) auditCursors[index + 1] = data.next;
+        auditPrev.disabled = index === 0;
+        auditNext.disabled = !data.next;
+        render(auditRows, data.items, auditRow, 7);
+      }
+
+      /** 写操作之后三个区都要重读：当前页的「在线 / 封禁」列变了，审计也多了一条。 */
+      async function refreshAfterWrite() {
+        identityCursors = [null];
+        auditCursors = [null];
+        await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
+      }
+
+      /** 封 IP 之前先按该 IP 反查计数：`affected` 要等封完才知道，而连坐不能一键静默发生。 */
+      async function countIdentitiesByIp(ip) {
+        let count = 0;
+        let cursor = null;
+        for (let page = 0; page < COUNT_PAGES; page += 1) {
+          const params = new URLSearchParams({ ip, limit: '100' });
+          if (cursor) {
+            params.set('before', String(cursor.before));
+            params.set('beforeId', cursor.beforeId);
+          }
+          const res = await dataFetch(`/api/admin/identities?${params.toString()}`);
+          if (!res || res.status !== 200) return null;
+          const data = await res.json();
+          count += data.items.length;
+          if (!data.next) return { count, capped: false };
+          cursor = data.next;
+        }
+        return { count, capped: true };
+      }
+
+      async function unblock(kind, value) {
+        const res = await dataFetch(`/api/admin/blocks/${kind}/${encodeURIComponent(value)}`, { method: 'DELETE' });
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`解封失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        say(data.removed ? `已解封 ${kind} ${value}。` : `${kind} ${value} 本来就不在黑名单里（审计已记）。`);
+        await refreshAfterWrite();
+      }
+
+      blockForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const kind = blockKind.value;
+        const value = blockValue.value.trim();
+        const reason = blockReason.value.trim();
+        const minutes = blockMinutes.value.trim();
+        if (!value || !reason) {
+          say('值和原因都必须填。', true);
+          return;
+        }
+        // 只收整数分钟：`0.5` 会被 `Date.now() + 30000` 读成「封 30 秒」，与输入框的含义不符
+        if (minutes && !(Number.isInteger(Number(minutes)) && Number(minutes) > 0)) {
+          say('时长要么留空（永久），要么填大于 0 的整数分钟。', true);
+          return;
+        }
+
+        let affectedText = `即将封禁身份 ${value}`;
+        if (kind === 'ip') {
+          const counted = await countIdentitiesByIp(value);
+          if (!counted) {
+            say('反查失败，未提交。', true);
+            return;
+          }
+          const n = counted.capped ? `${counted.count}+` : String(counted.count);
+          affectedText = `即将封禁 IP ${value}：这个 IP 名下记录过 ${n} 个身份`;
+        }
+        const untilText = minutes ? `${minutes} 分钟后到期` : '永久';
+        if (!confirm(`${affectedText}。\n时长：${untilText}\n原因：${reason}\n\n继续？`)) return;
+
+        const untilAt = minutes ? Date.now() + Number(minutes) * 60_000 : null;
+        const res = await dataFetch('/api/admin/blocks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind, value, untilAt, reason }),
+        });
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`封禁失败（${res.status}）：参数非法？`, true);
+          return;
+        }
+        const data = await res.json();
+        say(
+          `已封禁 ${data.block.kind} ${data.block.value}（${data.created ? '新增' : '覆盖既有'}） · ` +
+            `影响身份 ${data.affected.identities} · 在线 ${data.affected.online}`,
+        );
+        blockForm.reset();
+        await refreshAfterWrite();
+      });
+
+      document.getElementById('ipSearch').addEventListener('click', () => {
+        identityCursors = [null];
+        void loadIdentities(0);
+      });
+      document.getElementById('ipClear').addEventListener('click', () => {
+        ipFilter.value = '';
+        identityCursors = [null];
+        void loadIdentities(0);
+      });
+      identitiesPrev.addEventListener('click', () => void loadIdentities(identityIndex - 1));
+      identitiesNext.addEventListener('click', () => void loadIdentities(identityIndex + 1));
+      auditPrev.addEventListener('click', () => void loadAudit(auditIndex - 1));
+      auditNext.addEventListener('click', () => void loadAudit(auditIndex + 1));
 
       loginForm.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -145,6 +512,9 @@
             tokenInput.value = '';
             showLoggedIn(true);
             say('已登录。');
+            identityCursors = [null];
+            auditCursors = [null];
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
           } else if (res.status === 429) {
             say('尝试次数过多，请等一分钟再试。', true);
           } else {
@@ -160,9 +530,25 @@
       logoutButton.addEventListener('click', async () => {
         await post('/api/admin/logout');
         showLoggedIn(false);
-        resultArea.textContent = '';
+        identityRows.replaceChildren();
+        blockRows.replaceChildren();
+        auditRows.replaceChildren();
         say('已登出。');
       });
+
+      /** 刷新后还登着吗：受保护的 `/api/admin/me` 是最好的判据（cookie 未过期就 200）。 */
+      async function syncState() {
+        try {
+          const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
+          showLoggedIn(res.status === 200);
+          if (res.status === 200) {
+            say('已登录。');
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
+          }
+        } catch {
+          say('无法连接服务器。', true);
+        }
+      }
 
       syncState();
     </script>

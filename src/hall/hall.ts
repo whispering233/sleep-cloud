@@ -13,6 +13,8 @@ import type {
   WhisperMessage,
 } from '../shared/protocol';
 import type { Env } from '../worker/env';
+import { ADMIN_HEADER, handleAdminRequest } from './admin';
+import type { LiveConnection } from './admin';
 import { checkLie } from './bed-rules';
 import {
   clearBed,
@@ -169,6 +171,18 @@ export class Hall extends DurableObject<Env> {
 
   /** WebSocket 升级由 Worker 转发进来（前置校验已在 Worker 完成）。 */
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    // 后台数据接口：只有 Worker 会带这个内部头。没有它的 `/admin/*` 一律 404——
+    // 客户端本来就到不了厅对象，这里是显式拒绝而不是默认放行。
+    //
+    // **第二道闸的强度全在路径前缀上**（头值 `'1'` 是公开常量）：真正的边界是「只有已鉴权的转发
+    // 才会把 `/api/admin/*` 改写成 `/admin/*` 并注入这个头」。因此**任何将来的新转发路由都必须
+    // 先过 Worker 鉴权再改写路径**，否则这道闸等于全开（见 `docs/api/30-api-admin.md` §1）。
+    if (url.pathname.startsWith('/admin/')) {
+      if (request.headers.get(ADMIN_HEADER) !== '1') return new Response('没有这个入口', { status: 404 });
+      return handleAdminRequest(request, url, { sql: this.ctx.storage.sql, live: this.liveConnections() });
+    }
+
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('这个入口只接受 WebSocket 升级', { status: 426 });
     }
@@ -1016,6 +1030,28 @@ export class Hall extends DurableObject<Env> {
       if (connection?.ready) ids.add(connection.userId);
     }
     return ids;
+  }
+
+  /** 后台踢连接用的投影：只放已握手的连接（在线口径与 `onlineCount` 一致）。 */
+  private liveConnections(): LiveConnection[] {
+    const live: LiveConnection[] = [];
+    for (const ws of this.ctx.getWebSockets()) {
+      const connection = readConnection(ws);
+      if (!connection?.ready) continue;
+      live.push({
+        userId: connection.userId,
+        ip: connection.ip ?? null,
+        // **先发到达到期时刻，再关**：客户端只在收到 `5002` 报文时才知道该显示多久
+        // （`src/client/ws.ts` 的 `case 'error'`）。少了这一步，被踢的人只能看到
+        // 「你暂时无法进入」而拿不到倒计时——与刷新后被拦那一段的文案不一致。
+        // 发送本身走唯一的出站出口（死连接只丢这一条），所以 `close` 一定跑得到。
+        close: (untilAt) => {
+          this.send(ws, JSON.stringify({ t: 'error', code: '5002', untilAt } satisfies ErrorMessage));
+          ws.close(1008, 'blocked');
+        },
+      });
+    }
+    return live;
   }
 
   /** 躺在床上的人有个「自动睡着」到期事件；其余人没有（已睡着、已起身、已离线都不需要它）。 */

@@ -102,3 +102,31 @@ describe('后台登录与 sc_admin 会话', () => {
     expect((await login(env, '')).status).toBe(401);
   });
 });
+
+/**
+ * 转发类路径的接线：**401 必须发生在转发之前**。这条一旦回归就是 L3 数据（IP / 国家 / UA 哈希）
+ * 外泄，而它不是「返回码错了」这种可见问题——所以用「碰厅对象就抛」的桩把顺序钉死。
+ */
+describe('后台转发：鉴权先于转发', () => {
+  const explodingHall = {
+    getByName: () => {
+      throw new Error('未授权时不该碰厅对象');
+    },
+  } as unknown as Env['HALL'];
+
+  it('没有 cookie 打 /api/admin/identities → 401，且厅对象一次都没被调用', async () => {
+    const res = await app.request('/api/admin/identities', {}, makeEnv({ HALL: explodingHall }));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('没有 cookie 打 /api/admin/blocks（POST）→ 401，厅对象同样不被调用', async () => {
+    const res = await app.request(
+      '/api/admin/blocks',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'user' }) },
+      makeEnv({ HALL: explodingHall }),
+    );
+
+    expect(res.status).toBe(401);
+  });
+});

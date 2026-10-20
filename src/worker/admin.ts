@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 
-import { ADMIN_LOGIN_MAX_PER_MIN, ADMIN_SESSION_MS } from '../shared/constants';
+import { ADMIN_LOGIN_MAX_PER_MIN, ADMIN_SESSION_MS, HALL_ID } from '../shared/constants';
+import { ADMIN_HEADER } from '../hall/admin';
 import type { Env } from './env';
 import { isSecureRequest, sessionSecret } from './session';
 
@@ -131,5 +132,27 @@ admin.post('/logout', (c) => {
   deleteCookie(c, COOKIE_NAME, { path: '/' });
   return c.json({ ok: true });
 });
+
+/**
+ * 转发给厅对象（同 `/api/ws` 的范式）：连接集合与唯一权威库都在它那里，踢连接也只能由它做
+ * （见 `docs/design/70-privacy-risk.md` §5.3）。内部头只在这里写，客户端伪造无效。
+ */
+async function forward(c: Context<{ Bindings: Env }>): Promise<Response> {
+  // Worker 路径 `/api/admin/*` → 厅的 `/admin/*`
+  const url = new URL(c.req.raw.url);
+  url.pathname = url.pathname.slice('/api'.length);
+  const forwarded = new Request(url, c.req.raw);
+  forwarded.headers.set(ADMIN_HEADER, '1');
+  return c.env.HALL.getByName(HALL_ID).fetch(forwarded);
+}
+
+// 这一组全部在 `admin.use('*')` 之后注册：**401 中间件必须排在转发之前**。
+// 厅回的状态码（400 / 404）原样透传（401 不会出现：中间件已经挡了）。
+admin.get('/identities', forward);
+admin.get('/identities/:userId', forward);
+admin.get('/blocks', forward);
+admin.post('/blocks', forward);
+admin.delete('/blocks/:kind/:value', forward);
+admin.get('/audit', forward);
 
 export default admin;

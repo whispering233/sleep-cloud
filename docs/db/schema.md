@@ -100,7 +100,7 @@
 | `last_country` | 否 | TEXT | ISO-3166-1 α2；`T1` = TOR | 同上 |
 | `ua_hash` | 否 | TEXT | 16 个十六进制字符 | UA 的 SHA-256 前 8 字节。**是遮挡不是匿名化** |
 
-索引：`last_ip`（按网络反查）、`last_seen_at`（留存扫描）。
+索引：`last_ip`（按网络反查）、`last_seen_at`（留存扫描；后台台账的 `ORDER BY last_seen_at DESC, user_id DESC` 第二键没有索引，靠排序——表上限是历史身份数、只有运维翻页会走到，暂不为它加复合索引）。
 
 ### 4.2 表：`block`
 

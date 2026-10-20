@@ -62,7 +62,7 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 
 | 列表 | 请求 | 响应 | 排序键 |
 | :--- | :--- | :--- | :--- |
-| `identities` | `?limit=50&before=<ts>&beforeId=<userId>` | `{ items, next: { before, beforeId } \| null }` | `last_seen_at DESC, user_id DESC`（**复合游标**：只按时刻会漏掉同一毫秒的那些行） |
+| `identities` | `?limit=50&before=<ts>&beforeId=<userId>` | `{ items, next: { before, beforeId } \| null }` | `last_seen_at DESC, user_id DESC`（**复合游标**：只按时刻会漏掉同一毫秒的那些行）。**两个参数必须成对给**，只给一半 → 400 |
 | `audit` | `?limit=50&before=<id>` | `{ items, next: { before } \| null }` | 自增主键 `id DESC` |
 | `blocks` | — | `{ items }` | `created_at DESC`（数据库层排好，不再分页） |
 
@@ -87,7 +87,7 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | `online` | 是 | boolean | 此刻是否有活着的连接 |
 | `block` | 否 | object | 命中封禁时给 `{ kind, untilAt, reason }`，否则 `null` |
 
-`bedNo` 与 `online` 需要逐行查一次床 + 一次连接集合：列表 50 行 = 50 次单行读。**这个成本是刻意的**——「这人现在有没有床、在不在」正是台账最要判读的两件事，为省 50 次读去多点一次反而更差。
+`bedNo` 与 `online` 需要逐行查一次床 + 一次连接集合：**一页 50 行 = 1 次列表查询 + 50 次床单行读 + 50~100 次封禁主键命中**（每行先判 `user` 维，有 `lastIp` 时再判 `ip` 维），`online` 只读内存、不发 SQL。**这个成本是刻意的**——「这人现在有没有床、在不在、是不是被我封过」正是台账最要判读的三件事，为省这一百来次读去多点三次反而更差。
 
 ### 5.2 `GET /api/admin/identities/:userId`
 
@@ -109,8 +109,8 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | 字段 | 是否必选 | 说明 |
 | :--- | :--- | :--- |
 | `kind` | 是 | `user` 或 `ip`，其他值 → 400 |
-| `value` | 是 | 对应的 userId / IP 字面量。**不校验存在性**：封一个没有记录的值也生效 |
-| `untilAt` | 否 | `null` 或缺省 = **永久**；必须是「现在之后」的毫秒数，否则 400（避免手滑填成过去时间，导致「点了封禁但没封上」） |
+| `value` | 是 | 对应的 userId / IP 字面量，去空白后 1~255 字符。**不校验存在性**：封一个没有记录的值也生效 |
+| `untilAt` | 否 | `null` 或缺省 = **永久**；必须是「现在之后」的毫秒数，否则 400（避免手滑填成过去时间，导致「点了封禁但没封上」）。**不设上限**，但要的不是「很久」而是「永久」→ 用 `null` |
 | `reason` | 是 | **必填**（审计要它）。1~64 字符。**不下发给被封者** |
 
 响应：
