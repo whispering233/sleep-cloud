@@ -4,6 +4,7 @@ import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
+import type { EntryBlock } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
@@ -20,8 +21,8 @@ import { connectHall } from './ws';
 export function App() {
   const shellRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<SessionView | null>(null);
-  /** 入场前的厅满判定（`/api/me` 的 `2002`）：厅满了就不让人建连再被踢 */
-  const [full, setFull] = useState(false);
+  /** 入场前的拦截（`/api/me` 的 `2002` 厅满 / `5002` 封禁）：不让人建连再被踢 */
+  const [entryBlock, setEntryBlock] = useState<EntryBlock | undefined>(undefined);
   const [entered, setEntered] = useState(false);
 
   useEffect(() => {
@@ -30,7 +31,8 @@ export function App() {
       const sessionRes = await loadSession();
       if (cancelled) return;
       if (sessionRes.data) setSession(sessionRes.data);
-      setFull(sessionRes.code === '2002');
+      if (sessionRes.code === '2002') setEntryBlock({ code: '2002' });
+      else if (sessionRes.code === '5002') setEntryBlock({ code: '5002', untilAt: sessionRes.data?.untilAt ?? null });
     })();
     return () => {
       cancelled = true;
@@ -58,7 +60,7 @@ export function App() {
     return subscribe((state) => {
       if (state.connection === last) return;
       last = state.connection;
-      if (state.connection === 'offline') setComposer({ kind: 'offline' });
+      if (state.connection === 'offline' || state.connection === 'halted') setComposer({ kind: 'offline' });
     });
   }, []);
 
@@ -89,7 +91,7 @@ export function App() {
       {session && !entered ? (
         <EntryOverlay
           session={session}
-          blocked={full}
+          block={entryBlock}
           onDone={(next) => {
             setSession(next);
             setEntered(true);

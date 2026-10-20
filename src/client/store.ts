@@ -19,7 +19,7 @@ import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
 import { composerReducer } from './composer';
 import type { ComposerEvent, ComposerState } from './composer';
-import type { Connection } from './conn-state';
+import type { Connection, HaltReason } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
@@ -55,6 +55,10 @@ export interface Notice {
 export interface ClientState {
   /** 连接态（渲染层的显示态）：由 `ws.ts` 的连接管理器写，见 `docs/api/20-api-ws.md` §5.1 */
   connection: Connection;
+  /** 停住的原因（`close` 的语义）：有它就不再有自动重连，恢复只有刷新页面（§5.1.1） */
+  halt?: HaltReason;
+  /** 封禁到期时刻（`error` `5002` 随附；`null` = 永久）：只给提示文案用，不参与任何判定 */
+  blockedUntilAt?: number | null;
   /** 厅的事实：当前床位数与在线人数（都是服务端下发的运行时事实） */
   hall?: HallInfo;
   /** 布局版本号：客户端据此自检几何是否与本机一致 */
@@ -418,6 +422,11 @@ export function applyLeave(message: LeaveMessage): void {
     patch.bubbles = bubbles;
   }
   setState(patch);
+}
+
+/** 封禁到期时刻（`5002` 随附）：只给提示文案用，不参与任何判定。 */
+export function setBlockedUntil(untilAt: number | null): void {
+  setState({ blockedUntilAt: untilAt });
 }
 
 /** 提示条自增序号：只增不减，保证新提示的 `id` 必然不同（同一条文案也可能连着来两次）。 */

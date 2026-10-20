@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ERROR_MESSAGES } from '../../shared/error-code';
 import { readDoc, tableRows } from '../../shared/tests/doc';
-import { ERROR_FALLBACK_TEXT, ERROR_TEXT, errorTextFor } from '../error-text';
+import { ERROR_FALLBACK_TEXT, ERROR_TEXT, blockedTextFor, errorTextFor } from '../error-text';
 
 /**
  * 文档里的「用户可见文案方向」列（`docs/api/error-code.md` §2）。
@@ -37,6 +37,20 @@ describe('错误码文案映射', () => {
       expect(direction, `文档里缺少 ${code} 的文案方向`).toBeDefined();
       expect(errorTextFor(code), `${code} 与文档不一致`).toBe(quotedText(direction ?? ''));
     }
+  });
+
+  it('封禁文案带到期时间（`70-privacy-risk.md` §5.4：给时间，不给原因）', () => {
+    const now = 1_700_000_000_000;
+    const minutes = (n: number) => n * 60_000;
+    // 永久：不带倒计时
+    expect(blockedTextFor(null, now)).toBe('你暂时无法进入');
+    // 还有 8 分钟
+    expect(blockedTextFor(now + minutes(8), now)).toBe('你暂时无法进入 · 还有 8 分钟');
+    // 不足 1 分钟也报「1 分钟」：说少了会让用户按「已经解封了」反复重试
+    expect(blockedTextFor(now + 30_000, now)).toBe('你暂时无法进入 · 还有 1 分钟');
+    expect(blockedTextFor(now + 1, now)).toBe('你暂时无法进入 · 还有 1 分钟');
+    // 不是整分钟时向上取整（7 分 30 秒 → 8 分钟）
+    expect(blockedTextFor(now + minutes(7.5), now)).toBe('你暂时无法进入 · 还有 8 分钟');
   });
 
   it('抽查可恢复类文案：给用户看的是人话，不是面向开发者的 msg', () => {

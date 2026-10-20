@@ -27,4 +27,6 @@ export interface SessionView {
   needsNickname: boolean;
   /** 布局版本号：客户端建连时首条 `hello` 必须带上它（见 `docs/design/config.md` §1） */
   layoutVersion: string;
+  /** **仅在 `/api/me` 命中封禁（`5002`）时出现**：封禁到期时刻（epoch 毫秒），`null` = 永久 */
+  untilAt?: number | null;
 }

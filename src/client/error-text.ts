@@ -4,6 +4,23 @@ import type { ErrorCode } from '../shared/error-code';
 /** 给不出文案时的兜底：用户看到的都是「服务端出了状况」（与 `9001` 同一句话，只写一次）。 */
 export const ERROR_FALLBACK_TEXT = '出了点问题，稍后再试';
 
+/** 封禁（`5002`）的文案本体：到期时间另拼一段，`ERROR_TEXT` 里那一条必须与文档逐字一致。 */
+const BLOCKED_TEXT = '你暂时无法进入';
+
+/** 文案里把到期时刻换成分钟数的单位。 */
+const MINUTE_MS = 60_000;
+
+/**
+ * 封禁文案 + 到期时间（「给时间，不给原因」，见 `docs/design/70-privacy-risk.md` §5.4）。
+ * `untilAt` 为 `null` = 永久封禁，不带倒计时。分钟数**向上取整且至少 1 分钟**：说少了会让用户
+ * 按「已经该解封了」反复重试。**只在提示出现那一刻算一次**——倒计时不该养一个常驻定时器（硬纪律 6）。
+ */
+export function blockedTextFor(untilAt: number | null, now: number): string {
+  if (untilAt === null) return BLOCKED_TEXT;
+  const minutes = Math.max(1, Math.ceil((untilAt - now) / MINUTE_MS));
+  return `${BLOCKED_TEXT} · 还有 ${minutes} 分钟`;
+}
+
 /**
  * 错误码 → 用户可见文案。
  *
@@ -35,7 +52,7 @@ export const ERROR_TEXT: Record<Exclude<ErrorCode, '0'>, string | undefined> = {
   '4002': undefined,
   '4003': undefined,
   '5001': '你暂时不能发言',
-  '5002': '你暂时无法进入',
+  '5002': BLOCKED_TEXT,
   '5003': '已收到你的反馈',
   '9001': ERROR_FALLBACK_TEXT,
   '9002': '大厅暂时进不去，稍后再试',

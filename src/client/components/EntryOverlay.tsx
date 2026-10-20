@@ -2,7 +2,7 @@ import type { SessionView } from '../../shared/http-api';
 import { APPEARANCES } from '../../shared/protocol';
 import type { Appearance } from '../../shared/protocol';
 import { confirmAge, setAppearance, setNickname } from '../api';
-import { ERROR_FALLBACK_TEXT, errorTextFor } from '../error-text';
+import { ERROR_FALLBACK_TEXT, blockedTextFor, errorTextFor } from '../error-text';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
 import { useState } from 'react';
@@ -19,25 +19,35 @@ const APPEARANCE_LABEL: Record<Appearance, string> = { boy: '侧边短发', girl
 
 export interface EntryOverlayProps {
   session: SessionView;
-  /** 厅满（`/api/me` 的 `2002`）：只剩最小档也满了，先不让进 */
-  blocked?: boolean;
+  /** 入场前的拦截（`/api/me` 的码）：厅满（`2002`）或封禁（`5002`，带到期时间） */
+  block?: EntryBlock;
   onDone: (session: SessionView) => void;
 }
+
+/** 入场前的两种拦截：厅满只剩最小档也满了；封禁带 `untilAt`（`null` = 永久）。 */
+export type EntryBlock = { code: '2002' } | { code: '5002'; untilAt: number | null };
 
 /**
  * 入场层：18 岁自述 + 昵称 + 形象二选一。**每次进入大厅前都出现**；会话已完善时它是「预填 + 一键继续」。
  * 改名与改形象都只发生在这里（建连之前），因此协议不需要「名字变更」/「形象变更」消息。
  * 没有大区选择：只有一个厅（见 `docs/design/config.md` §1）。
  */
-export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayProps) {
+export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
   const [nickname, setNicknameDraft] = useState(session.nickname);
   const [appearance, setAppearanceDraft] = useState(session.appearance);
   const [ageConfirmed, setAgeConfirmed] = useState(session.ageConfirmed);
-  const [error, setError] = useState<string | null>(blocked ? errorText('2002') : null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const ready = Boolean(session.nickname) && session.ageConfirmed;
-  const canContinue = ageConfirmed && nickname.trim().length > 0 && !busy && !blocked;
+  const canContinue = ageConfirmed && nickname.trim().length > 0 && !busy && block === undefined;
+  // 拦截文案在**这一次渲染**算一次：封禁的剩余分钟不养倒计时定时器（硬纪律 6）
+  const blockText =
+    block === undefined
+      ? undefined
+      : block.code === '2002'
+        ? errorText('2002')
+        : blockedTextFor(block.untilAt, Date.now());
 
   /** 把一次写入的结果落到会话上：`1001` 表示会话被换新（静默）。 */
   const runStep = async (
@@ -122,9 +132,9 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
           我已满 18 岁
         </label>
 
-        {error ? (
+        {blockText ?? error ? (
           <p className="form-error" role="alert">
-            {error}
+            {blockText ?? error}
           </p>
         ) : null}
 

@@ -5,6 +5,8 @@ import type { DownstreamMessage, UpstreamMessage } from '../shared/protocol';
 import {
   backoffMs,
   connecting,
+  haltReasonOf,
+  halted,
   initialConnState,
   offline,
   online,
@@ -13,7 +15,7 @@ import {
   settled,
   shouldReconnect,
 } from './conn-state';
-import type { ConnState } from './conn-state';
+import type { ConnState, HaltReason } from './conn-state';
 import {
   applyBed,
   applyChat,
@@ -27,6 +29,7 @@ import {
   applyWhisper,
   clearPrediction,
   getState,
+  setBlockedUntil,
   setState,
 } from './store';
 
@@ -171,7 +174,7 @@ function live(): Session | undefined {
 /** 连接态写进 store（渲染层的显示态）；管理器自己的那一份是权威。 */
 function updateState(s: Session, next: ConnState = s.state): void {
   s.state = next;
-  setState({ connection: next.connection });
+  setState({ connection: next.connection, halt: next.halt });
 }
 
 /**
@@ -198,9 +201,13 @@ function openSocket(s: Session): void {
     handleMessage(s, event);
   });
 
-  socket.addEventListener('close', () => {
+  // `close` 的 `reason` 才是语义（见 `docs/api/20-api-ws.md` §5.1.1）：`replaced` 用的就是 `1000`，
+  // 只看 code 会把「被顶掉」当成断网，两个标签页互相顶、各自无限重连
+  socket.addEventListener('close', (event) => {
     if (s.socket !== socket) return;
-    fail(s);
+    const reason = haltReasonOf(event.reason);
+    if (reason !== undefined) halt(s, reason);
+    else fail(s);
   });
   // `error` 与 `close` 常成对到达；`fail` 自己在 `offline` 上幂等
   socket.addEventListener('error', () => {
@@ -218,16 +225,28 @@ function dropSocket(s: Session): void {
 
 /**
  * 连接死了（`close` / `error` / 探活超时）：判 `offline`、按退避排下一次重连。
- * 幂等：已经在退避里（`offline`）就直接返回，`error` + `close` 成对到达只算一次失败。
+ * 幂等：已经在退避里（`offline`）或已停住（`halted`）就直接返回，`error` + `close` 成对到达只算一次失败。
  */
 function fail(s: Session): void {
-  if (s.disposed || s.state.connection === 'offline') return;
+  if (s.disposed || s.state.halt !== undefined || s.state.connection === 'offline') return;
   clearTimers(s);
   dropSocket(s);
   // 连接断了就没有回投可等：样本留着只会在下一次回投时结算出跨断线的假 RTT
   pendingSamples = clearSamples();
   updateState(s, offline(s.state));
   scheduleRetry(s);
+}
+
+/**
+ * 停住：服务端用带语义的 `close` 说了「再来也没用」——被封、被同一身份的新连接顶掉、布局版本不符。
+ * 清掉全部计时器并**不再排下一次**：这是「被封的人每晚撞 5760 次入场判定」的唯一修法。
+ */
+function halt(s: Session, reason: HaltReason): void {
+  if (s.disposed) return;
+  clearTimers(s);
+  dropSocket(s);
+  pendingSamples = clearSamples();
+  updateState(s, halted(s.state, reason));
 }
 
 /** 退避等待 → 再建一条。**hidden 期间不排**：回到前台由探活接手。 */
@@ -243,6 +262,8 @@ function scheduleRetry(s: Session): void {
 
 /** 立刻重连一次：**不动退避进度**（退避只由「一次尝试失败」推进，见 `conn-state.ts` 的 `offline`）。 */
 function reconnectNow(s: Session): void {
+  // 停住之后不再自动尝试：探活 / 上行丢弃 / 「尝试连接」三条路都收敛到这里，所以闸门只需要这一道
+  if (s.state.halt !== undefined) return;
   clearTimers(s);
   dropSocket(s);
   openSocket(s);
@@ -396,6 +417,13 @@ function handleMessage(s: Session, event: MessageEvent): void {
       applyWhisper(message);
       return;
     case 'error':
+      // 封禁的到期时刻随报文下发（`null` = 永久），提示文案要用它；`close(1008,'blocked')` 紧跟在后面。
+      // **`5002` 不走瞬时提示**：它由常驻的连接提示条承担（带到期时间）。两条不同文案同时出现
+      // （一条有倒计时、一条没有）会让人以为发生了两件事（见 `docs/design/70-privacy-risk.md` §5.4）。
+      if (message.code === '5002') {
+        if (message.untilAt !== undefined) setBlockedUntil(message.untilAt);
+        return;
+      }
       applyError(message.code);
       return;
     case 'pong':
