@@ -487,4 +487,10 @@ describe('举报回执', () => {
     expect(getState().composer).toBe('idle');
     expect(getState().pendingReportTo).toBe('u_other');
   });
+
+  it('举报中改选别人：表单也跟着退场（否则看不见对象在写事由）', () => {
+    startReport('u_other');
+    selectPerson('u_third');
+    expect(getState().composer).toBe('idle');
+  });
 });

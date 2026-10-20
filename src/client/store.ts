@@ -221,6 +221,8 @@ function setBubble(id: string, text: string, kind: ChatBubble['kind']): void {
 export function selectPerson(id: string): void {
   // 选了别人就是「下一次操作」：上一单的举报回执那行话让位
   setState({ selectedId: id, chatHint: undefined });
+  // 举报态里改选别人：表单写的是原来那一位，留着就变成「看不见对象在写事由」
+  if (state.composer === 'report' && id !== state.pendingReportTo) setComposer({ kind: 'exit' });
 }
 
 /** 取消选中：点地面、点 ×、目标离开都走这里。 */
