@@ -55,10 +55,11 @@ export const CHAT_WORDS = normalizeWords([
   ...curated,
 ]);
 
-/** 昵称词集：九类 + 手工表，减掉拆词残留（`detect` 用它，是 `CHAT_WORDS` 的子集）。 */
+/** 昵称词集：九类 + 手工表，减掉拆词残留与单字词条（`detect` 用它，是 `CHAT_WORDS` 的子集）。
+ * 单字不挡昵称：真词库里的单字条目检测力极低，而昵称命中就意味着进不来。 */
 export const NICKNAME_WORDS = normalizeWords(
   [...NICKNAME_CATEGORIES.flatMap((name) => categories[name]), ...curated].filter(
-    (word) => !NICKNAME_FORGIVE.has(word),
+    (word) => word.length > 1 && !NICKNAME_FORGIVE.has(word),
   ),
 );
 

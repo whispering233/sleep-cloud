@@ -71,6 +71,11 @@ describe('内容过滤', () => {
       for (const word of ['兼职', '招聘', '疫情', '网络']) expect(detect(word)).toBeNull();
     });
 
+    it('单字词条不挡昵称（但聊天照打码）', () => {
+      expect(detect('党')).toBeNull();
+      expect(mask('党')).toBe('*');
+    });
+
     it('手工表在两条路径上都命中', () => {
       expect(detect('傻逼')).toBe('傻逼');
       expect(mask('傻逼')).toBe('**');
