@@ -1,0 +1,64 @@
+Rain and Thunders — 素材出处与加工记录
+===========================================
+
+原素材
+  标题    Rain and Thunders
+  作者    kindland
+  出处    https://opengameart.org/content/rain-and-thunders
+  发布    2014-03-25
+  许可    CC0 1.0 Universal（公有领域贡献，无署名要求）
+          https://creativecommons.org/publicdomain/zero/1.0/
+  署名    Attribution Instructions: none
+  原文件  Dark_Rainy_Night(ambience).ogg
+          Ogg Vorbis / 44.1 kHz 立体声 / 192 kbps / 278.77 s / 6.77 MB
+          （原文件不入库，只入库加工产物）
+
+本目录的两个文件是**加工产物**，不是原文件：
+  rain-loop.v1.wav        30.000 s  单声道 32 kHz 16-bit PCM  1 920 078 B
+  rain-loop-intro.v1.wav   8.000 s  单声道 32 kHz 16-bit PCM    512 078 B
+
+为什么要加工
+  原曲是「雨 + 雷」：全曲有 5 次清晰雷击（峰值到 -0.3 dBFS），而且开头约 10 s 是淡入静音、
+  结尾是响的——既不能直接循环，也不符合本项目「天气只有雨天、没有雷暴」的语义
+  （见 docs/design/00-master-design.md §5.4）。所以避开雷声、拼出无缝循环。
+
+加工链（ffmpeg；需要重新生成时照抄。换素材请把文件名里的版本号 +1，
+        因为线上缓存是 immutable，浏览器不会再来问——见 public/_headers）
+
+  1) 从 3 段无雷雨床拼出 40.5 s 的中间素材（段间 1 s 交叉淡化）
+     ffmpeg -i "Dark_Rainy_Night(ambience).ogg" -filter_complex "\
+       [0:a]atrim=start=36.7:end=52.4,asetpts=PTS-STARTPTS[a];\
+       [0:a]atrim=start=94.3:end=108.3,asetpts=PTS-STARTPTS[b];\
+       [0:a]atrim=start=150.4:end=163.2,asetpts=PTS-STARTPTS[c];\
+       [a][b]acrossfade=d=1:c1=tri:c2=tri[ab];\
+       [ab][c]acrossfade=d=1:c1=tri:c2=tri[out]" \
+       -map "[out]" -ac 1 -ar 32000 -c:a pcm_s16le source.wav
+
+  2) 主循环：取前 32 s，把 30–32 s 交叉进开头 2 s（→ 30 s 无缝）
+     ffmpeg -i source.wav -filter_complex "\
+       [0:a]asplit=2[s1][s2];\
+       [s1]atrim=start=0:end=30,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=2[head];\
+       [s2]atrim=start=30:end=32,asetpts=PTS-STARTPTS,afade=t=out:st=0:d=2[tail];\
+       [head][tail]amix=inputs=2:duration=first:normalize=0[out]" \
+       -map "[out]" -c:a pcm_s16le rain-loop.v1.wav
+
+  3) 早播循环：取前 10 s，把 8–10 s 交叉进开头 2 s（→ 8 s 无缝）
+     ffmpeg -i source.wav -filter_complex "\
+       [0:a]asplit=2[s1][s2];\
+       [s1]atrim=start=0:end=8,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=2[head];\
+       [s2]atrim=start=8:end=10,asetpts=PTS-STARTPTS,afade=t=out:st=0:d=2[tail];\
+       [head][tail]amix=inputs=2:duration=first:normalize=0[out]" \
+       -map "[out]" -c:a pcm_s16le rain-loop-intro.v1.wav
+
+  4) 统一 +6 dB（此前峰值 -9.1 dBFS，之后 -3.1 dBFS，无削顶）
+     ffmpeg -i rain-loop.v1.wav       -af volume=6dB -c:a pcm_s16le -y ...（覆盖原文件）
+     ffmpeg -i rain-loop-intro.v1.wav -af volume=6dB -c:a pcm_s16le -y ...（覆盖原文件）
+
+选段依据（100 ms RMS 包络扫描全曲）
+  以 -16 dB 为阈值把「峰值不超过它」的 100 ms 块算作无雷雨床；三段各自段均
+  -28.4 / -26.7 / -27.2 dB，段内最大 -16 dB。拼接后的 30 s 内不再出现 > -14 dB 的瞬态。
+  原曲的 5 次清晰雷击落在 34 / 90 / 146 / 202 / 258 s 附近，三段都没有覆盖它们。
+
+许可
+  原素材为 CC0 1.0（公有领域贡献），无署名要求；本目录的加工产物沿用同一许可。
+  使用时不需要保留本文件，但请保留——它是这套音频唯一的可追溯记录。

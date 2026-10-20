@@ -23,7 +23,7 @@ import type { Connection, HaltReason } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
-import { readZoomMode, writeZoomMode } from './prefs';
+import { readWeatherRain, readZoomMode, writeWeatherRain, writeZoomMode } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
@@ -112,6 +112,11 @@ export interface ClientState {
    */
   zoomMode: ZoomMode;
   /**
+   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，同时驱动雨声与雨层画面。
+   * 缺键时按启动那天的日期奇偶初始化；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
+   */
+  rain: boolean;
+  /**
    * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
    */
@@ -129,6 +134,7 @@ const emptyState = (): ClientState => ({
   composer: 'idle',
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
   zoomMode: readZoomMode(),
+  rain: readWeatherRain(),
 });
 
 let state: ClientState = emptyState();
@@ -238,6 +244,15 @@ export function setZoomMode(mode: ZoomMode): void {
   if (sameZoomMode(state.zoomMode, mode)) return;
   setState({ zoomMode: mode });
   writeZoomMode(mode);
+}
+
+/**
+ * 天气开关（见 `ClientState.rain`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ */
+export function setRain(on: boolean): void {
+  if (state.rain === on) return;
+  setState({ rain: on });
+  writeWeatherRain(on);
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { HAS_POPOVER } from '../popover';
 import { getState, subscribe } from '../store';
 import { TONE_ALPHA, toneOf } from '../tone';
 import type { Tone } from '../tone';
@@ -12,12 +13,15 @@ import type { Tone } from '../tone';
  * 只看谁后入场——不自己也在顶层，浮层就会成为全屏最亮的那一块（破 `docs/ui/DESIGN.md` 的
  * 「明暗只有一层」）。代价是**顶层里的顺序得自己维持**：有别的东西入场就把它重新推上去（下面那个 effect）。
  *
+ * **没有 Popover API 的内核**（Chromium 100，见 `../popover.ts`）：它不是顶层元素，按 DOM 顺序压住界面
+ * 已经成立（它是 `.app-shell` 的最后一个子节点），所以那两处 `popover` 调用整段跳过。
+ *
  * **落档不缓动**：入场后的第一份快照、以及每次重连后的第一份，都一步到位。过渡开着的话，
  * 会先按「快照还没到」的 `0` 档画一帧再补一段渐暗——那是一段没人要的假动画。
  */
 export function ToneLayer() {
   const [tone, setTone] = useState<Tone>(() => toneOf(getState()));
-  /** 减光层那一块：它的开 / 重排都靠 `popover` API */
+  /** 减光层那一块：有 Popover 时它的开 / 重排靠 `popover` API，没有时完全没有 API 调用 */
   const layer = useRef<HTMLDivElement>(null);
   /** 过渡开关：落档那一帧必须是 `transition: none`（同一帧里既改 `opacity` 又开过渡，浏览器会直接补出动画） */
   const [animate, setAnimate] = useState(false);
@@ -26,9 +30,10 @@ export function ToneLayer() {
   /** 已排上的开过渡帧（`0` = 没排）：走完两次 `requestAnimationFrame` 才能保证落档那一帧先画出去 */
   const frame = useRef(0);
 
-  // 常驻打开：`popover` 默认是 `display: none`，必须赶在**第一次绘制之前**打开，否则重连那一帧会露出
+  // 有 Popover 时常驻打开：`popover` 默认是 `display: none`，必须赶在**第一次绘制之前**打开，否则重连那一帧会露出
   // 没有减光的世界（`useLayoutEffect` 而不是 `useEffect`，后者在绘制之后）。重复调用是合法的空操作。
   useLayoutEffect(() => {
+    if (!HAS_POPOVER) return;
     layer.current?.showPopover();
   }, []);
 
@@ -41,6 +46,7 @@ export function ToneLayer() {
    * 真要一帧不差，得改成各触发器在 showPopover 之后再同步调一次。
    */
   useEffect(() => {
+    if (!HAS_POPOVER) return undefined;
     const el = layer.current;
     if (!el) return undefined;
     const raise = (event: Event): void => {
@@ -95,7 +101,7 @@ export function ToneLayer() {
     <div
       className="tone-layer"
       ref={layer}
-      popover="manual"
+      popover={HAS_POPOVER ? 'manual' : undefined}
       aria-hidden="true"
       style={{ opacity: TONE_ALPHA[tone], transition: animate ? undefined : 'none' }}
     />

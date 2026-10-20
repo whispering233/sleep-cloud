@@ -1,4 +1,5 @@
 import { ZOOM_TIERS } from '../shared/constants';
+import { defaultRainAt } from './weather';
 import type { ZoomMode } from './zoom';
 
 /**
@@ -12,6 +13,7 @@ const PREFS_VERSION = 1;
 /** 键的唯一真源（镜像 `docs/design/40-client-storage.md` §3 的登记表）。 */
 export const PREFS = {
   zoomMode: 'sc.zoom.mode',
+  weatherRain: 'sc.weather.rain',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
@@ -120,4 +122,25 @@ export function readZoomMode(storage?: PrefStorage): ZoomMode {
 /** 写 `sc.zoom.mode`：切回 `自由缩放` 也照写一条（**写入路径只一条**，不做「free 就删键」的第二条分支）。 */
 export function writeZoomMode(mode: ZoomMode, storage?: PrefStorage): void {
   writePref(PREFS.zoomMode, { v: PREFS_VERSION, mode: mode.kind === 'free' ? 'free' : mode.z }, storage);
+}
+
+/** `sc.weather.rain` 的值形状：`rain` 必须是布尔。 */
+type StoredWeatherRain = { v: number; rain: boolean };
+
+function isStoredWeatherRain(value: unknown): value is StoredWeatherRain {
+  return typeof value === 'object' && value !== null && typeof (value as { rain?: unknown }).rain === 'boolean';
+}
+
+/**
+ * 读 `sc.weather.rain`：缺键时按**启动那一刻**的本地日历日奇偶初始化（全表唯一的非常量默认）。
+ * `now` 只在缺键时被读一次、跨零点也不重算——半夜让眼前天气无声翻转是没人要的动画。
+ */
+export function readWeatherRain(now: Date = new Date(), storage?: PrefStorage): boolean {
+  const fallback: StoredWeatherRain = { v: PREFS_VERSION, rain: defaultRainAt(now) };
+  return readPref(PREFS.weatherRain, isStoredWeatherRain, fallback, storage).rain;
+}
+
+/** 写 `sc.weather.rain`：切到「无雨」也照写（**写入路径只一条**，`false` 不是「删键」）。 */
+export function writeWeatherRain(rain: boolean, storage?: PrefStorage): void {
+  writePref(PREFS.weatherRain, { v: PREFS_VERSION, rain }, storage);
 }

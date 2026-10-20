@@ -28,6 +28,8 @@ export default defineConfig({
   build: {
     outDir: '../../dist',
     emptyOutDir: true,
+    // 兼容基线是 Chromium 100（夸克 / UC 内核，见 `docs/design/architecture.md` §1）：Vite 8 的默认 target 比它新。
+    target: 'chrome100',
     // 引擎单独切包：Phaser 占了整个懒加载分支的 99%（自己 1.37 MB），单独成一个 chunk 后它的 hash
     // 只在升级 Phaser 时变化；老用户回访只需重下十几 kB 的世界代码，而不是整包。
     rolldownOptions: {
@@ -38,7 +40,11 @@ export default defineConfig({
     // 开发时把 /api（含 WebSocket 升级）代理到本地 Worker，保持「同源」语义。
     // 端口由 `npm run dev` 自动 +1 选中并写进 `.wrangler/dev-port`；没起后端时回落到起始端口。
     proxy: {
-      '/api': { target: `http://127.0.0.1:${readDevPort() ?? BASE_PORT}`, changeOrigin: true, ws: true },
+      // 键写成正则（`^` 开头）：只匹配 `/api` 与 `/api/...`。
+      // 写 `'/api'` 是前缀匹配，会把客户端模块 `src/client/api.ts`（浏览器请求 `/api.ts`）
+      // 也代理给后端；后端 SPA 回退返回 index.html，浏览器以 `text/html` 拒绝这个模块，
+      // 于是 `npm run dev:web` 整页空白（`docs/design/build.md` §2）
+      '^/api(/|$)': { target: `http://127.0.0.1:${readDevPort() ?? BASE_PORT}`, changeOrigin: true, ws: true },
     },
   },
 });

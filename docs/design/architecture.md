@@ -8,11 +8,17 @@
 | 后端入口 | **Hono** | 路由/中间件/分组够用；**自带签名 cookie（HMAC SHA-256）**，正好是匿名会话所需；体积小 |
 | 房间服务 | 平台原生的**有状态对象**（类名 `Hall`）。**整个应用只有一个实例**（`idFromName(HALL_ID)`） | 厅 = 强一致容器 = 一份私有 SQLite；单线程串行处理天然免疫并发分配冲突 |
 | 房间内持久化 | 对象自带的 **SQLite** | 嵌入式、单文件、事务型，与「一个对象一份私有库」完全匹配 |
-| 前端 | **React + TypeScript + Vite + Tailwind**（**移动端优先**） | UI 小但会长（聊天、留言、装饰）；也贴合既定的 Tailwind 与细粒度组件要求。手机是主场景，竖屏窄幅下先定稿 |
+| 前端 | **React + TypeScript + Vite + Tailwind**（**移动端优先**；兼容基线 Chromium 100，见下方） | UI 小但会长（聊天、留言、装饰）；也贴合既定的 Tailwind 与细粒度组件要求。手机是主场景，竖屏窄幅下先定稿 |
 | 世界渲染 | **Phaser 4.2.1**（独立 canvas，`Scale.NONE`，相机可拉远到 `0.175`、**上限 1× 不放大**；画布按 DPR ≤3 放大，**世界里的文字按同一个 DPR 栅格化**） | 图集与批量渲染、相机（缩放/跟随/死区/边界）、输入、tween 一站齐备；比自绘少写一套相机与输入 |
 | **布局** | **共享纯函数**（`src/shared/layout.ts`） | 床号 ↔ 位置、区域、走道全部由**与床位数无关**的纯函数给出 → 自动伸缩不移动任何床；同一份函数被前端与房间服务引用 → 不存在「服务端认为不可走而客户端画得出」 |
 | 本地开发 | 平台的本地运行时（`wrangler dev`，由 `npm run dev` 包一层并自动选端口） | 本地即可跑完整的对象 + SQLite + WebSocket |
 | 不引入 | D1 / KV / R2 / 全栈同构框架 / 渲染用 Tilemap / 物理引擎（Arcade / Matter）/**寻路库**（phaser-navmesh / easystarjs / grid-engine） | 见 §2.5、§5 与 `backlog.md` |
+
+**浏览器兼容基线 = Chromium 100。** 依据不是「尽量兼容老浏览器」，而是真实内核：夸克 / UC 这类定制内核把安卓端停在 Chromium 100（实测最新夸克 APK 的 `libwebviewuc.so` 内版本串 `100.0.4896.58`；同一库里 `showModal` 有、`showPopover`/`popover` 零命中，`toSorted` 没有而 `findLast`/`structuredClone` 有，与 ~100 完全吻合）。由此有三条硬约束：
+
+- `build.target` 固定为 `chrome100`（Vite 默认是 `chrome111`；不钉死就可能在构建期引入 Chromium 100 解析不了的语法）。
+- Chromium 114+ 才有的 API（Popover、`:popover-open`、`@starting-style`、anchor positioning 等）必须带降级路径，不允许裸调；CSS 新特性只能用「`@supports` 包住后仍可用」或纯装饰的写法。
+- 降级路径的能力判断只允许出现在 `src/client/popover.ts` 一处，组件里不各写一份。
 
 **Phaser 使用边界**（细节见 `20-layout.md` §2 与 `../ui/DESIGN.md`）：
 
@@ -93,8 +99,9 @@ bedNo → { row, col } → { x, y }        （与当前床位数无关；床位�
 
 | 层 | 职责 | 不允许做的事 |
 | :--- | :--- | :--- |
-| **前端世界层** | 相机与渲染（Phaser）、可视窗口与对象池、别人的位置插值、**自己的自身外推**、命中判定（纯函数） | 不计算权威位置；不写业务规则；不做碰撞（允许重叠与穿过，见 §7） |
+| **前端世界层** | 相机与渲染（Phaser）、可视窗口与对象池、别人的位置插值、**自己的自身外推**、命中判定（纯函数）、**天气 Scene**（屏幕空间的雨层） | 不计算权威位置；不写业务规则；不做碰撞（允许重叠与穿过，见 §7） |
 | **前端 UI 层** | 入场、HUD、聊天、错误提示（DOM + Tailwind） | 不直接操作渲染层内部状态 |
+| **前端偏好与音频层** | 本地偏好（`localStorage` 的唯一门面）、天气的日期默认、**雨声**（`AudioContext` → 两个 source 交叉 → 循环） | 不碰协议、不碰世界渲染；不进逐帧路径 |
 | **Worker 入口层** | 路由、签名 cookie 签发与验签、静态资源回退、WebSocket 升级前的鉴权 | 不放业务状态；不直接读写 SQLite |
 | **房间服务层** | 状态机、床位归属与占用、布局推导、寻路与节拍推进、广播合并、到期事件调度、宽限与睡痕、级表升降级、出生点、内容过滤、限流 | 不做前端渲染；不做跨厅协调（不存在） |
 | **共享层** | 协议消息类型、**布局函数**、**寻路与位置推进**（`pathfinding.ts` / `movement.ts`，两端都要用）、常量（几何/级表/时间）、错误码、内容过滤词表、布局版本号 | **不依赖上面任何一层**（前端与后端都要引用它） |
@@ -111,11 +118,13 @@ bedNo → { row, col } → { x, y }        （与当前床位数无关；床位�
 
 ```text
 src/shared/   协议、布局、寻路与位置推进、常量、错误码、内容过滤、布局版本号
-src/client/   世界层（world/）+ UI 层（components/、styles/）
+src/client/   世界层（world/）+ UI 层（components/、styles/）+ 客户端偏好、天气与音频（prefs.ts、weather.ts、audio.ts）
 src/hall/     房间服务层
 src/worker/   入口层
-public/       静态资源（重着色后的图集、地板贴图、词表）
+public/       静态资源（重着色后的图集、雨声 WAV、词表）
 ```
+
+**雨声不走 Phaser 的 `this.sound`**：`SoundManager` 的价值在于「用 Loader 载素材 + 统一的播放 API」，而这里只有一个音频、懒加载（`fetch` → `decodeAudioData`），还要做「早播小循环 → 主循环」的双 source 交叉淡化。接进 Phaser 会把音频绑到世界层的生命周期上：世界层是懒加载块，而 `load.audio` 会让首帧等那次下载。所以它是 UI 层旁边的独立小模块：一个 `AudioContext`、两个 `AudioBufferSourceNode`、每路一个 `GainNode`（1 s 交叉淡化要两个），对外只有 `setRain(on)` 与 `unlock()`。
 
 ## 4. 数据流
 

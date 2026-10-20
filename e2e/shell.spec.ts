@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
- * L2 契约 spec（`docs/design/60-interaction-shell.md` §6 / §7 的 I4 / I6 / I7 / I8，判据见 §10）。
+ * L2 契约 spec（`docs/design/60-interaction-shell.md` §6 / §7 的 I4 / I6 / I7 / I8 / I11，判据见 §10）。
  *
  * 全部走真实页面：手机视口、进厅走入场层、不做任何 mock。站点要人先起（见 `playwright.config.ts`）。
  */
@@ -11,6 +11,7 @@ import type { Page } from '@playwright/test';
 interface Instrumented {
   __frames: string[];
   __canvasResizes: { count: number };
+  __blankDown: { seen: number; prevented: number };
 }
 
 /** 出站帧记录：包一层 `WebSocket.prototype.send`，`walk` 有没有发出去就问它。 */
@@ -100,35 +101,37 @@ test('每个状态的出口都可达：收起 / 面板空白 / 表情行替换�
   await expectComposer(page, 'idle');
 });
 
-test('退场动画期间，面板区域不会把点击漏给画布', async ({ page }) => {
+test('点插槽面板空白不产生 walk', async ({ page }) => {
   await enterHall(page);
-  await page.getByLabel('聊天输入框').focus();
-  await expectComposer(page, 'typing');
 
-  // 「收起」= 退场开始；从那一刻起每一帧采一次面板中心（160ms 过渡 + 余量）
-  await page.getByRole('button', { name: '收起输入' }).click();
-  const hits = await page.evaluate(async () => {
-    const panel = document.querySelector('.slot-panel');
-    const seen: string[] = [];
-    if (!(panel instanceof HTMLElement)) return seen;
-    const deadline = performance.now() + 250;
-    await new Promise<void>((resolve) => {
-      const sample = (): void => {
-        const rect = panel.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        seen.push(hit === null ? 'null' : hit.tagName);
-        if (performance.now() >= deadline) resolve();
-        else requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
+  // 空白处那一下 `pointerdown` 的 `defaultPrevented`：监听挂在冒泡阶段，面板自己的处理器先跑
+  await page.evaluate(() => {
+    const log = { seen: 0, prevented: 0 };
+    (window as unknown as Instrumented).__blankDown = log;
+    document.addEventListener('pointerdown', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.classList.contains('slot-panel')) return;
+      log.seen += 1;
+      if (event.defaultPrevented) log.prevented += 1;
     });
-    return seen;
   });
 
-  expect(hits.length).toBeGreaterThan(1);
-  // 至少有一帧命中的是面板本体（`div`）：证明采样确实盖住了过渡期，不是等它退完才开始
-  expect(hits).toContain('DIV');
-  expect(hits).not.toContain('CANVAS');
+  for (let i = 0; i < 8; i += 1) {
+    await page.getByLabel('聊天输入框').focus();
+    await expectComposer(page, 'typing');
+    const blank = await pointOn(page, '.slot-panel');
+    await page.touchscreen.tap(blank.x, blank.y);
+    // 退场挂在抬手的 `click` 上：按下只 `preventDefault()`，整次手势期间面板不换手
+    await expectComposer(page, 'idle');
+  }
+
+  // ① 空白处每一下 `pointerdown` 都被取消（浏览器据此不再派发兼容鼠标事件）
+  expect(await page.evaluate(() => (window as unknown as Instrumented).__blankDown)).toEqual({
+    seen: 8,
+    prevented: 8,
+  });
+  // ② 全程 0 次 `walk`（旧实现在这里一次点按就可能让小人走开）
+  expect(await walkCount(page)).toBe(0);
 });
 
 test('打字期间与退场之后画布像素尺寸都不动，宽度变化立即生效', async ({ page }) => {
@@ -228,4 +231,68 @@ test('隐私说明两处入口都指向静态页，入场层仍是三项', async
   await enterHall(page);
   await page.locator('.hud-settings-button').click();
   await expect(page.locator('.hud-menu-link')).toHaveAttribute('href', '/privacy.html');
+});
+
+/**
+ * 降级路径：没有 Popover API 的内核（Chromium 100 = 夸克 / UC，见 `docs/design/architecture.md` §1）。
+ *
+ * 判据（`docs/design/60-interaction-shell.md` §4 末条）：三个 Popover 方法全删掉后仍能进厅、不抛错，
+ * 减光层退回普通 `position: fixed` 整屏块，齿轮菜单退回手写开关：开 → `Esc` 关且焦点回齿轮 → 再开
+ * 能选中「更换床位」→ 点外面关。原生 Popover 那条路（其余四条用例）行为不变。
+ *
+ * 初始化脚本只能加在用例里（不能进 `beforeEach`）：其余四条跑的是原生 Popover 环境。
+ */
+test('没有 Popover API 的内核能进厅，齿轮菜单靠手写开关走完开 / 关 / 换床', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await page.addInitScript(() => {
+    const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    for (const name of ['showPopover', 'hidePopover', 'togglePopover']) delete proto[name];
+  });
+
+  await enterHall(page);
+  await expect(shell(page)).toBeVisible();
+
+  // 减光层不是顶层 `popover` 了，靠 `position: fixed; inset: 0` 仍是整屏一块
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('量不到视口尺寸');
+  const tone = await page.locator('.tone-layer').boundingBox();
+  if (!tone) throw new Error('找不到减光层');
+  expect(Math.abs(tone.width - viewport.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(tone.height - viewport.height)).toBeLessThanOrEqual(1);
+
+  const gear = page.getByRole('button', { name: '设置' });
+  const menu = page.locator('.hud-menu');
+
+  // ① 开：菜单出现、`aria-expanded` 手写为 true、焦点进菜单首项
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await expect(gear).toHaveAttribute('aria-expanded', 'true');
+  await expect(menu.getByRole('button', { name: '更换床位' })).toBeFocused();
+
+  // ② `Esc` 关：菜单卸载，焦点回齿轮（不接回来就落到 `body`）
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toHaveAttribute('aria-expanded', 'false');
+  await expect(gear).toBeFocused();
+
+  // ③ 菜单项可用：进换床模式后门控行给出常驻提示
+  await gear.click();
+  await menu.getByRole('button', { name: '更换床位' }).click();
+  await expect(page.getByText('点一张空床搬过去')).toBeVisible();
+  await expect(menu).toHaveCount(0);
+
+  // ④ 点外面关：点面板本体（`downElement !== canvas`，不会顺带发世界上行）。菜单锚在底部，点在面板上就算外面
+  await gear.click();
+  await expect(menu).toBeVisible();
+  const outside = await pointOn(page, '.chat-panel');
+  const framesBefore = (await framesOf(page)).length;
+  await page.touchscreen.tap(outside.x, outside.y);
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toHaveAttribute('aria-expanded', 'false');
+  // 点外关闭只是关菜单：一条上行都不该有（换床模式还开着）
+  expect((await framesOf(page)).length).toBe(framesBefore);
+
+  // 全程不抛错：降级路径不许裸调那三个方法
+  expect(errors).toEqual([]);
 });

@@ -73,6 +73,16 @@ export const SHRINK_USED_RATIO = 0.5;
 export const CHAT_BUBBLE_MS = 8_000;
 
 /**
+ * 雨声素材（`docs/design/config.md` §4）：8 s 早播小循环 + 30 s 主循环。
+ * **版本号写进文件名**：`immutable` 缓存下浏览器不会再来问，换素材必须改名。
+ */
+export const RAIN_INTRO_URL = '/audio/rain-loop-intro.v1.wav';
+export const RAIN_LOOP_URL = '/audio/rain-loop.v1.wav';
+
+/** 早播小循环 → 主循环的交叉淡化时长（秒）。 */
+export const RAIN_CROSSFADE_S = 1;
+
+/**
  * 探活超时（**只在客户端**）：发 `ping` 后这么久没有 `pong` → 判连接已死、关掉并重连。
  * 三条探活触发点与动作见 `docs/api/20-api-ws.md` §5.1。
  */

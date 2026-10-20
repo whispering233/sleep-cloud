@@ -9,15 +9,18 @@
 | 环境 | 是什么 | 什么时候用它 |
 | :--- | :--- | :--- |
 | **单测（L1）** | `npm test`（vitest）：纯函数、布局、寻路、位置同步的假时间轴、协议镜像、**交互状态机（`composerReducer` 及其序列穷举）/ `shouldResize`** | **任何纯逻辑**。能写成纯函数就必须在这里验，不要留到别处 |
-| **契约 spec（L2）** | `npm run e2e`（Playwright；需先起 `npm run dev`，端口自动读 `.wrangler/dev-port`；宿主机没装 Playwright 浏览器时用 `PLAYWRIGHT_CHROMIUM_PATH` 指一个已有 Chromium）：DOM 契约——每个状态的出口可达、退场期间 `elementFromPoint` 不是 canvas、`typing` 期间与退场之后画布尺寸不变、只有画布起手的 tap 产 `walk` | **界面壳层的不变式**（`60-interaction-shell.md` §6）。它不测像素、也不需要 IME，所以桌面就能跑；**不进 CI**，进 §4 的「合并前必跑」 |
+| **契约 spec（L2）** | `npm run e2e`（Playwright；需先起 `npm run dev`，端口自动读 `.wrangler/dev-port`；宿主机没装 Playwright 浏览器时用 `PLAYWRIGHT_CHROMIUM_PATH` 指一个已有 Chromium）：DOM 契约——每个状态的出口可达、点插槽面板空白不产生 `walk`、`typing` 期间与退场之后画布尺寸不变、只有画布起手的 tap 产 `walk`、无 Popover 时降级路径能进厅并走完齿轮菜单 | **界面壳层的不变式**（`60-interaction-shell.md` §6）。它不测像素、也不需要 IME，所以桌面就能跑；**不进 CI**，进 §4 的「合并前必跑」 |
 | **类型检查** | `npm run typecheck`（三份 tsconfig） | 改协议 / 样式令牌 / 前端代码后。干净克隆先跑一次 `npm run tokens` |
 | **桌面浏览器** | 本机 Chromium（Playwright / BetterWright） | 逻辑与流程：进厅、走动、躺下、聊天、断线重连、命中判定。**桌面视口只用于「不是响应式」的那类结论** |
 | **桌面浏览器 + 手机视口** | 同上，但视口按手机设（393×852 类） | **降级选项**：模拟器不可用时才用，只能看溢出/换行这类明显错误；**结论必须标注「降级验证」**。它仿真不了软键盘、IME、真触摸语义（见 §3），所以**不得作为响应式/触摸类验收的通过依据** |
 | **宿主 Windows 上的 Android 模拟器** | 真 Android + 真 Chrome + 真 Gboard，`-gpu host` | **移动端验收的默认环境**：布局与响应式、触摸语义（合成分发）、软键盘 / IME、画布与面板时序、DOM 与合成器行为。配方见 §2 |
 | **真机** | 实机 iOS Safari / Android Chrome | 真手指、低端机帧率、真机低亮度观感、iOS 与 Android 的平台差异、你要验的那个具体内核（夸克 / Via） |
 | **生产** | 部署后的站点 + 平台用量面板 | 额度、并发上限、真实网络下的节拍与位置年龄。**与额度相关的结论只看平台用量面板，不接受推算** |
+| **音频听感** | 外放 / 耳机，人耳 | 只能人耳判。自动化最多断言「`AudioContext` 在跑、请求确实发生、没有异常」，断言不了好不好听。移动端要同时验 **iOS 静音拨片**：拨到静音后 WebAudio 不出声是平台行为，不是 bug |
 
 **基线设备**：iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）。窄档阈值 640，其它窄屏手机走同一套分支。
+
+**降级路径的回归**：Popover API 缺失用 e2e 的 init script 模拟（导航前删 `HTMLElement.prototype.showPopover/hidePopover/togglePopover`），`e2e/shell.spec.ts` 有一条固定用例；真夸克（Chromium 100）只能在真机上复验——模拟器跑不动（arm64-only APK 在 x86_64 镜像上 ANR）。
 
 ## 2. 宿主 Windows 上的 Android 模拟器（移动端验收的默认环境）
 

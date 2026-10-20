@@ -50,7 +50,7 @@
 
   /* 世界层不进流（绝对定位）且铺满所有行。`z-index: -1`：两块面板现在是**静态**网格项，绝对定位的层
      会画在它们之上——负层级把它退到同层叠上下文的最底（`.app-shell` 是 `position: fixed`，本身就建层叠上下文，
-     不会掉到 body 后面）。`tone-layer`（顶层 `popover`）仍然盖得住它 */
+     不会掉到 body 后面）。`tone-layer` 仍然盖得住它：有 Popover 时它在顶层，没有时它是 DOM 最后一个子节点 */
   .world-layer {
     position: absolute;
     grid-area: 1 / 1 / -1 / -1;
@@ -64,6 +64,8 @@
      这一层自己也是个 `popover`（`manual`，由 `ToneLayer` 常驻打开）：齿轮浮层走 `popover` 进顶层，
      而顶层元素之间**不吃 `z-index`**、只按入场顺序画——减光层只有自己也在顶层才压得住它，
      并且要由 `ToneLayer` 在别的浮层入场后把自己重新推上去（那条注释在组件里）。
+     **没有 Popover API 的内核（Chromium 100）**不加 `popover` 属性、不调那几个方法：它本就是
+     `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与菜单上。
      `pointer-events: none`——它只是一层光，不吃任何点击。落档不缓动由组件按帧关掉过渡。
      `margin` / `width` / `height` / `border` / `padding` 是抹掉 UA 给 `[popover]` 的居中 / 收缩 / 边线默认值：
      不抹掉，减光就变成屏幕中间的一个小黑框 */
@@ -190,8 +192,9 @@
     height: 20px;
   }
 
-  /* 齿轮浮层：`popover`（顶层渲染、light-dismiss、`Esc` 全部由平台给，
-     `docs/design/60-interaction-shell.md` §4）——所以这里没有遮罩，也没有手写的点外关闭。
+  /* 齿轮浮层：有 Popover 时是 `popover`（顶层渲染、light-dismiss、`Esc` 全部由平台给，
+     `docs/design/60-interaction-shell.md` §4）——所以没有遮罩，也没有手写的点外关闭。
+     没有 Popover 的内核由 `ActionRow` 自己管开关，样式（含下面的定位兜底）不变。
      位置**只有一个来源：锚在齿轮上**（CSS anchor positioning）。顶层元素的定位盒是视口，
      「靠祖先 `position: relative` 手算」在顶层里不成立（实测：`inset-block-end: 100%` 会按视口算，浮层跑到屏幕外）。
      向上展开、右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
@@ -228,12 +231,19 @@
     }
   }
 
-  /* 浮层里那一项：胶囊外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
-     只额外把它撑满浮层一行、与下面的版本号拉开一档 */
+  /* 浮层里的可点击组：两颗胶囊之间是**组内间距**，组与版本号之间才是组间间距（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
+  .hud-menu-group {
+    display: grid;
+    /* 组内 8px / 组间 12px：与动作行同一套间距口径（`docs/ui/DESIGN.md` 的 `action-row` 行） */
+    gap: var(--spacing-sm);
+    margin-block-end: var(--spacing-md);
+  }
+
+  /* 浮层里的一颗胶囊：外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
+     只额外把它撑满浮层一行（间距由 `.hud-menu-group` 给） */
   .hud-menu-action {
     display: block;
     width: 100%;
-    margin-block-end: var(--spacing-sm);
   }
 
   /* 版本号：浮层里两行纯文字之一（排查用信息，不常驻版面） */
@@ -304,12 +314,15 @@
      不是层叠上下文）。它是下面那块，所以**下圆角 + 下边框**；上沿不画边（交接处那条线由聊天面板的下边画，
      两块都画就是两道线 + 两个圆角凹口，§3）。
      开关不用 `hidden`（`display: none` 过渡不了）：靠 `data-open` 切 `opacity` / `transform`，隐藏靠
-     `visibility: hidden`（不可 Tab、不被读屏读到另外还有组件的 `inert`）。空闲态它与聊天面板同在第 3 行，
-     但 `opacity: 0` + `visibility: hidden` + 空内容，看不见也点不到。
+     `visibility: hidden`（不可 Tab、不被读屏读到；可点性的依据也是它——`inert` 会让命中跳过整棵子树，
+     管不了可点性）。空闲态它与聊天面板同在第 3 行，但 `opacity: 0` + `visibility: hidden` + 空内容，
+     看不见也点不到。
      **为什么必须是 `visibility` 而不是 `pointer-events`**：两块面板同在第 1 列第 3 行完全重叠，
      「看不见但还占位」的那个盒子会把聊天面板的点击全吃掉；而 `pointer-events: none` 一旦在退场一开始就挂上，
      面板还看得见的 160ms 里点击会穿到画布（`docs/design/60-interaction-shell.md` §4）。
-     `visibility` 挂同一条过渡 + `allow-discrete`：退场期间它仍是 `visible`（照旧吃点击），动画末帧才消失 */
+     `visibility` 挂同一条过渡 + `allow-discrete`：退场期间它仍是 `visible`。注意退场本身是**瞬切**的——
+     撤 `data-open` 那一帧盒子就换成第 3 行这个空盒子（内容一起卸），这条过渡画的是一块与聊天面板重合同色的
+     空矩形；真正的可点保障是「点空白在抬手才退场」（`50-slot-panel.md` §5） */
   .slot-panel {
     /* 显式占第 1 列：两块面板都被自动放进第 3 行，不写列会被摆到隐式第 2 列去（整页会多出 2px 死条、世界少 2px） */
     grid-column: 1;

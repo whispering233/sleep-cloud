@@ -14,6 +14,7 @@ const stateWith = (overrides: Partial<ClientState> = {}): ClientState => ({
   ...getState(),
   hall: { bedCount: BED_COUNT, online: 37 },
   me: { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 812.5, y: 430, ownedBedNo: 42 },
+  rain: false,
   ...overrides,
 });
 
@@ -39,6 +40,7 @@ describe('HUD 派生视图', () => {
       rttMs: undefined,
       switching: false,
       zoomMode: { kind: 'free' },
+      rain: false,
       composer: 'idle',
     });
   });
@@ -118,6 +120,14 @@ describe('HUD 派生视图', () => {
     expect(base.switching).toBe(false);
     expect(sameHudView(base, hudViewOf(stateWith({ switching: false })))).toBe(true);
     expect(sameHudView(base, hudViewOf(stateWith({ switching: true })))).toBe(false);
+  });
+
+  it('天气进视图：它决定浮层里那颗胶囊的文案与 aria-pressed', () => {
+    const dry = hudViewOf(stateWith());
+    expect(dry.rain).toBe(false);
+    expect(sameHudView(dry, hudViewOf(stateWith({ rain: false })))).toBe(true);
+    expect(sameHudView(dry, hudViewOf(stateWith({ rain: true })))).toBe(false);
+    expect(hudViewOf(stateWith({ rain: true })).rain).toBe(true);
   });
 
   it('空床变了才算变化：归属集合大小变化会换视图对象', () => {

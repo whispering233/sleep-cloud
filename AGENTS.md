@@ -21,7 +21,7 @@
 | 插槽面板：内容契约、快捷用语、已知代价 | `docs/design/50-slot-panel.md` |
 | 交互外壳：所有权表、输入会话状态机、Grid 两态、退场时序、画布冻结 | `docs/design/60-interaction-shell.md` |
 | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 | `docs/design/70-privacy-risk.md` |
-| 时间常量、限制、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
+| 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、额度监控 | `docs/design/build.md` |
 | 测试环境与流程（哪类测试用哪个环境） | `docs/design/test.md` |
 | 数据模型 | `docs/db/schema.md` |
@@ -86,16 +86,28 @@
 33. **打字态 = store 里的状态，不是 DOM 焦点。** 焦点只是入口之一（shell 级 `focusin` 认出可编辑控件）；退场**只有一个出口** `exitComposer()`：幂等、**不看 `activeElement` 是谁**。另有一条对账：shell 级 `focusout` 后下一帧发现活跃元素不在面板内的可编辑控件里 → 退场。这两条合起来才挡住「控件被卸载不发 blur」（表情行原地替换输入行）与「别的控件抢焦点」（`GO` 床号）。**打字态必须常驻一个 44px 可见出口**（动作行右端的「收起」胶囊）——隐性出口出错时等于没有出口。
 34. **布局归 CSS，JS 只买状态。** `.app-shell` 是 Grid 两态（`auto 1fr auto` / `auto auto 1fr`），面板与插槽都在流里：**不量高度、不写 `--dock-y`、不用 `translateY` 挪面板、两态瞬切无动画**。位移式布局每加一行控件都要重算一次，而测量面板底锚点量到的永远是上一帧。相机 inset 仍只吃**布局值**（`layoutTopOf` 用 `offsetTop` 累加），不吃 `getBoundingClientRect()`：后者会跟着 transform 跑。
 35. **会抢焦点、或会让布局当场换位的按钮，两个坑一起躲：`pointerdown` 里 `preventDefault()`，并给它独立的 `key`。** 前者：按钮一聚焦就触发 `focusout` 对账 → 面板当场换位；后者：换位后 React 会原地复用那颗 `<button>`（只换属性），而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑——实测按「收起」会顺手弹出设置浮层。
-36. **可点性必须与视觉同源，画布只收画布起手的 tap。** 退场用 `visibility` 离散过渡（`transition-behavior: allow-discrete`），**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。
+36. **可点性必须与视觉同源，画布只收画布起手的 tap。** 关闭态用 `visibility` 离散过渡（`transition-behavior: allow-discrete`）退出命中，**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）；也别指望 `inert`（命中会跳过整棵子树）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。**一次点按手势期间不许把被点的盒子拿掉**：触摸抬手的兼容鼠标事件按抬手那一刻重新命中，盒子若在 `pointerdown` 里就消失（布局切换 / 卸载），补发的 `mousedown` 就落到画布上、而它确实是从画布起手的（兜底拦不住）——布局变化要么推到 `click`，要么在 `pointerdown` 里 `preventDefault()`。
 
 **本地持久化（客户端）**
 
 37. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
+**天气与声音**
+
+38. **天气是个人偏好，不进协议。** 只有**雨天 / 无雨**两态，一个开关同时驱动**雨层画面与雨声**；缺键时按本地日历日序号的奇偶初始化（只在启动算一次），用户切过之后永久生效。服务端不知道天气，所以同厅两个人可能一个下雨一个不下。**没有独立音量 / 静音**：静音 = 切「无雨」（理由见 `docs/design/backlog.md`）。
+39. **雨层是屏幕空间的并行 Scene。** 自带相机、原点左上、`zoom` = 画布 DPR（取 `1 / scale.zoom`，不要读 `window.devicePixelRatio`——画布才是事实源），因此不随世界缩放、可用视口、面板换位变化，也**不是第二层明暗**（覆盖率约 1.2%）。颗粒是运行时 `generateTexture` 的 2×14 细线，**不走 `npm run art`**。
+40. **音频用原生 WebAudio，不用 Phaser 的 SoundManager**（`audio: { noAudio: true }`，否则每页白建一个 `AudioContext`）。**无雨时连 context 都不建**；只在进场手势里解锁；音频字节走 HTTP 缓存（`public/_headers` 的 `immutable` + **文件名版本号**），不进本地存储。
+
 **身份与风控**
 
-38. **身份 ≠ 凭据。** `userId` 是**身份**（L1，服务端随机、64 bit、不派生自请求任何属性），签名 cookie 是**凭据**（L2）。凭据失效不等于换人：任何代码与文档不得假设「cookie 就是身份的全部」，也不得把身份从 IP / UA / 设备信息**推导**出来（推导式身份在移动网络下就是换人，而失败形态是静默的）。以后要接 passkey / 登录时，**L1 与 `bed.owner_user_id` 都不动**，只加凭据到身份的映射。来源信息（L3：IP / 国家 / UA 哈希）**只入运维台账、永不下发**。见 `docs/design/70-privacy-risk.md` §2。
-39. **封禁必须可见，且不许自己变成放大器。** 命中封禁（`5002`）时**入场层要给明确提示、厅内要给常驻提示**，并带上到期时间（**给时间，不给原因**——原因只进审计）。**同时必须停止自动重连**：服务端用 `close(1008, 'blocked')` 这类**带语义的 close**，客户端按 `reason` 分支（`blocked` / `replaced` 都不重连），否则被封的人会每 15 秒撞一次 `/api/me`，一晚几千次唤醒。封禁判定**只有一处实现**（`entryStatus(来源)`，`/api/me` 与 `hello` 共用），**不许另开 RPC 或另写一套谓词**。
+41. **身份 ≠ 凭据。** `userId` 是**身份**（L1，服务端随机、64 bit、不派生自请求任何属性），签名 cookie 是**凭据**（L2）。凭据失效不等于换人：任何代码与文档不得假设「cookie 就是身份的全部」，也不得把身份从 IP / UA / 设备信息**推导**出来（推导式身份在移动网络下就是换人，而失败形态是静默的）。以后要接 passkey / 登录时，**L1 与 `bed.owner_user_id` 都不动**，只加凭据到身份的映射。来源信息（L3：IP / 国家 / UA 哈希）**只入运维台账、永不下发**。见 `docs/design/70-privacy-risk.md` §2。
+42. **封禁必须可见，且不许自己变成放大器。** 命中封禁（`5002`）时**入场层要给明确提示、厅内要给常驻提示**，并带上到期时间（**给时间，不给原因**——原因只进审计）。**同时必须停止自动重连**：服务端用 `close(1008, 'blocked')` 这类**带语义的 close**，客户端按 `reason` 分支（`blocked` / `replaced` 都不重连），否则被封的人会每 15 秒撞一次 `/api/me`，一晚几千次唤醒。封禁判定**只有一处实现**（`entryStatus(来源)`，`/api/me` 与 `hello` 共用），**不许另开 RPC 或另写一套谓词**。
+
+## 兼容基线（Chromium 100）
+
+1. **基线是真实内核，不是「尽量兼容」。** 夸克 / UC 的安卓内核停在 Chromium 100（`libwebviewuc.so` = `100.0.4896.58`，无 `showPopover`）。`build.target` 固定 `chrome100`，构建产物必须能被 Chromium 100 解析。
+2. **Chromium 114+ 的 API 必须带降级路径**（Popover、`:popover-open`、`@starting-style`、anchor positioning…），不许裸调；CSS 新特性只能用「`@supports` 包住后仍可用」或纯装饰的写法。
+3. **能力判断只放 `src/client/popover.ts`**（今天只有 `HAS_POPOVER`），组件里不各写一份探测；降级路径要有 e2e 用例（`e2e/shell.spec.ts` 里删三个 popover 方法模拟）。
 
 ## 术语
 
@@ -131,6 +143,9 @@
 | 连接态（`connecting`/`online`/`offline`） | 在线、在线状态 | **渲染层的显示态**，与「人在不在场」（服务端事实）无关 |
 | 插槽面板（slot panel） | 浮层、遮罩、overlay、浮动面板 | 一块**常驻可占用区**，挂在聊天面板**下沿**（`docs/design/50-slot-panel.md`）；位置 / 尺寸 / 层叠全由框架给，**不是浮层** |
 | 触发源（slot source） | 触发器、开关、provider | 插槽面板的开关：**开与关由同一个源负责**（每源一个 `active`，面板显示 = 任一源 active），不写全局的「失焦即退场」 |
+| 天气（雨天 / 无雨） | 晴、天气同步、天气 API | **个人偏好**（本地键 `sc.weather.rain`），一个开关同时驱动雨层与雨声；**不与现实天气同步**，不进协议 |
+| 早播循环（intro loop） | 预览音、小样 | 8 s 的短循环，只负责「尽快出声」；30 s 主循环解码完成后 1 s 交叉淡化接上并释放它 |
+| 雨层（`rain-layer`） | 天气特效、粒子雨 | **屏幕空间**的并行 Scene（相机原点左上 + `zoom` = 画布 DPR）；与世界缩放、可用视口、面板换位无关 |
 
 ## 开发流程（本项目）
 
