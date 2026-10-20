@@ -15,29 +15,6 @@
 
 ---
 
-## 卡 4：后台台账 + 封禁/解封 + 踢连接 + 审计
-
-**目标**：能在后台看见人、封人、解封，且动作留痕。
-
-**改动面**
-
-| 文件 | 做什么 |
-| :--- | :--- |
-| `src/hall/hall.ts` | 增加一条**内部**分支（内部头 `x-sleep-admin` 才进）：`GET identities` / `GET identities/:id` / `GET blocks` / `POST blocks` / `DELETE blocks/:kind/:value` / `GET audit`，全部按 `../api/30-api-admin.md` §5 的字段返回 |
-| `src/hall/hall.ts` | 封禁后**遍历连接并关闭命中的**（`close(1008, 'blocked')`），返回 `affected: {identities, online}` |
-| `src/worker/admin.ts` | 把 `/api/admin/*` 转发给厅对象（同 `/api/ws` 的范式），并把 401 中间件放在前面 |
-| `public/admin.html` | 三个区：台账（含按 IP 反查、`在线` / `bedNo` 列）、黑名单、审计。**封禁前的确认里必须显示 `affected.identities`**（封 IP 时让操作者看见自己在封一片人） |
-
-**验收**
-
-- 单测：`POST /blocks` 写入 `block` + 一条 `admin_audit`；`created` 在覆盖时为 `false`。
-- 单测：`untilAt` 填过去时间 → 400；`kind` 非法 → 400；`reason` 空 → 400。
-- 单测：解封一个不存在的值 → 200 且 `removed:false`。
-- 单测：封禁命中在线连接时该连接被关闭（用测试 ws 桩）。
-- 手验：本机开两个浏览器，A 登录后台封 B 的 IP，B 立刻断开且看到常驻提示。
-
----
-
 ## 卡 5：密钥环（消掉「轮换 = 全员丢床」）
 
 **目标**：签名用 `SESSION_SECRET`，验签先试它、失败再试 `SESSION_SECRET_PREV`。
@@ -83,7 +60,6 @@
 ## 卡片顺序
 
 ```text
-卡 4（依赖卡 1 + 卡 3，均已落地）
 卡 5（独立）
 卡 6（独立）
 卡 7（独立，只依赖文案）
