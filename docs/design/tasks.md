@@ -24,9 +24,9 @@
 
 `40-client-storage.md` §3（键与日期默认）、`config.md` §4（音频与电平规格）、`00-master-design.md` §5.4（天气是个人偏好）、`../ui/DESIGN.md` 的 `hud-menu`、`architecture.md` §3（音频不走 Phaser）。
 
-### 资产（已加工好，直接拷入）
+### 资产（已入库，本卡不用碰）
 
-`C:\download\游戏素材\sleep-cloud-audio\rain-loop.v1.wav` 与 `rain-loop-intro.v1.wav` → `public/audio/`；另建 `public/audio/LICENSE-rain-and-thunders.txt`（作者 `kindland`、源页 `https://opengameart.org/content/rain-and-thunders`、CC0 1.0、加工链与命令）与 `public/_headers`（`/audio/*` → `public, max-age=31536000, immutable`）。
+`public/audio/rain-loop.v1.wav`、`public/audio/rain-loop-intro.v1.wav`、`public/audio/LICENSE-rain-and-thunders.txt`、`public/_headers` 已在分支上。`npm run build` 已确认 `dist/_headers` 与 `dist/audio/` 都产出。**代码只按文件名引用**，不要重新加工音频。
 
 ### 改动
 
