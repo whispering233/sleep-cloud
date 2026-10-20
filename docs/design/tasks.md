@@ -15,29 +15,6 @@
 
 ---
 
-## 卡 3：后台登录（`/admin` + `/api/admin/login`）
-
-**目标**：能用 `ADMIN_TOKEN` 进后台；未授权一律 401。
-
-**改动面**
-
-| 文件 | 做什么 |
-| :--- | :--- |
-| `public/admin.html` | 壳：一个令牌输入框 + 登录按钮 + 一块空的结果区。**不加载前台 React、不连 WebSocket**；样式内联一小段即可（后台不套前台令牌） |
-| `src/worker/admin.ts`（新） | `POST /api/admin/login`（常量时间比较 + 同 IP 每分钟 5 次，超限 429）、`POST /api/admin/logout`（清 cookie）、中间件（验签 `sc_admin` + 核对 `fp` 与当前 `ADMIN_TOKEN` 的 `SHA-256` 前 8 hex + 24 小时有效期） |
-| `src/worker/app.ts` | 挂上 `/api/admin/*` 子路由 |
-| `src/worker/env.ts` | 加 `ADMIN_TOKEN`；缺省时后台接口一律 401（**不要**回落到某个默认值） |
-| `.dev.vars.example` | 加 `ADMIN_TOKEN` 占位 |
-| `src/shared/constants.ts` | `ADMIN_SESSION_MS` / `ADMIN_LOGIN_MAX_PER_MIN` |
-
-**验收**
-
-- 单测：无 cookie → 401；错 token → 401；对 token → 200 且下发 `sc_admin`；换 `ADMIN_TOKEN` 后旧 cookie → 401（`fp` 不匹配）。
-- 单测：登录 6 次/分钟 → 第 6 次 429。
-- 手验：`/admin.html` 输入令牌能进、刷新还在（cookie 未过期）。
-
----
-
 ## 卡 4：后台台账 + 封禁/解封 + 踢连接 + 审计
 
 **目标**：能在后台看见人、封人、解封，且动作留痕。
@@ -106,7 +83,7 @@
 ## 卡片顺序
 
 ```text
-卡 3 ──► 卡 4
+卡 4（依赖卡 1 + 卡 3，均已落地）
 卡 5（独立）
 卡 6（独立）
 卡 7（独立，只依赖文案）

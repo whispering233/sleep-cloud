@@ -58,20 +58,23 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 
 ## 4. 分页
 
-| 项 | 约定 |
-| :--- | :--- |
-| 请求 | `?limit=50&before=<排序键>`，`limit` 默认 50、上限 100 |
-| 响应 | `{ "items": [...], "nextBefore": <排序键或 null> }`。`null` = 没有下一页 |
-| 排序键 | `identities` → `last_seen_at`；`blocks` → `created_at`；`audit` → 自增主键 `id`。**一律倒序** |
-| 理由 | 不用 offset：`before` 分页在「边看边有人进出」时不会翻出重复行，也不依赖行数 |
+**只有真正会长大的列表才分页**：`identities`（跟着历史身份数增长）与 `audit`（跟着运维动作增长）。`blocks` 不分页——它是人工动作的产物，几十行量级，与用户规模无关（见 `../db/schema.md` §9）。
+
+| 列表 | 请求 | 响应 | 排序键 |
+| :--- | :--- | :--- | :--- |
+| `identities` | `?limit=50&before=<ts>&beforeId=<userId>` | `{ items, next: { before, beforeId } \| null }` | `last_seen_at DESC, user_id DESC`（**复合游标**：只按时刻会漏掉同一毫秒的那些行） |
+| `audit` | `?limit=50&before=<id>` | `{ items, next: { before } \| null }` | 自增主键 `id DESC` |
+| `blocks` | — | `{ items }` | `created_at DESC`（数据库层排好，不再分页） |
+
+`limit` 默认 50、上限 100。**不用 offset**：`before` 分页在「边看边有人进出」时不会翻出重复行，也不依赖行数。`next: null` = 没有下一页。
 
 ## 5. 接口详情
 
 ### 5.1 `GET /api/admin/identities`
 
-查询参数：`limit` / `before` / `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）。
+查询参数：`limit` / `before` + `beforeId`（复合游标）/ `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）。
 
-**`ip` 与 `before` 可以同时给**：按 IP 反查时也要能翻页。
+**`ip` 与游标可以同时给**：按 IP 反查时也要能翻页。
 
 | 字段 | 是否必选 | 数据类型 | 说明 |
 | :--- | :--- | :--- | :--- |
