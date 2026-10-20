@@ -23,7 +23,7 @@
 | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 | `docs/design/70-privacy-risk.md` |
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
-| 运行、构建、部署、额度监控 | `docs/design/build.md` |
+| 运行、构建、部署、发版顺序、额度监控 | `docs/design/build.md` |
 | 测试环境与流程（哪类测试用哪个环境） | `docs/design/test.md` |
 | 数据模型 | `docs/db/schema.md` |
 | 接口、协议、错误码 | `docs/api/` |
@@ -196,4 +196,4 @@ npm run tokens
 
 ## 版本与变更
 
-- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
+- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推送 → 部署 → 打标签）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
