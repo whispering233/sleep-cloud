@@ -69,7 +69,7 @@ test('全新浏览器：天气缺键就是无雨，且不落盘', async ({ page 
   const toggle = weatherButton(page);
   await expect(toggle).toHaveText('无雨');
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.weatherRain)).toBeNull();
+  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.weather)).toBeNull();
 });
 
 test('天气胶囊：开关翻转、落盘、重载保持，且点它不让小人走', async ({ page }) => {
@@ -90,8 +90,8 @@ test('天气胶囊：开关翻转、落盘、重载保持，且点它不让小�
   // 点它不关浮层：天气是可连续切换的设置
   await expect(toggle).toBeVisible();
 
-  const stored = await page.evaluate((key) => localStorage.getItem(key), PREFS.weatherRain);
-  expect(JSON.parse(stored ?? '')).toEqual({ v: 1, rain: !before });
+  const stored = await page.evaluate((key) => localStorage.getItem(key), PREFS.weather);
+  expect(JSON.parse(stored ?? '')).toEqual({ v: 1, kind: !before ? 'rain' : 'none' });
 
   await page.waitForTimeout(200);
   expect(await walkCount(page)).toBe(0);
@@ -112,7 +112,7 @@ test('全新浏览器：雨声缺键就是静音，且不落盘', async ({ page 
   const toggle = soundButton(page);
   await expect(toggle).toHaveText('静音');
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.audioRain)).toBeNull();
+  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.sound)).toBeNull();
 });
 
 test('雨声与天气互不联动：各自落盘、各自重载保持', async ({ page }) => {
@@ -128,11 +128,11 @@ test('雨声与天气互不联动：各自落盘、各自重载保持', async ({
   await expect
     .poll(async () => page.evaluate(() => (window as unknown as Instrumented).__audio.map((c) => c.state)))
     .toEqual(['running']);
-  expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), PREFS.audioRain)) ?? '')).toEqual({
+  expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), PREFS.sound)) ?? '')).toEqual({
     v: 1,
-    on: true,
+    kind: 'rain',
   });
-  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.weatherRain)).toBeNull();
+  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.weather)).toBeNull();
 
   // 再点天气：画面变雨天，声音不被改（雨天也能静音是同一个道理）
   await weatherButton(page).click();

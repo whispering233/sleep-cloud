@@ -12,11 +12,30 @@ const PREFS_VERSION = 1;
 /** 键的唯一真源（镜像 `docs/design/40-client-storage.md` §3 的登记表）。 */
 export const PREFS = {
   zoomMode: 'sc.zoom.mode',
-  weatherRain: 'sc.weather.rain',
-  audioRain: 'sc.audio.rain',
+  weather: 'sc.weather',
+  sound: 'sc.sound',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
+
+/**
+ * v0.0.6 及更早的键：类型写进了键名、值是布尔。**读到就删**：形状与现行 id 无法互转，
+ * 而不迁移的代价只是「偏好丢了回默认、功能完好」（`40-client-storage.md` §3）。
+ */
+const LEGACY_KEYS = ['sc.weather.rain', 'sc.audio.rain'] as const;
+
+/** 读偏好前顺手清掉旧键（删也可能抛，静默）；两种读取共用，所以放在读取入口里而不是调用点。 */
+function dropLegacyPrefs(storage?: PrefStorage): void {
+  const store = resolveStorage(storage);
+  if (!store) return;
+  for (const key of LEGACY_KEYS) {
+    try {
+      store.removeItem(key);
+    } catch {
+      // 隐私模式 / 配额满：删不掉就下次启动再试，用户照常玩
+    }
+  }
+}
 
 /** `localStorage` 的最小门面：单测塞假 storage，也不依赖 DOM 的 `Storage` 类型（测试编译图无 DOM lib）。 */
 export interface PrefStorage {
@@ -124,44 +143,49 @@ export function writeZoomMode(mode: ZoomMode, storage?: PrefStorage): void {
   writePref(PREFS.zoomMode, { v: PREFS_VERSION, mode: mode.kind === 'free' ? 'free' : mode.z }, storage);
 }
 
-/** `sc.weather.rain` 的值形状：`rain` 必须是布尔。 */
-type StoredWeatherRain = { v: number; rain: boolean };
+/** 天气 id（`sc.weather` 的 `kind`）：**加一种天气就是往这张表里加一行**，不开新键。 */
+export type WeatherKind = 'none' | 'rain';
 
-function isStoredWeatherRain(value: unknown): value is StoredWeatherRain {
-  return typeof value === 'object' && value !== null && typeof (value as { rain?: unknown }).rain === 'boolean';
+/** 声道 id（`sc.sound` 的 `kind`）：加一种白噪音同理。 */
+export type SoundKind = 'none' | 'rain';
+
+const WEATHER_KINDS: readonly WeatherKind[] = ['none', 'rain'];
+const SOUND_KINDS: readonly SoundKind[] = ['none', 'rain'];
+
+/** 白名单：`kind` 必须在这张 id 表里（**不接受表外字符串**，也不接受旧的布尔形状）。 */
+function isStoredKind<K extends string>(kinds: readonly K[]) {
+  return (value: unknown): value is { v: number; kind: K } =>
+    typeof value === 'object' &&
+    value !== null &&
+    (kinds as readonly unknown[]).includes((value as { kind?: unknown }).kind);
 }
 
 /**
- * 读 `sc.weather.rain`：缺键（或读到的值判废）→ **无雨**。默认值是常量，不读日期也不读时钟
+ * 读 `sc.weather`：缺键（或读到的值判废）→ `none`（无雨）。默认值是常量，不读日期也不读时钟
  * （`40-client-storage.md` §3：全表默认值都是常量）。
  */
-export function readWeatherRain(storage?: PrefStorage): boolean {
-  const fallback: StoredWeatherRain = { v: PREFS_VERSION, rain: false };
-  return readPref(PREFS.weatherRain, isStoredWeatherRain, fallback, storage).rain;
+export function readWeather(storage?: PrefStorage): WeatherKind {
+  dropLegacyPrefs(storage);
+  const fallback = { v: PREFS_VERSION, kind: 'none' } as const;
+  return readPref(PREFS.weather, isStoredKind(WEATHER_KINDS), fallback, storage).kind;
 }
 
-/** 写 `sc.weather.rain`：切到「无雨」也照写（**写入路径只一条**，`false` 不是「删键」）。 */
-export function writeWeatherRain(rain: boolean, storage?: PrefStorage): void {
-  writePref(PREFS.weatherRain, { v: PREFS_VERSION, rain }, storage);
-}
-
-/** `sc.audio.rain` 的值形状：`on` 必须是布尔。 */
-type StoredAudioRain = { v: number; on: boolean };
-
-function isStoredAudioRain(value: unknown): value is StoredAudioRain {
-  return typeof value === 'object' && value !== null && typeof (value as { on?: unknown }).on === 'boolean';
+/** 写 `sc.weather`：切回「无雨」也照写（**写入路径只一条**，`none` 不是「删键」）。 */
+export function writeWeather(kind: WeatherKind, storage?: PrefStorage): void {
+  writePref(PREFS.weather, { v: PREFS_VERSION, kind }, storage);
 }
 
 /**
- * 读 `sc.audio.rain`：缺键（或读到的值判废）→ **静音**。与天气各自独立（`40-client-storage.md` §3）：
+ * 读 `sc.sound`：缺键（或读到的值判废）→ `none`（静音）。与天气各自独立（`40-client-storage.md` §3）：
  * 第一次打开不出声，外放场景的代价不该由默认值替用户承担。
  */
-export function readAudioRain(storage?: PrefStorage): boolean {
-  const fallback: StoredAudioRain = { v: PREFS_VERSION, on: false };
-  return readPref(PREFS.audioRain, isStoredAudioRain, fallback, storage).on;
+export function readSound(storage?: PrefStorage): SoundKind {
+  dropLegacyPrefs(storage);
+  const fallback = { v: PREFS_VERSION, kind: 'none' } as const;
+  return readPref(PREFS.sound, isStoredKind(SOUND_KINDS), fallback, storage).kind;
 }
 
-/** 写 `sc.audio.rain`：切到「静音」也照写（同天气，`false` 不是「删键」）。 */
-export function writeAudioRain(on: boolean, storage?: PrefStorage): void {
-  writePref(PREFS.audioRain, { v: PREFS_VERSION, on }, storage);
+/** 写 `sc.sound`：切到「静音」也照写（同天气，`none` 不是「删键」）。 */
+export function writeSound(kind: SoundKind, storage?: PrefStorage): void {
+  writePref(PREFS.sound, { v: PREFS_VERSION, kind }, storage);
 }

@@ -24,11 +24,11 @@ import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 import {
-  readAudioRain,
-  readWeatherRain,
+  readSound,
+  readWeather,
   readZoomMode,
-  writeAudioRain,
-  writeWeatherRain,
+  writeSound,
+  writeWeather,
   writeZoomMode,
 } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
@@ -144,10 +144,11 @@ const emptyState = (): ClientState => ({
   bubbles: new Map(),
   switching: false,
   composer: 'idle',
-  // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
+  // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
+  // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
   zoomMode: readZoomMode(),
-  rain: readWeatherRain(),
-  sound: readAudioRain(),
+  rain: readWeather() === 'rain',
+  sound: readSound() === 'rain',
 });
 
 let state: ClientState = emptyState();
@@ -266,7 +267,7 @@ export function setZoomMode(mode: ZoomMode): void {
 export function setRain(on: boolean): void {
   if (state.rain === on) return;
   setState({ rain: on });
-  writeWeatherRain(on);
+  writeWeather(on ? 'rain' : 'none');
 }
 
 /**
@@ -276,7 +277,7 @@ export function setRain(on: boolean): void {
 export function setSound(on: boolean): void {
   if (state.sound === on) return;
   setState({ sound: on });
-  writeAudioRain(on);
+  writeSound(on ? 'rain' : 'none');
 }
 
 /**

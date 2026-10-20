@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { readDoc, tableRows } from '../../shared/tests/doc';
 import {
   PREFS,
-  readAudioRain,
-  readWeatherRain,
+  readSound,
+  readWeather,
   readZoomMode,
-  writeAudioRain,
-  writeWeatherRain,
+  writeSound,
+  writeWeather,
 } from '../prefs';
 import type { PrefStorage } from '../prefs';
 import { getState, setRain, setSound, setZoomMode } from '../store';
@@ -96,29 +96,29 @@ describe('缩放档位偏好（sc.zoom.mode）', () => {
   });
 });
 
-describe('天气偏好（sc.weather.rain）', () => {
+describe('天气偏好（sc.weather）', () => {
   it('缺键 → 无雨（默认值是常量），且不因此写入一条键', () => {
     const storage = fakeStorage();
-    expect(readWeatherRain(storage)).toBe(false);
-    expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+    expect(readWeather(storage)).toBe('none');
+    expect(storage.data.has(PREFS.weather)).toBe(false);
   });
 
   it('读回写下的值；`false` 也照写（单写入路径，不做「无雨就删键」）', () => {
     const storage = fakeStorage();
-    writeWeatherRain(true, storage);
-    expect(readWeatherRain(storage)).toBe(true);
-    writeWeatherRain(false, storage);
-    expect(JSON.parse(storage.data.get(PREFS.weatherRain) ?? '')).toEqual({ v: 1, rain: false });
-    expect(readWeatherRain(storage)).toBe(false);
+    writeWeather('rain', storage);
+    expect(readWeather(storage)).toBe('rain');
+    writeWeather('none', storage);
+    expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind: 'none' });
+    expect(readWeather(storage)).toBe('none');
   });
 
-  it('坏 JSON / 版本不符 / 非布尔 rain → 无雨，且该键已被删（不删就永久循环判废）', () => {
-    const raws = ['{不是 JSON', JSON.stringify({ v: 2, rain: true }), JSON.stringify({ v: 1, rain: 'yes' })];
+  it('坏 JSON / 版本不符 / 表外 kind → 无雨，且该键已被删（不删就永久循环判废）', () => {
+    const raws = ['{不是 JSON', JSON.stringify({ v: 2, kind: 'rain' }), JSON.stringify({ v: 1, kind: 'snow' })];
     for (const raw of raws) {
       const storage = fakeStorage();
-      storage.data.set(PREFS.weatherRain, raw);
-      expect(readWeatherRain(storage)).toBe(false);
-      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+      storage.data.set(PREFS.weather, raw);
+      expect(readWeather(storage)).toBe('none');
+      expect(storage.data.has(PREFS.weather)).toBe(false);
     }
   });
 
@@ -129,40 +129,40 @@ describe('天气偏好（sc.weather.rain）', () => {
       const next = !getState().rain;
       setRain(next);
       expect(getState().rain).toBe(next);
-      expect(JSON.parse(storage.data.get(PREFS.weatherRain) ?? '')).toEqual({ v: 1, rain: next });
+      expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind: next ? 'rain' : 'none' });
 
-      storage.data.delete(PREFS.weatherRain);
+      storage.data.delete(PREFS.weather);
       setRain(next);
-      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+      expect(storage.data.has(PREFS.weather)).toBe(false);
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
   });
 });
 
-describe('雨声偏好（sc.audio.rain）', () => {
+describe('雨声偏好（sc.sound）', () => {
   it('缺键 → 静音（默认值是常量），且不因此写入一条键', () => {
     const storage = fakeStorage();
-    expect(readAudioRain(storage)).toBe(false);
-    expect(storage.data.has(PREFS.audioRain)).toBe(false);
+    expect(readSound(storage)).toBe('none');
+    expect(storage.data.has(PREFS.sound)).toBe(false);
   });
 
   it('读回写下的值；`false` 也照写（单写入路径，不做「静音就删键」）', () => {
     const storage = fakeStorage();
-    writeAudioRain(true, storage);
-    expect(readAudioRain(storage)).toBe(true);
-    writeAudioRain(false, storage);
-    expect(JSON.parse(storage.data.get(PREFS.audioRain) ?? '')).toEqual({ v: 1, on: false });
-    expect(readAudioRain(storage)).toBe(false);
+    writeSound('rain', storage);
+    expect(readSound(storage)).toBe('rain');
+    writeSound('none', storage);
+    expect(JSON.parse(storage.data.get(PREFS.sound) ?? '')).toEqual({ v: 1, kind: 'none' });
+    expect(readSound(storage)).toBe('none');
   });
 
-  it('坏 JSON / 版本不符 / 非布尔 on → 静音，且该键已被删', () => {
-    const raws = ['{不是 JSON', JSON.stringify({ v: 2, on: true }), JSON.stringify({ v: 1, on: 'yes' })];
+  it('坏 JSON / 版本不符 / 表外 kind → 静音，且该键已被删', () => {
+    const raws = ['{不是 JSON', JSON.stringify({ v: 2, kind: 'rain' }), JSON.stringify({ v: 1, kind: 'fan' })];
     for (const raw of raws) {
       const storage = fakeStorage();
-      storage.data.set(PREFS.audioRain, raw);
-      expect(readAudioRain(storage)).toBe(false);
-      expect(storage.data.has(PREFS.audioRain)).toBe(false);
+      storage.data.set(PREFS.sound, raw);
+      expect(readSound(storage)).toBe('none');
+      expect(storage.data.has(PREFS.sound)).toBe(false);
     }
   });
 
@@ -175,15 +175,27 @@ describe('雨声偏好（sc.audio.rain）', () => {
       setSound(sound);
       expect(getState().sound).toBe(sound);
       expect(getState().rain).toBe(rainBefore);
-      expect(JSON.parse(storage.data.get(PREFS.audioRain) ?? '')).toEqual({ v: 1, on: sound });
-      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+      expect(JSON.parse(storage.data.get(PREFS.sound) ?? '')).toEqual({ v: 1, kind: sound ? 'rain' : 'none' });
+      expect(storage.data.has(PREFS.weather)).toBe(false);
 
       setRain(!rainBefore);
       expect(getState().sound).toBe(sound);
-      expect(storage.data.has(PREFS.audioRain)).toBe(true);
+      expect(storage.data.has(PREFS.sound)).toBe(true);
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
+  });
+});
+
+describe('旧键（v0.0.6 及更早）', () => {
+  it('读取时把两条旧键删掉：不迁移，偏好回默认', () => {
+    const storage = fakeStorage();
+    storage.data.set('sc.weather.rain', JSON.stringify({ v: 1, rain: true }));
+    storage.data.set('sc.audio.rain', JSON.stringify({ v: 1, on: true }));
+    expect(readWeather(storage)).toBe('none');
+    expect(readSound(storage)).toBe('none');
+    expect(storage.data.has('sc.weather.rain')).toBe(false);
+    expect(storage.data.has('sc.audio.rain')).toBe(false);
   });
 });
 
