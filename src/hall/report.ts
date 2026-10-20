@@ -46,6 +46,13 @@ interface RawReportRow {
 }
 
 function toReport(row: RawReportRow): ReportRecord {
+  let evidence: ReportEvidence[] = [];
+  try {
+    evidence = JSON.parse(row.evidence) as ReportEvidence[];
+  } catch {
+    // 脏行宁可丢掉证据，也不要让整个后台请求 500（那会把所有举报一起藏起来）
+    evidence = [];
+  }
   return {
     id: row.id,
     createdAt: row.created_at,
@@ -53,7 +60,7 @@ function toReport(row: RawReportRow): ReportRecord {
     reporterUserId: row.reporter_user_id,
     targetUserId: row.target_user_id,
     reason: row.reason,
-    evidence: JSON.parse(row.evidence) as ReportEvidence[],
+    evidence,
     count: row.count,
   };
 }

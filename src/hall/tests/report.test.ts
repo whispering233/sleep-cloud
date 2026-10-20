@@ -143,8 +143,7 @@ test('listReports：id 倒序，before 是排他游标', () => {
   expect(listReports(sql, { limit: 2, before: 3 })).toHaveLength(2);
 });
 
-test('purgeExpiredReports：只删 last_at 超过 90 天的行', () => {
-  const sql = freshSql();
+test('purgeExpiredReports：只删 last_at 超过 90 天的行', () => {  const sql = freshSql();
   const now = 1_700_000_000_000;
   recordReport(sql, report('u_a', 'u_old'), now - REPORT_TTL_MS - 1);
   recordReport(sql, report('u_a', 'u_edge'), now - REPORT_TTL_MS + 1);
@@ -153,6 +152,16 @@ test('purgeExpiredReports：只删 last_at 超过 90 天的行', () => {
   purgeExpiredReports(sql, now);
 
   expect(listReports(sql, { limit: 10 }).map((row) => row.targetUserId)).toEqual(['u_new', 'u_edge']);
+});
+
+test('evidence 是脏 JSON 时降级为空数组，不让整个列表抛异常', () => {
+  const sql = freshSql();
+  recordReport(sql, report('u_a', 'u_b', '刷屏', [{ text: '嗨', at: 1 }]), 1);
+  sql.exec("UPDATE report SET evidence = 'not json'");
+
+  const rows = listReports(sql, { limit: 10 });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.evidence).toEqual([]);
 });
 
 test('report 端到端：落一行、回 5003；证据是被举报人发言的**打码后**逐字副本', async () => {
