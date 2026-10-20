@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { detect, mask } from '../content-filter';
+import words from '../blocked-words.json';
+import { CHAT_WORDS, detect, mask, NICKNAME_WORDS } from '../content-filter';
 
 describe('内容过滤', () => {
   describe('检测入口（昵称：命中即拒绝）', () => {
@@ -48,6 +49,48 @@ describe('内容过滤', () => {
 
     it('打码结果里不再有命中', () => {
       expect(detect(mask('你他妈的傻逼'))).toBeNull();
+    });
+
+    it('打码长度不变（全角字母也算一个字符）', () => {
+      const input = '你这个傻逼，ＦＵＣＫ you';
+      expect(mask(input)).toHaveLength(input.length);
+      expect(mask(input)).toBe('你这个**，**** you');
+    });
+  });
+
+  describe('两条路径的词集分级', () => {
+    it('昵称命中色情类词即拒绝', () => {
+      expect(detect('爆乳')).not.toBeNull();
+    });
+
+    it('只有聊天词集覆盖的类目不挡昵称', () => {
+      expect(detect('代开发票')).toBeNull();
+    });
+
+    it('拆词残留与九类里的日常词不挡昵称', () => {
+      for (const word of ['兼职', '招聘', '疫情', '网络']) expect(detect(word)).toBeNull();
+    });
+
+    it('手工表在两条路径上都命中', () => {
+      expect(detect('傻逼')).toBe('傻逼');
+      expect(mask('傻逼')).toBe('**');
+    });
+
+    it('全角字母归一后命中', () => {
+      expect(detect('ＦＵＣＫ')).toBe('fuck');
+    });
+
+    it('昵称词集是聊天词集的子集', () => {
+      const chat = new Set(CHAT_WORDS);
+      expect(NICKNAME_WORDS.filter((word) => !chat.has(word))).toEqual([]);
+    });
+  });
+
+  describe('词库产物', () => {
+    it('手工表恰 33 条，外来词条总数不少于 24,000（生成脚本见 tools/words/）', () => {
+      expect(words.curated).toHaveLength(33);
+      const total = Object.values(words.categories).flat().length;
+      expect(total).toBeGreaterThanOrEqual(24_000);
     });
   });
 });
