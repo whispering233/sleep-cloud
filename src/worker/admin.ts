@@ -154,5 +154,6 @@ admin.get('/blocks', forward);
 admin.post('/blocks', forward);
 admin.delete('/blocks/:kind/:value', forward);
 admin.get('/audit', forward);
+admin.get('/reports', forward);
 
 export default admin;

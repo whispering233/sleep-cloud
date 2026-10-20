@@ -1,5 +1,7 @@
 import { displayBedNoOf } from '../shared/layout';
 import { findOwnedBed } from './bed-store';
+import { listReports } from './report';
+import type { ReportRecord } from './report';
 import {
   blockDetailOf,
   countIdentitiesFor,
@@ -206,6 +208,32 @@ function deleteBlock(rawKind: string, rawValue: string, ctx: AdminContext): Resp
   return json({ removed });
 }
 
+/** 举报里的一方（§5.6）：昵称**读时现补**——表里不存快照，过了留存期就是 `null`。 */
+function partyOf(sql: SqlStorage, userId: string): { userId: string; nickname: string | null } {
+  return { userId, nickname: findIdentity(sql, userId)?.nickname ?? null };
+}
+
+function reportsPage(url: URL, ctx: AdminContext): Response {
+  const limit = limitOf(url);
+  const before = cursorOf(url, 'before');
+  const rows = listReports(ctx.sql, { limit: limit + 1, ...(before === undefined ? {} : { before }) });
+  const items = rows.slice(0, limit);
+  const last: ReportRecord | undefined = items.at(-1);
+  return json({
+    items: items.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt,
+      lastAt: row.lastAt,
+      count: row.count,
+      reporter: partyOf(ctx.sql, row.reporterUserId),
+      target: partyOf(ctx.sql, row.targetUserId),
+      reason: row.reason,
+      evidence: row.evidence,
+    })),
+    next: rows.length > limit && last ? { before: last.id } : null,
+  });
+}
+
 function auditPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const rows = listAudit(ctx.sql, limit + 1, cursorOf(url, 'before'));
@@ -214,7 +242,7 @@ function auditPage(url: URL, ctx: AdminContext): Response {
   return json({ items, next: rows.length > limit && last ? { before: last.id } : null });
 }
 
-/** 六个数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
+/** 数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
 export async function handleAdminRequest(
   request: Request,
   url: URL,
@@ -246,6 +274,9 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
   }
   if (resource === 'audit' && second === undefined && request.method === 'GET') {
     return auditPage(url, ctx);
+  }
+  if (resource === 'reports' && second === undefined && request.method === 'GET') {
+    return reportsPage(url, ctx);
   }
   return notFound();
 }
