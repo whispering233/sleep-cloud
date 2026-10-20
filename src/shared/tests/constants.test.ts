@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ART_SCALE,
+  AUDIT_TTL_MS,
   AUTO_SLEEP_MS,
   BED_H,
   BED_OWNERSHIP_TTL_MS,
   BED_SWITCH_COOLDOWN_MS,
   BED_W,
+  BLOCK_PURGE_MS,
   CELL_H,
   CELL_W,
   CHAT_MAX_LEN,
@@ -14,6 +16,7 @@ import {
   DAILY_WAKE_UTC_HOUR,
   GRACE_MS,
   HALL_ID,
+  IDENTITY_FORGET_MS,
   MAX_DPR,
   NICKNAME_MAX_LEN,
   POOL_SIZE,
@@ -63,6 +66,9 @@ describe('常量与 docs/design/config.md、20-layout.md 一致', () => {
     expect(BED_OWNERSHIP_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
     expect(BED_SWITCH_COOLDOWN_MS).toBe(10_000);
     expect(CHAT_BUBBLE_MS).toBe(8_000);
+    expect(IDENTITY_FORGET_MS).toBe(90 * 24 * 60 * 60 * 1000);
+    expect(BLOCK_PURGE_MS).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(AUDIT_TTL_MS).toBe(365 * 24 * 60 * 60 * 1000);
   });
 
   it('几何常量（`20-layout.md` §2）与列距/行距逐条等于文档里的值', () => {

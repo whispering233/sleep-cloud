@@ -56,7 +56,7 @@ import { advanceMover } from '../shared/movement';
 import type { MoverState } from '../shared/movement';
 import { findPath } from '../shared/pathfinding';
 import { consumeUpstream } from './rate-limit';
-import { blockStateOf, recordIdentity } from './risk';
+import { blockStateOf, forgetStaleSources, purgeExpiredAudit, purgeExpiredBlocks, recordIdentity } from './risk';
 import type { EntrySource } from './risk';
 import {
   ADMIN_AUDIT_TABLE_SQL,
@@ -1130,9 +1130,12 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 每日唤醒（UTC 20:00，见 `10-hall-runtime.md` §7）：**只做两件事**——归属释放 + 缩级评估，
-   * 然后把**结算过的边界写回** `meta.daily_wake_at`（即使这一轮只做了归属释放、没有降级也要写，
+   * 每日唤醒（UTC 20:00，见 `10-hall-runtime.md` §7）：归属释放 + 缩级评估 + 留存清理，
+   * 然后把**结算过的边界写回** `meta.daily_wake_at`（即使这一轮什么都没做也要写，
    * 否则同一个 20:00 会被反复补跑）。
+   *
+   * 三条留存清理（来源 90 天 / 到期封禁 30 天 / 审计 1 年，见 `70-privacy-risk.md` §7）搭在这里而**不新开唤醒**：
+   * 它们和归属释放一样是「必须发生」而非「能算出来」的事，合在一处发生；顺序无关，且都不写床位行、不广播。
    */
   private runDailyWake(): void {
     const now = Date.now();
@@ -1144,6 +1147,11 @@ export class Hall extends DurableObject<Env> {
     for (const bedNo of released) this.broadcast({ t: 'bed', bedNo, owned: false });
 
     this.shrinkIfOuterRingEmpty(now);
+
+    forgetStaleSources(sql, now);
+    purgeExpiredBlocks(sql, now);
+    purgeExpiredAudit(sql, now);
+
     writeDailyWakeAt(sql, previousDailyWakeAt(now));
     this.armDailyWake();
   }

@@ -4,8 +4,11 @@
  * 两条纪律：
  * 1. **封禁判定只有一处**（`blockStateOf`），`/api/me` 与 `hello` 共用——多开一个判定点就是多一条唤醒路径，
  *    也会随时间漂移成两个结论；
- * 2. **是否生效是读取时推导**（`until_at > now`），不挂定时器、不写清理任务。
+ * 2. **是否生效是读取时推导**（`until_at > now`），不挂定时器。留存的三个时钟（来源 90 天 / 到期封禁 30 天 /
+ *    审计 1 年）也**不新开唤醒**，都是并入每日唤醒的一次性语句（见 §7），各自只碰自己那张表。
  */
+
+import { AUDIT_TTL_MS, BLOCK_PURGE_MS, IDENTITY_FORGET_MS } from '../shared/constants';
 
 /** 封禁维度：`user` 与 `ip` 两个都真封，命中任一即拒（见 §5.1）。 */
 export type BlockKind = 'user' | 'ip';
@@ -251,6 +254,31 @@ export function listAuditFor(sql: SqlStorage, kind: BlockKind, value: string, li
 /** 这条封禁是否已经存在（`created: false` = 覆盖了既有的一条，见 §5.3）。 */
 export function hasBlock(sql: SqlStorage, kind: BlockKind, value: string): boolean {
   return sql.exec('SELECT 1 FROM block WHERE kind = ? AND value = ?', kind, value).toArray().length > 0;
+}
+
+/**
+ * 来源信息过期：超过留存期的行把三个来源列置空，**行与 `user_id` / `first_seen_at` 都不动**。
+ * `IS NOT NULL` 那一条只是免得每晚重写一遍已经清空过的行（同一个值再写一次也算一次写）。
+ */
+export function forgetStaleSources(sql: SqlStorage, now: number): void {
+  sql.exec(
+    `UPDATE identity SET last_ip = NULL, last_country = NULL, ua_hash = NULL
+      WHERE last_seen_at < ? AND (last_ip IS NOT NULL OR last_country IS NOT NULL OR ua_hash IS NOT NULL)`,
+    now - IDENTITY_FORGET_MS,
+  );
+}
+
+/**
+ * 到期封禁清理：`until_at + BLOCK_PURGE_MS` 已经过去的行删除。
+ * **`until_at IS NULL`（永久封禁）永不清理**——它就是黑名单本体；判定语义不在这里（那是读取时推导）。
+ */
+export function purgeExpiredBlocks(sql: SqlStorage, now: number): void {
+  sql.exec('DELETE FROM block WHERE until_at IS NOT NULL AND until_at + ? < ?', BLOCK_PURGE_MS, now);
+}
+
+/** 审计清理：超过留存期的行删除（流水只写不改，过期就直接删）。 */
+export function purgeExpiredAudit(sql: SqlStorage, now: number): void {
+  sql.exec('DELETE FROM admin_audit WHERE at < ?', now - AUDIT_TTL_MS);
 }
 
 /** 一条身份（`identity` 是**来源的载体，不是用户档案**，见 `docs/db/schema.md` §4.1）。 */

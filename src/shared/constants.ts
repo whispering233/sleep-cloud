@@ -26,11 +26,27 @@ export const WALK_SPEED_PX_PER_S = 220;
 /** 睡痕存活时长，从「宽限到期时刻」起算。到期由读取时推导（服务端过滤 + 客户端按 `traceUntil` 淡出）。 */
 export const TRACE_TTL_MS = 43_200_000;
 
-/** 每日唤醒时刻（UTC 20:00 = 北京 04:00）。同时刻做两件事：归属释放 + 缩级评估。 */
+/** 每日唤醒时刻（UTC 20:00 = 北京 04:00）。同时刻做三件事：归属释放 + 缩级评估 + 留存清理。 */
 export const DAILY_WAKE_UTC_HOUR = 20;
 
 /** 归属释放阈值：最后一次出现距今超过 30 天（读取时推导 + 每日唤醒结算）。 */
 export const BED_OWNERSHIP_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 来源信息留存期：这么久无访问就把 `identity` 的 `last_ip` / `last_country` / `ua_hash` 置空，
+ * **行本身留着**（它不指向具体的人，删掉反而让「这个 id 曾经存在」无法解释）。
+ * 由每日唤醒执行，见 `docs/design/70-privacy-risk.md` §7。
+ */
+export const IDENTITY_FORGET_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * 到期封禁记录的清理延迟（从 `until_at` 起算）。
+ * **`until_at` 为空的永久封禁永不清理**——它就是黑名单本体。
+ */
+export const BLOCK_PURGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** 审计留存期，由每日唤醒删除。 */
+export const AUDIT_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * 换床冷却：距**上次认领（含换床）**不足这么久、又要认领另一张无主床 → `3008`。
