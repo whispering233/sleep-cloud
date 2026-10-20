@@ -49,6 +49,7 @@ import {
   setPersonName,
 } from './views';
 import type { BedView, PersonView } from './views';
+import { WeatherScene } from './weather';
 
 /**
  * 世界画布（Phaser 4）。**渲染层是一个纯函数**：状态快照 → 画出来（见 `docs/design/architecture.md` §2.3）。
@@ -869,7 +870,8 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     // `InputManager.onTouchStart` 只在 `pointers[1..]` 里找空闲槽位、`pointers[0]` 归鼠标——默认配置下
     // 第二根手指找不到槽位就被直接丢掉，双指捏合永远进不了缩放分支（首指还会被当成单指拖拽把相机平移）。
     input: { activePointers: 2 },
-    scene: [scene],
+    // 天气 Scene 在**后**：Scene 按数组顺序渲染，雨因此压在世界之上（`docs/ui/DESIGN.md` 的 `rain-layer`）
+    scene: [scene, new WeatherScene()],
   });
 
   return {
