@@ -134,8 +134,15 @@ export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
             />
             我已满 18 岁
           </label>
-          {/* 静态页、零接口（`public/privacy.html`）。新标签打开：不丢入场层已经填过的昵称 */}
-          <a className="entry-privacy" href="/privacy" target="_blank" rel="noopener">
+          {/*
+            静态页、零接口（`public/privacy.html`）。新标签打开：不丢入场层已经填过的昵称。
+
+            **地址写 `/privacy.html` 而不是 `/privacy`**：生产由平台资产服务，`/privacy` 才对
+            （`/privacy.html` 会被 307 过去，多一跳但一定能到）；而 `npm run dev:web`（Vite）
+            **没有** `html_handling`，扩展名省略的 `/privacy` 会落进 SPA 回退、返回大厅首页——
+            点开一个「和刚才一样的页面」，看起来就是「点了没反应」。带上扩展名两边都对。
+          */}
+          <a className="entry-privacy" href="/privacy.html" target="_blank" rel="noopener">
             使用须知与隐私说明
           </a>
         </div>

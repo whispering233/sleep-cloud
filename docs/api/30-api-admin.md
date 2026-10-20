@@ -6,7 +6,7 @@
 
 | 项 | 决定 | 理由 |
 | :--- | :--- | :--- |
-| 部署形态 | **同一个 Worker 的子路由**：页面壳 `/admin`（静态文件 `public/admin.html`，随 `public/` 进 `dist`。平台资产默认会把 `/admin.html` 307 到 `/admin`，所以**权威 URL 写 `/admin`**），数据接口 `/api/admin/*` | 不需要第二个部署、第二个域名、跨域 cookie。页面壳**不含任何数据**，被公开下载无害（等同任何登录页） |
+| 部署形态 | **同一个 Worker 的子路由**：页面壳 `/admin`（静态文件 `public/admin.html`，随 `public/` 进 `dist`。平台资产默认会把 `/admin.html` 307 到 `/admin`，所以**权威 URL 写 `/admin`**；`npm run dev:web`（Vite）**没有** `html_handling`，那里要用 `/admin.html`，否则会落进 SPA 回退、打开大厅首页），数据接口 `/api/admin/*` | 不需要第二个部署、第二个域名、跨域 cookie。页面壳**不含任何数据**，被公开下载无害（等同任何登录页） |
 | 鉴权 | 一个平台密钥 `ADMIN_TOKEN` → 登录接口换一枚**独立的**签名 cookie `sc_admin` | 与 `sc_session` 名字、用途、值域**全部不共享**：一个用户的普通会话 cookie 永远不等于后台权限 |
 | 未授权 | **HTTP 401**（不是 `{code:"…"}`） | 错误码表是**用户面**契约（`error-code.md` §1：`msg` 面向开发者、文案由前端按 `code` 映射）。运维面混进 `5xxx` 会让那一段的意义变糊。**这是本项目唯一的契约例外，只限 `/api/admin/*`** |
 | 成功响应 | 直接返回数据对象（**不套** `{code,msg,data}`） | 同上，同一处例外 |

@@ -227,5 +227,5 @@ test('隐私说明两处入口都指向静态页，入场层仍是三项', async
 
   await enterHall(page);
   await page.locator('.hud-settings-button').click();
-  await expect(page.locator('.hud-menu-link')).toHaveAttribute('href', '/privacy');
+  await expect(page.locator('.hud-menu-link')).toHaveAttribute('href', '/privacy.html');
 });
