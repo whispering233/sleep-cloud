@@ -142,7 +142,7 @@ describe('键登记表镜像（docs/design/40-client-storage.md §3）', () => {
     const rows = tableRows(
       readDoc('design/40-client-storage.md'),
       '## 3. 键登记表',
-      '**`sc.zoom.mode` 的语义**',
+      '## 4. 非目标与候选项',
     );
     const documented = rows.map(([key]) => (key ?? '').replaceAll('`', '')).sort();
     expect(documented).toEqual(Object.values(PREFS).sort());

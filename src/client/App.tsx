@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
-import { setRain as setRainAudio, unlock } from './audio';
+import { setRain as setRainAudio } from './audio';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
@@ -105,9 +105,6 @@ export function App() {
           blocked={full}
           onDone={(next) => {
             setSession(next);
-            // 再补一道解锁：`EntryOverlay` 已在提交手势里同步调过（Safari 只认那一次），
-            // 这里覆盖「进厅后重新 resume」的路径，幂等
-            unlock();
             setEntered(true);
           }}
         />

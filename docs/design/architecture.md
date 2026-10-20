@@ -118,7 +118,7 @@ src/worker/   入口层
 public/       静态资源（重着色后的图集、雨声 WAV、词表）
 ```
 
-**雨声不走 Phaser 的 `this.sound`**：`SoundManager` 的价值在于「用 Loader 载素材 + 统一的播放 API」，而这里只有一个音频、懒加载（`fetch` → `decodeAudioData`），还要做「早播小循环 → 主循环」的双 source 交叉淡化。接进 Phaser 会把音频绑到世界层的生命周期上：世界层是懒加载块，而 `load.audio` 会让首帧等那次下载。所以它是 UI 层旁边的独立小模块：一个 `AudioContext`、两个 `AudioBufferSourceNode`、一个 `GainNode`，对外只有 `setRain(on)` 与 `unlock()`。
+**雨声不走 Phaser 的 `this.sound`**：`SoundManager` 的价值在于「用 Loader 载素材 + 统一的播放 API」，而这里只有一个音频、懒加载（`fetch` → `decodeAudioData`），还要做「早播小循环 → 主循环」的双 source 交叉淡化。接进 Phaser 会把音频绑到世界层的生命周期上：世界层是懒加载块，而 `load.audio` 会让首帧等那次下载。所以它是 UI 层旁边的独立小模块：一个 `AudioContext`、两个 `AudioBufferSourceNode`、每路一个 `GainNode`（1 s 交叉淡化要两个），对外只有 `setRain(on)` 与 `unlock()`。
 
 ## 4. 数据流
 

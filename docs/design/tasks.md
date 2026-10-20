@@ -14,48 +14,6 @@
 
 ---
 
-## 卡 1：天气开关 + 雨天雨声（端到端）
-
-### 目标
-
-齿轮浮层里多一颗天气胶囊（文案 = 当前天气），点它切换「雨天 / 无雨」；雨天出声（8 s 早播循环先起，主循环就绪后 1 s 交叉淡化），无雨静音；偏好落盘、重载保持；缺键时按本地日历日序号奇偶初始化。
-
-### 依据
-
-`40-client-storage.md` §3（键与日期默认）、`config.md` §4（音频与电平规格）、`00-master-design.md` §5.4（天气是个人偏好）、`../ui/DESIGN.md` 的 `hud-menu`、`architecture.md` §3（音频不走 Phaser）。
-
-### 资产（已入库，本卡不用碰）
-
-`public/audio/rain-loop.v1.wav`、`public/audio/rain-loop-intro.v1.wav`、`public/audio/LICENSE-rain-and-thunders.txt`、`public/_headers` 已在分支上。`npm run build` 已确认 `dist/_headers` 与 `dist/audio/` 都产出。**代码只按文件名引用**，不要重新加工音频。
-
-### 改动
-
-| 文件 | 要点 |
-| :--- | :--- |
-| `src/client/prefs.ts` | `PREFS.weatherRain = 'sc.weather.rain'`；`readWeatherRain()`（缺键 → 日期默认）、`writeWeatherRain()`（单写入路径，`false` 也照写） |
-| `src/client/weather.ts` 🆕 | 纯函数 `defaultRainAt(date)`（`Math.floor(Date.UTC(y,m,d)/86_400_000) % 2 === 1`）、`weatherLabel(rain)`（`雨天` / `无雨`） |
-| `src/client/store.ts` | `rain` 初值 = 读偏好；`setRain()`（同值不写、写 store + 偏好） |
-| `src/client/audio.ts` 🆕 | `setRain(on)` / `unlock()`：懒建 `AudioContext`；先取小文件、解码即循环；再顺序取大文件、解码后 1 s 交叉淡入并停掉小 source；关 = 停源 + `suspend` + `AbortController` 取消在途请求；`visibilitychange` 可见时若需要的 `resume()` |
-| `src/client/App.tsx` | 进厅手势里调 `unlock()`；订阅 `rain` 驱动 `setRain()`（不进逐帧路径） |
-| `src/client/components/ActionRow.tsx` | 浮层第二项：胶囊、文案 = 当前天气、`aria-pressed`、**点它不关浮层**、`pointerdown` 里 `preventDefault()`、独立 `key` |
-| `src/client/hud-view.ts` | `rain` 进 `HudView` 与 `sameHudView`（否则位置节拍会白重渲染） |
-| `src/client/styles/app.css` | 浮层里两颗胶囊的间距（组内间距） |
-| `CHANGELOG.md` | `## [Unreleased]` → `### Added` 两条（天气开关与偏好、雨天雨声） |
-
-### 验收
-
-- `npm run typecheck` + `npm test` 全绿；新增用例：日期奇偶（相邻日相反、跨月、`Date.UTC` 不受时区影响）、缺键走日期默认、坏值与版本不符会被删、`hudViewOf` 带上 `rain`、两个 WAV 的格式与时长（单声道 / 32000 / 16-bit / 30.000 s 与 8.000 s）、**键集合镜像**（`40-client-storage.md` §3 登记表 === `PREFS` 注册表）
-- `npm run e2e`：点胶囊 → `aria-pressed` 翻转 + `localStorage['sc.weather.rain']` 写入 → 重载后保持；点浮层**不产生 `walk`**
-- 人耳（主会话或用户）：晴 → 雨**先出小循环**、随后切到主循环；雨 → 晴立刻静音；重载后状态保持
-- 模拟器（`ui-verifier`）：切后台再回来仍出声；切到无雨时 `AudioContext` 为 `suspended`
-- `curl -I` 看 `/audio/*` 的 `cache-control`（本地 `npm run dev` 即可初步看，线上再确认一次）
-
-### 不做
-
-音量 / 静音、雷声与其它天气、IndexedDB / Cache Storage、任何服务端改动（协议、schema、快照零改动）。
-
----
-
 ## 卡 2：雨层画面（屏幕空间并行 Scene）
 
 ### 目标
@@ -86,5 +44,3 @@
 地面涟漪 / 水花、`prefers-reduced-motion` 特化、雨随缩放变化、雨进 DOM。
 
 ---
-
-**当前没有进行中的卡片。**

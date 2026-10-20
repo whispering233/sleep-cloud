@@ -231,8 +231,9 @@
   /* 浮层里的可点击组：两颗胶囊之间是**组内间距**，组与版本号之间才是组间间距（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
   .hud-menu-group {
     display: grid;
-    gap: var(--spacing-xs);
-    margin-block-end: var(--spacing-sm);
+    /* 组内 8px / 组间 12px：与动作行同一套间距口径（`docs/ui/DESIGN.md` 的 `action-row` 行） */
+    gap: var(--spacing-sm);
+    margin-block-end: var(--spacing-md);
   }
 
   /* 浮层里的一颗胶囊：外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），

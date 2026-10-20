@@ -10,6 +10,8 @@ interface WavInfo {
   sampleRate: number;
   bits: number;
   seconds: number;
+  /** 峰值电平（dBFS）：素材重编码后响度会静默漂移，所以连电平一起守 */
+  peakDb: number;
 }
 
 /**
@@ -23,6 +25,7 @@ function readWav(url: string): WavInfo {
 
   let fmt: { channels: number; sampleRate: number; byteRate: number; bits: number } | undefined;
   let dataSize: number | undefined;
+  let dataOffset = 0;
   for (let offset = 12; offset + 8 <= bytes.length; ) {
     const id = bytes.toString('ascii', offset, offset + 4);
     const size = bytes.readUInt32LE(offset + 4);
@@ -35,19 +38,40 @@ function readWav(url: string): WavInfo {
         bits: bytes.readUInt16LE(offset + 22),
       };
     }
-    if (id === 'data') dataSize = size;
+    if (id === 'data') {
+      dataSize = size;
+      dataOffset = offset + 8;
+    }
     offset += 8 + size + (size % 2); // chunk 按偶数字节对齐
   }
   if (!fmt || dataSize === undefined) throw new Error(`${url} 不是完整的 WAV`);
-  return { channels: fmt.channels, sampleRate: fmt.sampleRate, bits: fmt.bits, seconds: dataSize / fmt.byteRate };
+  let peak = 0;
+  for (let offset = dataOffset; offset + 1 < dataOffset + dataSize; offset += 2) {
+    const sample = Math.abs(bytes.readInt16LE(offset));
+    if (sample > peak) peak = sample;
+  }
+  return {
+    channels: fmt.channels,
+    sampleRate: fmt.sampleRate,
+    bits: fmt.bits,
+    seconds: dataSize / fmt.byteRate,
+    peakDb: 20 * Math.log10(peak / 32_768),
+  };
 }
 
 describe('雨声素材（docs/design/config.md §4）', () => {
-  it('主循环：单声道 / 32000 Hz / 16-bit PCM / 30.000 s', () => {
-    expect(readWav(RAIN_LOOP_URL)).toEqual({ channels: 1, sampleRate: 32_000, bits: 16, seconds: 30 });
+  it('主循环：单声道 / 32000 Hz / 16-bit PCM / 30.000 s / 峰值约 -3 dBFS', () => {
+    const info = readWav(RAIN_LOOP_URL);
+    expect(info).toMatchObject({ channels: 1, sampleRate: 32_000, bits: 16, seconds: 30 });
+    // 加工时统一过 +6 dB，峰值落在 -3.1 dBFS；留一格余量，只抓「重编码把响度改了」这种漂移
+    expect(info.peakDb).toBeGreaterThan(-6);
+    expect(info.peakDb).toBeLessThan(-1);
   });
 
   it('早播小循环：同一格式、8.000 s（它只负责尽快出声）', () => {
-    expect(readWav(RAIN_INTRO_URL)).toEqual({ channels: 1, sampleRate: 32_000, bits: 16, seconds: 8 });
+    const info = readWav(RAIN_INTRO_URL);
+    expect(info).toMatchObject({ channels: 1, sampleRate: 32_000, bits: 16, seconds: 8 });
+    expect(info.peakDb).toBeGreaterThan(-6);
+    expect(info.peakDb).toBeLessThan(-1);
   });
 });

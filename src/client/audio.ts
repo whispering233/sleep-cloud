@@ -16,6 +16,7 @@ let inFlight: AbortController | undefined;
 let introSource: AudioBufferSourceNode | undefined;
 let mainSource: AudioBufferSourceNode | undefined;
 let introGain: GainNode | undefined;
+let mainGain: GainNode | undefined;
 /** 主循环解码一次就留着：切「无雨」再切回来不必重解（字节本来也在 HTTP 缓存里）。 */
 let loopBuffer: AudioBuffer | undefined;
 
@@ -27,14 +28,21 @@ function ensureContext(): AudioContext | undefined {
   context = created;
   // 回到前台：系统可能在后台把 context 挂起，雨天就得接着响（不需要常驻心跳 / 定时器）
   document.addEventListener('visibilitychange', () => {
-    if (rain && document.visibilityState === 'visible' && created.state === 'suspended') {
+    // `suspended` 之外还有 WebKit 的 `interrupted`（锁屏 / 来电后）：一律「不在跑就试着拉起来」。
+    // 无手势 `resume()` 只在此 context 已被首次手势解锁过的前提下成立（见 `unlock`），失败就静默
+    if (
+      rain &&
+      document.visibilityState === 'visible' &&
+      created.state !== 'running' &&
+      created.state !== 'closed'
+    ) {
       void created.resume().catch(() => {});
     }
   });
   return created;
 }
 
-/** 停掉两个 source（对已停的再 `stop()` 会抛，静默忽略）。 */
+/** 停掉两个 source（对已停的再 `stop()` 会抛，静默忽略），并断开交叉淡化用的增益节点。 */
 function stopSources(): void {
   for (const source of [introSource, mainSource]) {
     if (!source) continue;
@@ -47,7 +55,10 @@ function stopSources(): void {
   }
   introSource = undefined;
   mainSource = undefined;
+  // 只断 source 会把 GainNode 留在 destination 上，每开关一次各留一两个 → 这里一并断开
+  for (const gain of [introGain, mainGain]) gain?.disconnect();
   introGain = undefined;
+  mainGain = undefined;
 }
 
 /** 取一个 WAV 并解码（`signal` 取消在途请求）。 */
@@ -78,7 +89,7 @@ async function play(ctx: AudioContext, token: number, signal: AbortSignal): Prom
   const main = ctx.createBufferSource();
   main.buffer = buffer;
   main.loop = true;
-  const mainGain = ctx.createGain();
+  mainGain = ctx.createGain();
   const now = ctx.currentTime;
   mainGain.gain.setValueAtTime(0, now);
   mainGain.gain.linearRampToValueAtTime(1, now + RAIN_CROSSFADE_S);
@@ -95,6 +106,7 @@ async function play(ctx: AudioContext, token: number, signal: AbortSignal): Prom
     // 好让这 1 s 里切「无雨」也能把它真停掉，而不是只靠 `suspend()` 冻住
     intro.onended = () => {
       intro.buffer = null;
+      fading.disconnect();
       if (introSource === intro) introSource = undefined;
     };
     introGain = undefined;
@@ -134,16 +146,13 @@ export function setRain(on: boolean): void {
 }
 
 /**
- * 进厅手势里调一次：浏览器只允许在用户手势之后出声。拉起之后若还没有雨就立刻挂回去，
- * 不白占音频线程；此后同一页面里的 `resume()` 不再需要手势。
+ * 进厅手势里调一次（**只在雨天**）：浏览器只允许在用户手势之后出声，而雨天时的 `start()` 是由
+ * store 订阅在 effect 里触发的——那已经在手势之外了。先在这里把 context 拉起来，effect 里的
+ * `start()` 复用它。无雨时**根本不建 context**：手势内创建的 context 在 Chromium 里直接是 `running`，
+ * 建了再挂回去既绕又不可靠。
  */
 export function unlock(): void {
   const ctx = ensureContext();
-  if (!ctx || ctx.state === 'running') return;
-  void ctx
-    .resume()
-    .then(() => {
-      if (!rain) void ctx.suspend().catch(() => {});
-    })
-    .catch(() => {});
+  if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+  void ctx.resume().catch(() => {});
 }

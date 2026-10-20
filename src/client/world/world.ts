@@ -860,6 +860,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
       width: Math.round(Math.max(rect.width, 1) * dpr),
       height: Math.round(Math.max(rect.height, 1) * dpr),
     },
+    // 雨声走原生 WebAudio（`src/client/audio.ts`），Phaser 的 SoundManager 用不上：不关掉的话
+    // 每次建世界都白建一个闲置的 `AudioContext`（页面上会看到两个，其中一个永远不出声）
+    audio: { noAudio: true },
     // 手势交给相机（单指拖拽平移、双指捏合拉远），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
     // **必须显式申请 2 个触摸指针**：Phaser 默认 `input.activePointers = 1`（`core/Config.js`），而
