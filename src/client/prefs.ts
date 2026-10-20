@@ -1,5 +1,4 @@
 import { ZOOM_TIERS } from '../shared/constants';
-import { defaultRainAt } from './weather';
 import type { ZoomMode } from './zoom';
 
 /**
@@ -132,11 +131,11 @@ function isStoredWeatherRain(value: unknown): value is StoredWeatherRain {
 }
 
 /**
- * 读 `sc.weather.rain`：缺键时按**启动那一刻**的本地日历日奇偶初始化（全表唯一的非常量默认）。
- * `now` 只在缺键时被读一次、跨零点也不重算——半夜让眼前天气无声翻转是没人要的动画。
+ * 读 `sc.weather.rain`：缺键（或读到的值判废）→ **无雨**。默认值是常量，不读日期也不读时钟
+ * （`40-client-storage.md` §3：全表默认值都是常量）。
  */
-export function readWeatherRain(now: Date = new Date(), storage?: PrefStorage): boolean {
-  const fallback: StoredWeatherRain = { v: PREFS_VERSION, rain: defaultRainAt(now) };
+export function readWeatherRain(storage?: PrefStorage): boolean {
+  const fallback: StoredWeatherRain = { v: PREFS_VERSION, rain: false };
   return readPref(PREFS.weatherRain, isStoredWeatherRain, fallback, storage).rain;
 }
 

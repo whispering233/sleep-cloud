@@ -90,31 +90,27 @@ describe('缩放档位偏好（sc.zoom.mode）', () => {
 });
 
 describe('天气偏好（sc.weather.rain）', () => {
-  /** 缺键时的日期默认（`docs/design/config.md` §4 的公式）。 */
-  const datedDefault = (y: number, m: number, d: number): boolean =>
-    Math.floor(Date.UTC(y, m, d) / 86_400_000) % 2 === 1;
-
-  it('缺键 → 日期默认（相邻日相反），且不因此写入一条键', () => {
+  it('缺键 → 无雨（默认值是常量），且不因此写入一条键', () => {
     const storage = fakeStorage();
-    expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(datedDefault(2024, 0, 15));
-    expect(readWeatherRain(new Date(2024, 0, 16), storage)).toBe(!datedDefault(2024, 0, 15));
+    expect(readWeatherRain(storage)).toBe(false);
     expect(storage.data.has(PREFS.weatherRain)).toBe(false);
   });
 
   it('读回写下的值；`false` 也照写（单写入路径，不做「无雨就删键」）', () => {
     const storage = fakeStorage();
+    writeWeatherRain(true, storage);
+    expect(readWeatherRain(storage)).toBe(true);
     writeWeatherRain(false, storage);
     expect(JSON.parse(storage.data.get(PREFS.weatherRain) ?? '')).toEqual({ v: 1, rain: false });
-    // 已有键时日期默认不参与
-    expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(false);
+    expect(readWeatherRain(storage)).toBe(false);
   });
 
-  it('坏 JSON / 版本不符 / 非布尔 rain → 日期默认，且该键已被删（不删就永久循环判废）', () => {
+  it('坏 JSON / 版本不符 / 非布尔 rain → 无雨，且该键已被删（不删就永久循环判废）', () => {
     const raws = ['{不是 JSON', JSON.stringify({ v: 2, rain: true }), JSON.stringify({ v: 1, rain: 'yes' })];
     for (const raw of raws) {
       const storage = fakeStorage();
       storage.data.set(PREFS.weatherRain, raw);
-      expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(datedDefault(2024, 0, 15));
+      expect(readWeatherRain(storage)).toBe(false);
       expect(storage.data.has(PREFS.weatherRain)).toBe(false);
     }
   });

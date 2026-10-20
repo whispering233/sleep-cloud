@@ -113,7 +113,7 @@ export interface ClientState {
   zoomMode: ZoomMode;
   /**
    * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，同时驱动雨声与雨层画面。
-   * 缺键时按启动那天的日期奇偶初始化；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
+   * 缺键时无雨；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
    */
   rain: boolean;
   /**

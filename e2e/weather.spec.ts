@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
 import { PREFS } from '../src/client/prefs';
 
 /**
- * 天气开关的 L2 契约（`docs/design/tasks.md` 卡 1 的验收）：点胶囊 → `aria-pressed` 翻转 +
+ * 天气开关的 L2 契约：缺键（全新浏览器）→ 无雨；点胶囊 → `aria-pressed` 翻转 +
  * `localStorage` 写入 → 重载后保持；点浮层不把点击漏给画布（不产生 `walk`）。
  */
 
@@ -44,6 +44,17 @@ async function enterHall(page: Page): Promise<void> {
 
 /** 胶囊的可访问名就是它的可见文案（= 当前天气）。 */
 const weatherButton = (page: Page) => page.getByRole('button', { name: /^(雨天|无雨)$/ });
+
+test('全新浏览器：天气缺键就是无雨，且不落盘', async ({ page }) => {
+  await page.goto('/');
+  await enterHall(page);
+  await page.getByRole('button', { name: '设置' }).click();
+
+  const toggle = weatherButton(page);
+  await expect(toggle).toHaveText('无雨');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate((key) => localStorage.getItem(key), PREFS.weatherRain)).toBeNull();
+});
 
 test('天气胶囊：开关翻转、落盘、重载保持，且点它不让小人走', async ({ page }) => {
   await page.goto('/');
