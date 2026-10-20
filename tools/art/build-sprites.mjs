@@ -39,7 +39,6 @@ const GAP = 1;
  * 猫与篝火只打这五组进图集（`pat` / `nuzzle` 留在 backlog）；顺序 = 图集里帧的顺序。
  * 帧名按组推：`cat-<组>-<序号>`，篝火是 `fire-<序号>`（`generateFrameNames` 按前缀取帧）。
  */
-const CAT_GROUPS = ['idle', 'walk', 'run', 'sleep', 'fire'];
 /** 篝火熄灭帧：整格母图，同一张图里火苗 / 火星 / 辉光已经屏掉。 */
 const FIRE_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
 
@@ -421,32 +420,54 @@ function main() {
     });
   }
 
-  // 猫与篝火：按 JSON 的 x/y/w/h 裁 → 裁到墨迹 bbox（母图已去纸底与格框，非全透明就是墨迹）
-  // → 两支映射。锚点一律墨迹底边中心。
-  const decorFrame = (name, master, rect) => {
-    const piece = crop(load(master), rect);
-    const box = inkBox(piece);
-    return {
-      name,
-      master,
-      w: box.w,
-      h: box.h,
-      pixels: mapMultiColor(crop(piece, box), inkOf('paper'), inkOf('neutral')),
-      anchor: DECOR_ANCHOR,
-      fill: 'paper',
-      ink: 'neutral',
-    };
+  // 猫与篝火：先把每格裁出来，再**按组求墨迹 bbox 的并集**，整组共用同一个裁框。
+  // 逐帧各自裁自己的 bbox 会让「本帧底边中心」这个锚点随帧宽漂移（idle 帧宽 78↔93px），
+  // 同一个动作里身体会左右抽动约 4 世界像素（实测）——所以同一组必须共框。
+  const pieceOf = (master, rect) => crop(load(master), rect);
+  const unionOf = (boxes) => {
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    const right = Math.max(...boxes.map((box) => box.x + box.w));
+    const bottom = Math.max(...boxes.map((box) => box.y + box.h));
+    return { x: left, y: top, w: right - left, h: bottom - top };
   };
-  const catAtlas = JSON.parse(readFileSync(CAT_ATLAS, 'utf8'));
-  for (const groupId of CAT_GROUPS) {
+  let catAtlas;
+  try {
+    catAtlas = JSON.parse(readFileSync(CAT_ATLAS, 'utf8'));
+  } catch (error) {
+    throw new Error(`读不了 ${CAT_ATLAS}：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const cellsOf = (groupId) => {
     const group = catAtlas.animations.find((animation) => animation.id === groupId);
     if (!group) throw new Error(`cat-all-sprites-atlas.json 里没有 ${groupId} 组`);
-    for (const [index, rect] of group.frames.entries()) {
-      const name = groupId === 'fire' ? `fire-${index + 1}` : `cat-${groupId}-${index + 1}`;
-      frames.push(decorFrame(name, 'cat-sheet', rect));
+    return group.frames.map((rect, index) => ({
+      name: groupId === 'fire' ? `fire-${index + 1}` : `cat-${groupId}-${index + 1}`,
+      master: 'cat-sheet',
+      rect,
+    }));
+  };
+  // 站立的三个动作用同一个裁框（idle ⇄ walk ⇄ run 切换时身体不跳）；睡与火各一组，火含熄灭帧
+  const decorGroups = [
+    [...cellsOf('idle'), ...cellsOf('walk'), ...cellsOf('run')],
+    cellsOf('sleep'),
+    [...cellsOf('fire'), { name: 'fire-out', master: 'cat-fire-out', rect: FIRE_OUT_RECT }],
+  ];
+  for (const cells of decorGroups) {
+    const pieces = cells.map((cell) => ({ ...cell, piece: pieceOf(cell.master, cell.rect) }));
+    const box = unionOf(pieces.map((entry) => inkBox(entry.piece)));
+    for (const entry of pieces) {
+      frames.push({
+        name: entry.name,
+        master: entry.master,
+        w: box.w,
+        h: box.h,
+        pixels: mapMultiColor(crop(entry.piece, box), inkOf('paper'), inkOf('neutral')),
+        anchor: DECOR_ANCHOR,
+        fill: 'paper',
+        ink: 'neutral',
+      });
     }
   }
-  frames.push(decorFrame('fire-out', 'cat-fire-out', FIRE_OUT_RECT));
 
   const { placements, height } = pack(frames);
   const atlas = Buffer.alloc(ATLAS_WIDTH * height * 4);

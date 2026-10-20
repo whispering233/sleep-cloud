@@ -19,8 +19,16 @@ export const PET_SPEED_MIN = 260;
 export const PET_SPEED_MAX = 1320;
 /** 跑动阈值（px/s）：超过它才跑（§3.3）。 */
 export const PET_RUN_THRESHOLD = 300;
-/** 跟随偏移：目标点在我的**脚前**（床脚方向）16px（§3.3）。 */
-export const PET_FOLLOW_OFFSET = 16;
+/** 跟随偏移：先试左右（我旁边），再试前后——
+ * **四个方向都要试**，因为走道只有 56px 宽：竖走道里左右可行、横走道里前后可行，一次乱下会落到床上。
+ * 侧向带一点向下，是为了让猫的头落在我的头**下面**，两张脸不叠。 */
+export const PET_FOLLOW_SIDE_X = 26;
+export const PET_FOLLOW_SIDE_Y = 16;
+/** 正下（脚前）与正上（我背后）：尺寸取到「不进床位、也不压脸」。 */
+export const PET_FOLLOW_FRONT = 40;
+export const PET_FOLLOW_BACK = 34;
+/** 到位容差（px）：剩余路程小于它就算站定——不给它「来回抽一步」的机会（§3.3）。 */
+export const PET_ARRIVE_PX = 6;
 /** 重算阈值：目标点移动超过它才重算折线（§3.3）。 */
 export const PET_REPATH_PX = 24;
 /** 无窝起跑距离：沿街网、从我旁边 120px 处起跑（§3.5）。 */
@@ -31,6 +39,32 @@ export const PET_SPAWN_MIN_GAP = 40;
 export const PET_GREET_MS = 4_000;
 /** 问候说什么（§3.4）：只有这一句，没有轮换、不带名字。 */
 export const PET_GREET_TEXT = '欢迎进来';
+
+/**
+ * 我可以把猫放在哪里的候选位置（**顺序即优先级**）：右 → 左 → 前 → 后。
+ * 调用方取第一条**可走**的；四条都不可走才退回我自己的位置（例如贴墙的夹缝里）。
+ */
+export function petFollowCandidates(self: Point): Point[] {
+  return [
+    { x: self.x + PET_FOLLOW_SIDE_X, y: self.y + PET_FOLLOW_SIDE_Y },
+    { x: self.x - PET_FOLLOW_SIDE_X, y: self.y + PET_FOLLOW_SIDE_Y },
+    { x: self.x, y: self.y + PET_FOLLOW_FRONT },
+    { x: self.x, y: self.y - PET_FOLLOW_BACK },
+  ];
+}
+
+/** 剩余**折线**长度（不是直线距离）：绕过拐角时速度与动画都按真正要走的路算（§3.3）。 */
+export function petRemainingOf(mover: { x: number; y: number; path: Point[] }): number {
+  let total = 0;
+  let x = mover.x;
+  let y = mover.y;
+  for (const point of mover.path) {
+    total += Math.hypot(point.x - x, point.y - y);
+    x = point.x;
+    y = point.y;
+  }
+  return total;
+}
 
 /** 持续目标的种类：窝里（我躺下）与我脚前（其余情形，含还没有床）。 */
 export type PetTargetKind = 'home' | 'user';
@@ -66,8 +100,8 @@ export function petTargetFor(input: { me: SelfPerson | undefined; self: Point; b
     if (home !== undefined) return { kind: 'home', point: home };
   }
 
-  const ahead = { x: self.x, y: self.y + PET_FOLLOW_OFFSET };
-  return { kind: 'user', point: isWalkable(ahead.x, ahead.y, bedCount) ? ahead : { x: self.x, y: self.y } };
+  const beside = petFollowCandidates(self).find((point) => isWalkable(point.x, point.y, bedCount));
+  return { kind: 'user', point: beside ?? { x: self.x, y: self.y } };
 }
 
 /**

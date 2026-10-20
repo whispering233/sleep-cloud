@@ -40,7 +40,7 @@ import {
   usableCenterOffset,
 } from './rules';
 import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
-import { PET_GREET_MS, PET_REPATH_PX, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
+import { PET_ARRIVE_PX, PET_GREET_MS, PET_REPATH_PX, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petRemainingOf, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
 import {
   COLORS,
   SPRITES_KEY,
@@ -430,9 +430,10 @@ class WorldScene extends Phaser.Scene {
       this.petBedCount = bedCount;
     }
 
-    // 推进按**实际经过的时间**（与小人同一条纪律）：速度由剩余直线距离给，远处飞奔、近处收步。
-    // 视野外照常推进、只是不画：我 `hop` 到厅的另一头后它从原位置跑过去，一进视野就已经在跑
-    const speed = petSpeedFor(Math.hypot(target.point.x - move.x, target.point.y - move.y));
+    // 推进按**实际经过的时间**（与小人同一条纪律）：速度由**剩余折线长度**给（绕拐角时才是真要走的路），
+    // 远处飞奔、近处收步。视野外照常推进、只是不画：我 `hop` 到厅的另一头后它从原位置跑过去，一进视野就已经在跑
+    const remaining = petRemainingOf(move);
+    const speed = petSpeedFor(remaining);
     const { arrived } = advanceMover(move, this.game.loop.delta, speed);
 
     const view = this.viewRect();
@@ -446,8 +447,10 @@ class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // 到位：窝里睡（§3.2），脚前站着；没到位按速度切走与跑
-    const anim = arrived ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
+    // 到位：窝里睡（§3.2），旁边站着；没到位按速度切走与跑。
+    // **到位容差**吃掉最后几像素的碎步：否则每帧在 walk / idle 之间翻一次，静止时就像在抽动
+    const atRest = arrived || remaining <= PET_ARRIVE_PX;
+    const anim = atRest ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
     // 问候（§3.4）：首次进厅那一次里、猫**第一次**跑到我旁边（折线走空 + 目标是「我」）时开始计时；
     // 到期由渲染比较时间戳（不挂定时器），`pending` 用掉就没了，所以之后不再问候
     const now = Date.now();

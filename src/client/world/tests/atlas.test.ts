@@ -150,28 +150,46 @@ describe('图集里的猫与篝火（多色素材，两支映射）', () => {
     }
   });
 
-  it('猫帧的世界尺寸落在 38~50 × 38~58（只是防呆上界，不是语义真值）', () => {
+  it('猫帧的世界尺寸落在 38~50 × 38~60（只是防呆上界，不是语义真值）', () => {
     for (const name of CAT_FRAMES) {
       const frame = atlas.frames[name];
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(38);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(50);
       expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeGreaterThanOrEqual(38);
-      expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeLessThanOrEqual(58);
+      expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeLessThanOrEqual(60);
     }
   });
 
-  it('篝火燃烧帧的世界宽度落在 46~50，熄灭帧的高度落在 19~23（火堆不能比床还大）', () => {
-    for (const name of FIRE_FRAMES) {
+  it('同一个动作的帧共用一个裁框（逐帧各裁 bbox 会让锚点随帧宽漂移，静止时看起来左右抽动）', () => {
+    const sizeOf = (name: string) => {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      return `${frame.frame.w}x${frame.frame.h}`;
+    };
+    for (const [prefix, count] of [
+      ['cat-idle-', 8],
+      ['cat-walk-', 4],
+      ['cat-run-', 4],
+      ['cat-sleep-', 4],
+      ['fire-', 6],
+    ] as const) {
+      const sizes = new Set(Array.from({ length: count }, (_, index) => sizeOf(`${prefix}${index + 1}`)));
+      expect(sizes.size, prefix).toBe(1);
+    }
+    // 站立的三组还要彼此同框：idle ⇄ walk ⇄ run 切换时身体不能跳
+    expect(new Set([sizeOf('cat-idle-1'), sizeOf('cat-walk-1'), sizeOf('cat-run-1')]).size).toBe(1);
+    // 熄灭帧与燃烧帧同框：切帧时柴堆与石圈不能位移
+    expect(sizeOf('fire-out')).toBe(sizeOf('fire-1'));
+  });
+
+  it('篝火帧的世界宽度落在 46~50（火堆不能比床还大）', () => {
+    for (const name of [...FIRE_FRAMES, 'fire-out']) {
       const frame = atlas.frames[name];
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(46);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(50);
     }
-    const out = atlas.frames['fire-out'];
-    if (!out) throw new Error('图集里没有 fire-out');
-    expect(out.frame.h * ART_SCALE).toBeGreaterThanOrEqual(19);
-    expect(out.frame.h * ART_SCALE).toBeLessThanOrEqual(23);
   });
 
   it('`pat` / `nuzzle` 不进图集（`npm run art` 只打白名单里的五组）', () => {

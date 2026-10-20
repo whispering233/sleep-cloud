@@ -5,7 +5,11 @@ import { isWalkable, positionOf, reserveBlockOf } from '../../../shared/layout';
 import type { Point } from '../../../shared/layout';
 import type { SelfPerson } from '../../../shared/protocol';
 import {
-  PET_FOLLOW_OFFSET,
+  PET_ARRIVE_PX,
+  PET_FOLLOW_BACK,
+  PET_FOLLOW_FRONT,
+  PET_FOLLOW_SIDE_X,
+  PET_FOLLOW_SIDE_Y,
   PET_GREET_MS,
   PET_GREET_TEXT,
   PET_RUN_THRESHOLD,
@@ -14,9 +18,11 @@ import {
   PET_SPEED_MAX,
   PET_SPEED_MIN,
   petAnimFor,
+  petFollowCandidates,
   petGreetVisible,
   petHomeOf,
   petPathFor,
+  petRemainingOf,
   petShouldSleep,
   petSpawnPoint,
   petSpeedFor,
@@ -60,31 +66,57 @@ describe('猫的持续目标：由我的显示态直接决定（§3.2）', () =>
     expect(isWalkable(home.x, home.y, BED_COUNT)).toBe(true);
   });
 
-  it('漫游且有窝 → 站我脚前 16px', () => {
+  it('漫游且有窝 → 站我旁边（右侧候选：不遮我的脸）', () => {
     expect(petTargetFor({ me: roamingAt(STREET, 7), self: STREET, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: { x: STREET.x, y: STREET.y + PET_FOLLOW_OFFSET },
+      point: { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
     });
   });
 
-  it('还没有床 → 同样站我脚前 16px（它会从起跑点跑过来）', () => {
+  it('还没有床 → 同样站我旁边（它会从起跑点跑过来）', () => {
     expect(petTargetFor({ me: roamingAt(STREET), self: STREET, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: { x: STREET.x, y: STREET.y + PET_FOLLOW_OFFSET },
+      point: { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
     });
   });
 
-  it('脚前那点不可走（正好压在走道边界）→ 退回我自己的位置', () => {
+  it('右侧候选落在床上（不可走）→ 改取左侧候选：**四个方向真的要试**', () => {
+    // 横走道里、靠右半边的点：右侧 +26 已经进了房间列，左侧仍在走道里
     expect(isWalkable(IN_ROW.x, IN_ROW.y, BED_COUNT)).toBe(true);
-    expect(isWalkable(IN_ROW.x, IN_ROW.y + PET_FOLLOW_OFFSET, BED_COUNT)).toBe(false);
+    expect(isWalkable(IN_ROW.x + PET_FOLLOW_SIDE_X, IN_ROW.y + PET_FOLLOW_SIDE_Y, BED_COUNT)).toBe(false);
     expect(petTargetFor({ me: roamingAt(IN_ROW, 7), self: IN_ROW, bedCount: BED_COUNT })).toEqual({
       kind: 'user',
-      point: IN_ROW,
+      point: { x: IN_ROW.x - PET_FOLLOW_SIDE_X, y: IN_ROW.y + PET_FOLLOW_SIDE_Y },
     });
-    expect(petTargetFor({ me: roamingAt(IN_ROW), self: IN_ROW, bedCount: BED_COUNT })).toEqual({
-      kind: 'user',
-      point: IN_ROW,
-    });
+  });
+
+  it('候选顺序就是优先级：右 → 左 → 前 → 后（猫站在旁边，不站在我身上）', () => {
+    expect(petFollowCandidates(STREET)).toEqual([
+      { x: STREET.x + PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
+      { x: STREET.x - PET_FOLLOW_SIDE_X, y: STREET.y + PET_FOLLOW_SIDE_Y },
+      { x: STREET.x, y: STREET.y + PET_FOLLOW_FRONT },
+      { x: STREET.x, y: STREET.y - PET_FOLLOW_BACK },
+    ]);
+    // 每个候选都离我足够远，不会把小人盖住
+    for (const point of petFollowCandidates(STREET)) {
+      expect(Math.hypot(point.x - STREET.x, point.y - STREET.y)).toBeGreaterThanOrEqual(26);
+    }
+  });
+
+  it('剩余路程按折线算；到位容差是正数，不给碎步留机会', () => {
+    expect(petRemainingOf({ x: 0, y: 0, path: [] })).toBe(0);
+    expect(petRemainingOf({ x: 0, y: 0, path: [{ x: 3, y: 4 }] })).toBeCloseTo(5);
+    expect(
+      petRemainingOf({
+        x: 0,
+        y: 0,
+        path: [
+          { x: 0, y: 10 },
+          { x: 10, y: 10 },
+        ],
+      }),
+    ).toBeCloseTo(20);
+    expect(PET_ARRIVE_PX).toBeGreaterThan(0);
   });
 
   it('没有 me → 没有目标（不画）；没有床就没有窝', () => {
