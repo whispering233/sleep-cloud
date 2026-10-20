@@ -72,6 +72,7 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 - **世界层 tap 不变式**：`pointer.downElement !== game.canvas` 一律不派发。Phaser 4 只在 `downElement === canvas` 时才发 `POINTER_DOWN`（否则只发 `POINTER_DOWN_OUTSIDE`）。注意**它挡不住合成鼠标事件**（那种事件的目标本来就是 canvas），所以上面第二条约的是 DOM 侧的手势纪律，二者互补。
 - **退场不淡出。** 撤下 `data-open` 的那一帧盒子就换成 idle 那一行、内容同时卸掉，160ms 的 `opacity` 只作用在一块与聊天面板重合的空盒子上（实测数字见 `50-slot-panel.md` §5）。所以**别按「淡出期间还看得见 ⇒ 还挡得住」来做设计**，也别拿这条写测试（这正是旧 I7 测不到东西的原因）。
 - **齿轮浮层用 `popover`**：顶层渲染、light-dismiss、焦点管理全部由平台给，删掉手写的 `aria-expanded` + 点外关闭。
+- **没有 Popover API 时退回自己管开关**（Chromium <114，如夸克 / UC 内核 = Chromium 100，见 `architecture.md` §1 的兼容基线）：`ToneLayer` 不写 `popover` 属性、不调 `showPopover`、不装 `toggle` 重排监听——它本来就是 `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与浮层之上；齿轮菜单退回 `menuOpen` state + `pointerdown` 点外关闭 + `Esc` 关闭 + 关时焦点回齿轮，`aria-expanded` 手写。两条路径只由 `src/client/popover.ts` 的 `HAS_POPOVER` 分叉，组件里不各写一份能力判断。降级菜单的 light-dismiss 与原生不逐字等价（焦点返回、点击穿透细节），由 `e2e/shell.spec.ts` 的降级用例卡住。
 
 ## 5. 画布：编辑会话期间冻结像素尺寸
 

@@ -8,11 +8,17 @@
 | 后端入口 | **Hono** | 路由/中间件/分组够用；**自带签名 cookie（HMAC SHA-256）**，正好是匿名会话所需；体积小 |
 | 房间服务 | 平台原生的**有状态对象**（类名 `Hall`）。**整个应用只有一个实例**（`idFromName(HALL_ID)`） | 厅 = 强一致容器 = 一份私有 SQLite；单线程串行处理天然免疫并发分配冲突 |
 | 房间内持久化 | 对象自带的 **SQLite** | 嵌入式、单文件、事务型，与「一个对象一份私有库」完全匹配 |
-| 前端 | **React + TypeScript + Vite + Tailwind**（**移动端优先**） | UI 小但会长（聊天、留言、装饰）；也贴合既定的 Tailwind 与细粒度组件要求。手机是主场景，竖屏窄幅下先定稿 |
+| 前端 | **React + TypeScript + Vite + Tailwind**（**移动端优先**；兼容基线 Chromium 100，见下方） | UI 小但会长（聊天、留言、装饰）；也贴合既定的 Tailwind 与细粒度组件要求。手机是主场景，竖屏窄幅下先定稿 |
 | 世界渲染 | **Phaser 4.2.1**（独立 canvas，`Scale.NONE`，相机可拉远到 `0.175`、**上限 1× 不放大**；画布按 DPR ≤3 放大，**世界里的文字按同一个 DPR 栅格化**） | 图集与批量渲染、相机（缩放/跟随/死区/边界）、输入、tween 一站齐备；比自绘少写一套相机与输入 |
 | **布局** | **共享纯函数**（`src/shared/layout.ts`） | 床号 ↔ 位置、区域、走道全部由**与床位数无关**的纯函数给出 → 自动伸缩不移动任何床；同一份函数被前端与房间服务引用 → 不存在「服务端认为不可走而客户端画得出」 |
 | 本地开发 | 平台的本地运行时（`wrangler dev`，由 `npm run dev` 包一层并自动选端口） | 本地即可跑完整的对象 + SQLite + WebSocket |
 | 不引入 | D1 / KV / R2 / 全栈同构框架 / 渲染用 Tilemap / 物理引擎（Arcade / Matter）/**寻路库**（phaser-navmesh / easystarjs / grid-engine） | 见 §2.5、§5 与 `backlog.md` |
+
+**浏览器兼容基线 = Chromium 100。** 依据不是「尽量兼容老浏览器」，而是真实内核：夸克 / UC 这类定制内核把安卓端停在 Chromium 100（实测最新夸克 APK 的 `libwebviewuc.so` 内版本串 `100.0.4896.58`；同一库里 `showModal` 有、`showPopover`/`popover` 零命中，`toSorted` 没有而 `findLast`/`structuredClone` 有，与 ~100 完全吻合）。由此有三条硬约束：
+
+- `build.target` 固定为 `chrome100`（Vite 默认是 `chrome111`；不钉死就可能在构建期引入 Chromium 100 解析不了的语法）。
+- Chromium 114+ 才有的 API（Popover、`:popover-open`、`@starting-style`、anchor positioning 等）必须带降级路径，不允许裸调；CSS 新特性只能用「`@supports` 包住后仍可用」或纯装饰的写法。
+- 降级路径的能力判断只允许出现在 `src/client/popover.ts` 一处，组件里不各写一份。
 
 **Phaser 使用边界**（细节见 `20-layout.md` §2 与 `../ui/DESIGN.md`）：
 

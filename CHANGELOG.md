@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- **夸克等 Chromium 100 内核进厅后整页空白**：这类内核没有 Popover API（Chromium 114+），`ToneLayer` 一挂载就调 `showPopover()` 抛 `TypeError`，React 根被卸载——入场层正常、点「继续」后整屏只剩底色。现在不再裸调：无 Popover 时减光层退化成普通整屏层（DOM 顺序仍压住界面），齿轮菜单退回自管开关（点外 / `Esc` 关闭、焦点回齿轮）。兼容基线定为 Chromium 100，`build.target` 一并钉死。
 - **点插槽面板空白会让小人意外走开**：面板原来在 `pointerdown` 里就退场，而两态布局是瞬切的——手指底下那一块当场变成画布，浏览器于是在手势收尾补发的兼容鼠标事件（`mousedown` / `mouseup`）上命中了 canvas，被当成一次从画布起手的 tap，`walk` 就发出去了（10 次漏 7 次；鼠标不补发这些事件，所以桌面看不出来）。现在按下只 `preventDefault()`（保住焦点，并让浏览器不再派发兼容鼠标事件），退场改挂 `click`——整次手势期间手指底下一直是面板
 - **点 😀 之后再也回不到大厅**：表情行在原位替换输入行，输入框被卸载时浏览器**不发** `blur`——旧实现把「面板是否贴顶」绑在输入框的 `onBlur` 上，于是状态永久停在打字态，点面板空白也退不出去（`blurFocusedEditable()` 找不到输入框）。现在状态住 store，输入框消失后由对账接管，退场路径始终可达；点 😀 也因此会**自然退场**（emoji 行不需要键盘，发出去的气泡只在世界里可见）
 - **退场动画期间点击穿到画布**：面板原来在撤下 `data-open` 的那一刻就把 `pointer-events` 关掉，而淡出还有 160ms——面板还看得见，点击已经落到画布上让小人开始走。现在可点性与视觉同源（`opacity` 与 `visibility` 同一条过渡、`transition-behavior: allow-discrete`），并在世界层再加一道：`pointer.downElement !== canvas` 的 tap 一律不派发

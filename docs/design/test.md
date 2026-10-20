@@ -19,6 +19,8 @@
 
 **基线设备**：iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）。窄档阈值 640，其它窄屏手机走同一套分支。
 
+**降级路径的回归**：Popover API 缺失用 e2e 的 init script 模拟（导航前删 `HTMLElement.prototype.showPopover/hidePopover/togglePopover`），`e2e/shell.spec.ts` 有一条固定用例；真夸克（Chromium 100）只能在真机上复验——模拟器跑不动（arm64-only APK 在 x86_64 镜像上 ANR）。
+
 ## 2. 宿主 Windows 上的 Android 模拟器（移动端验收的默认环境）
 
 浏览器的窗口宽高反馈**仿真不了**软键盘：`visualViewport` 收不收、布局视口缩不缩、IME 自己的候选条占多大，都是内核行为。要拿这些数只能起一台真的 Android。
