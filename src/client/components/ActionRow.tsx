@@ -4,7 +4,7 @@ import { parseJumpTarget } from '../bed-jump';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, setRain, setSwitching, showNotice } from '../store';
+import { getState, openAbout, setRain, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -28,8 +28,8 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开的浮层是四项：**更换床位** / **天气** /
- * 版本号 / 隐私说明；
+ * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开的浮层是五项：**更换床位** / **天气** /
+ * **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
@@ -237,8 +237,8 @@ export function ActionRow() {
 
               {/* 菜单：有 Popover 时 `popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，
                   所以没有遮罩、也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
-                  **四项**：**更换床位**（可点，胶囊外观）与**天气开关**（文案 = 当前天气）在上、
-                  版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
+                  **五项**：**更换床位**（可点，胶囊外观）、**天气开关**（文案 = 当前天气）与
+                  **关于失眠云**在上，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
                   没有 Popover 时退回手写的开关：无 `popover` 属性，按 `menuOpen` 条件渲染 */}
               {HAS_POPOVER || menuOpen ? (
@@ -269,6 +269,21 @@ export function ActionRow() {
                       onClick={() => setRain(!view.rain)}
                     >
                       {weatherLabel(view.rain)}
+                    </button>
+                    {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
+                        点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。
+                        独立 `key` + `pointerdown` 拦默认行为：与天气那颗同理 */}
+                    <button
+                      key="about"
+                      type="button"
+                      className="hud-action hud-menu-action"
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        closeMenu();
+                        openAbout('manual');
+                      }}
+                    >
+                      关于失眠云
                     </button>
                   </div>
                   <div className="hud-menu-version">v{APP_VERSION}</div>
