@@ -11,6 +11,7 @@ import { PREFS } from '../src/client/prefs';
 /** 测试侧打点：出站帧（不是生产代码的一部分）。 */
 interface Instrumented {
   __frames: string[];
+  __audio: AudioContext[];
 }
 
 test.beforeEach(async ({ page }) => {
@@ -24,6 +25,18 @@ test.beforeEach(async ({ page }) => {
     ): void {
       frames.push(String(data));
       send.call(this, data);
+    };
+
+    // 记下每个 `AudioContext` 及其状态：解锁只能发生在**手势内**，而手势外的
+    // `resume()` 在无自动播放豁免的环境里会被拒（context 永远挂在 `suspended`）
+    const contexts: AudioContext[] = [];
+    (window as unknown as Instrumented).__audio = contexts;
+    const Native = window.AudioContext;
+    window.AudioContext = class TrackedAudioContext extends Native {
+      constructor(options?: AudioContextOptions) {
+        super(options);
+        contexts.push(this);
+      }
     };
   });
 });
@@ -111,6 +124,10 @@ test('雨声与天气互不联动：各自落盘、各自重载保持', async ({
   await soundButton(page).click();
   await expect(soundButton(page)).toHaveText('雨声');
   await expect(weatherButton(page)).toHaveText('无雨');
+  // 而且真的能出声：context 已建且已跑起来（手势内解锁，不靠自动播放豁免）
+  await expect
+    .poll(async () => page.evaluate(() => (window as unknown as Instrumented).__audio.map((c) => c.state)))
+    .toEqual(['running']);
   expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), PREFS.audioRain)) ?? '')).toEqual({
     v: 1,
     on: true,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
+import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
@@ -278,7 +279,12 @@ export function ActionRow() {
                       className="hud-action hud-menu-action"
                       aria-pressed={view.sound}
                       onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => setSound(!view.sound)}
+                      onClick={() => {
+                        // 解锁必须在 **click 同步路径** 里：store 的 effect 已在手势之外，那里建的
+                        // `AudioContext` 在 Safari 会永久停在 `suspended`（静音开关是后开的常态路径）
+                        if (!view.sound) unlockAudio();
+                        setSound(!view.sound);
+                      }}
                     >
                       {soundLabel(view.sound)}
                     </button>
