@@ -38,12 +38,15 @@
 | 产物 | 说明 |
 | :--- | :--- |
 | 美术素材 | `npm run art` 从 `tools/art/masters/` 的 5 张母图重新生成 `public/sprites/`（图集 + 逐帧坐标的 `frames.css` + 许可）。**产物入库，不挂进 `npm run build`**（构建保持快且确定）；改素材或改映射规则后要重跑 |
+| 雨声素材 | `public/audio/` 里的两个 WAV（30 s 主循环 + 8 s 早播循环）是**加工后的产物，直接入库**（没有脚本管线）：源素材与完整的 `ffmpeg` 加工链写在 `public/audio/LICENSE-rain-and-thunders.txt`，换素材要重跑那条链并**同时改文件名里的版本号** |
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**分包固定为三块**（`vite.config.ts` 的 `rolldownOptions.output.codeSplitting`）：`index`（React + UI 层）、`world`（世界层，创建画布时动态导入）、`phaser`（引擎单独一块）。**引擎分块是为了缓存**：引擎 chunk 的 hash 只在升级 Phaser 时变化，业务代码改动不会让老用户重下引擎（否则两者同块，改任何一行界面代码都要重下 363 KB gzip）。构建末尾那条 `(!) Some chunks are larger than 500 kB` 是**引擎自己超线**（1374 kB），不是业务代码膨胀；**刻意不调 `chunkSizeWarningLimit`**，好让这条提示继续对业务代码生效。实测产物：`index` 249 kB / gzip 79 kB、`world` 16 kB / gzip 6 kB、`phaser` 1374 kB / gzip 357 kB |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
 | 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/20-layout.md` §4）。`public/` 只放素材 |
 | 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。Phaser + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。
+
+**静态资源的缓存头由 `public/_headers` 给**（Workers 静态资源会解析构建产物根目录的这个文件，Vite 会把 `public/` 原样拷进 `dist/`）：`/audio/*` 是 `public, max-age=31536000, immutable`。平台默认头是 `public, max-age=0, must-revalidate` + `ETag`——那只保证「不重下」，每次进厅仍要发一次条件请求；音频是懒加载的 1.9 MB，值得免掉这一次往返。**代价**：`immutable` 下浏览器不会再来问，所以换素材必须**换文件名里的版本号**（`rain-loop.v1.wav` → `v2`）。
 
 ## 4. 部署
 
