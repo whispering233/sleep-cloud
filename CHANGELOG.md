@@ -30,6 +30,7 @@
 
 ### Fixed
 
+- **`npm run dev:web` 整页空白**：`/api` 代理是前缀匹配，把客户端模块 `api.ts`（浏览器请求 `/api.ts`）也代理给了后端；后端 SPA 回退返回 `index.html`，模块脚本因 MIME 是 `text/html` 被浏览器拒绝，一棵模块图都加载不起来。代理键改成正则 `^/api(/|$)`，只匹配 `/api` 与 `/api/...`（`docs/design/build.md` §2 记了口径）
 - **点 😀 之后再也回不到大厅**：表情行在原位替换输入行，输入框被卸载时浏览器**不发** `blur`——旧实现把「面板是否贴顶」绑在输入框的 `onBlur` 上，于是状态永久停在打字态，点面板空白也退不出去（`blurFocusedEditable()` 找不到输入框）。现在状态住 store，输入框消失后由对账接管，退场路径始终可达；点 😀 也因此会**自然退场**（emoji 行不需要键盘，发出去的气泡只在世界里可见）
 - **退场动画期间点击穿到画布**：面板原来在撤下 `data-open` 的那一刻就把 `pointer-events` 关掉，而淡出还有 160ms——面板还看得见，点击已经落到画布上让小人开始走。现在可点性与视觉同源（`opacity` 与 `visibility` 同一条过渡、`transition-behavior: allow-discrete`），并在世界层再加一道：`pointer.downElement !== canvas` 的 tap 一律不派发
 - **齿轮浮层在顶层里定位错**：浮层改 `popover` 之后（顶层渲染、light-dismiss、`Esc` 全部由平台给，手写遮罩与点外关闭一并删掉），顶层元素的定位盒是视口，「靠祖先 `position: relative` 手算」不再成立（实测会跑到屏幕外）。改用 CSS anchor positioning 锚在齿轮上；没有 anchor 支持的老 Safari 退回「屏幕右下、面板上方」的固定位置。减光层也升为顶层 `popover`（`manual`），否则浮层会成为全屏最亮的那一块
