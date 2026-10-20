@@ -11,6 +11,7 @@ import type { Page } from '@playwright/test';
 interface Instrumented {
   __frames: string[];
   __canvasResizes: { count: number };
+  __blankDown: { seen: number; prevented: number };
 }
 
 /** 出站帧记录：包一层 `WebSocket.prototype.send`，`walk` 有没有发出去就问它。 */
@@ -100,35 +101,37 @@ test('每个状态的出口都可达：收起 / 面板空白 / 表情行替换�
   await expectComposer(page, 'idle');
 });
 
-test('退场动画期间，面板区域不会把点击漏给画布', async ({ page }) => {
+test('点插槽面板空白不产生 walk', async ({ page }) => {
   await enterHall(page);
-  await page.getByLabel('聊天输入框').focus();
-  await expectComposer(page, 'typing');
 
-  // 「收起」= 退场开始；从那一刻起每一帧采一次面板中心（160ms 过渡 + 余量）
-  await page.getByRole('button', { name: '收起输入' }).click();
-  const hits = await page.evaluate(async () => {
-    const panel = document.querySelector('.slot-panel');
-    const seen: string[] = [];
-    if (!(panel instanceof HTMLElement)) return seen;
-    const deadline = performance.now() + 250;
-    await new Promise<void>((resolve) => {
-      const sample = (): void => {
-        const rect = panel.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        seen.push(hit === null ? 'null' : hit.tagName);
-        if (performance.now() >= deadline) resolve();
-        else requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
+  // 空白处那一下 `pointerdown` 的 `defaultPrevented`：监听挂在冒泡阶段，面板自己的处理器先跑
+  await page.evaluate(() => {
+    const log = { seen: 0, prevented: 0 };
+    (window as unknown as Instrumented).__blankDown = log;
+    document.addEventListener('pointerdown', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.classList.contains('slot-panel')) return;
+      log.seen += 1;
+      if (event.defaultPrevented) log.prevented += 1;
     });
-    return seen;
   });
 
-  expect(hits.length).toBeGreaterThan(1);
-  // 至少有一帧命中的是面板本体（`div`）：证明采样确实盖住了过渡期，不是等它退完才开始
-  expect(hits).toContain('DIV');
-  expect(hits).not.toContain('CANVAS');
+  for (let i = 0; i < 8; i += 1) {
+    await page.getByLabel('聊天输入框').focus();
+    await expectComposer(page, 'typing');
+    const blank = await pointOn(page, '.slot-panel');
+    await page.touchscreen.tap(blank.x, blank.y);
+    // 退场挂在抬手的 `click` 上：按下只 `preventDefault()`，整次手势期间面板不换手
+    await expectComposer(page, 'idle');
+  }
+
+  // ① 空白处每一下 `pointerdown` 都被取消（浏览器据此不再派发兼容鼠标事件）
+  expect(await page.evaluate(() => (window as unknown as Instrumented).__blankDown)).toEqual({
+    seen: 8,
+    prevented: 8,
+  });
+  // ② 全程 0 次 `walk`（旧实现在这里一次点按就可能让小人走开）
+  expect(await walkCount(page)).toBe(0);
 });
 
 test('打字期间与退场之后画布像素尺寸都不动，宽度变化立即生效', async ({ page }) => {
