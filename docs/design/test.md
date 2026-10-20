@@ -9,7 +9,7 @@
 | 环境 | 是什么 | 什么时候用它 |
 | :--- | :--- | :--- |
 | **单测（L1）** | `npm test`（vitest）：纯函数、布局、寻路、位置同步的假时间轴、协议镜像、**交互状态机（`composerReducer` 及其序列穷举）/ `shouldResize`** | **任何纯逻辑**。能写成纯函数就必须在这里验，不要留到别处 |
-| **契约 spec（L2）** | `npm run e2e`（Playwright；需先起 `npm run dev`，端口自动读 `.wrangler/dev-port`；宿主机没装 Playwright 浏览器时用 `PLAYWRIGHT_CHROMIUM_PATH` 指一个已有 Chromium）：DOM 契约——每个状态的出口可达、退场期间 `elementFromPoint` 不是 canvas、`typing` 期间与退场之后画布尺寸不变、只有画布起手的 tap 产 `walk` | **界面壳层的不变式**（`60-interaction-shell.md` §6）。它不测像素、也不需要 IME，所以桌面就能跑；**不进 CI**，进 §4 的「合并前必跑」 |
+| **契约 spec（L2）** | `npm run e2e`（Playwright；需先起 `npm run dev`，端口自动读 `.wrangler/dev-port`；宿主机没装 Playwright 浏览器时用 `PLAYWRIGHT_CHROMIUM_PATH` 指一个已有 Chromium）：DOM 契约——每个状态的出口可达、点插槽面板空白不产生 `walk`、`typing` 期间与退场之后画布尺寸不变、只有画布起手的 tap 产 `walk` | **界面壳层的不变式**（`60-interaction-shell.md` §6）。它不测像素、也不需要 IME，所以桌面就能跑；**不进 CI**，进 §4 的「合并前必跑」 |
 | **类型检查** | `npm run typecheck`（三份 tsconfig） | 改协议 / 样式令牌 / 前端代码后。干净克隆先跑一次 `npm run tokens` |
 | **桌面浏览器** | 本机 Chromium（Playwright / BetterWright） | 逻辑与流程：进厅、走动、躺下、聊天、断线重连、命中判定。**桌面视口只用于「不是响应式」的那类结论** |
 | **桌面浏览器 + 手机视口** | 同上，但视口按手机设（393×852 类） | **降级选项**：模拟器不可用时才用，只能看溢出/换行这类明显错误；**结论必须标注「降级验证」**。它仿真不了软键盘、IME、真触摸语义（见 §3），所以**不得作为响应式/触摸类验收的通过依据** |

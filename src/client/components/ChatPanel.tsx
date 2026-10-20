@@ -191,7 +191,7 @@ export function ChatPanel() {
 
       {/* 插槽面板在网格第 3 行（打字态铺满到屏底）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
           点一条只改草稿、不发送、不退场 */}
-      <SlotPanel active={view.composer === 'typing'} onBlankPointerDown={exitComposer}>
+      <SlotPanel active={view.composer === 'typing'} onBlank={exitComposer}>
         <QuickPhrases onFill={setDraft} />
       </SlotPanel>
     </>

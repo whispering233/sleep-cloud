@@ -85,7 +85,7 @@
 33. **打字态 = store 里的状态，不是 DOM 焦点。** 焦点只是入口之一（shell 级 `focusin` 认出可编辑控件）；退场**只有一个出口** `exitComposer()`：幂等、**不看 `activeElement` 是谁**。另有一条对账：shell 级 `focusout` 后下一帧发现活跃元素不在面板内的可编辑控件里 → 退场。这两条合起来才挡住「控件被卸载不发 blur」（表情行原地替换输入行）与「别的控件抢焦点」（`GO` 床号）。**打字态必须常驻一个 44px 可见出口**（动作行右端的「收起」胶囊）——隐性出口出错时等于没有出口。
 34. **布局归 CSS，JS 只买状态。** `.app-shell` 是 Grid 两态（`auto 1fr auto` / `auto auto 1fr`），面板与插槽都在流里：**不量高度、不写 `--dock-y`、不用 `translateY` 挪面板、两态瞬切无动画**。位移式布局每加一行控件都要重算一次，而测量面板底锚点量到的永远是上一帧。相机 inset 仍只吃**布局值**（`layoutTopOf` 用 `offsetTop` 累加），不吃 `getBoundingClientRect()`：后者会跟着 transform 跑。
 35. **会抢焦点、或会让布局当场换位的按钮，两个坑一起躲：`pointerdown` 里 `preventDefault()`，并给它独立的 `key`。** 前者：按钮一聚焦就触发 `focusout` 对账 → 面板当场换位；后者：换位后 React 会原地复用那颗 `<button>`（只换属性），而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑——实测按「收起」会顺手弹出设置浮层。
-36. **可点性必须与视觉同源，画布只收画布起手的 tap。** 退场用 `visibility` 离散过渡（`transition-behavior: allow-discrete`），**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。
+36. **可点性必须与视觉同源，画布只收画布起手的 tap。** 关闭态用 `visibility` 离散过渡（`transition-behavior: allow-discrete`）退出命中，**不许用 `pointer-events` 提前断开**（实测：`opacity: 1` 而 `pointer-events: none`，点击直接落到画布上让小人走）；也别指望 `inert`（命中会跳过整棵子树）。世界层再收一道：`pointer.downElement !== canvas` 一律不派发。**一次点按手势期间不许把被点的盒子拿掉**：触摸抬手的兼容鼠标事件按抬手那一刻重新命中，盒子若在 `pointerdown` 里就消失（布局切换 / 卸载），补发的 `mousedown` 就落到画布上、而它确实是从画布起手的（兜底拦不住）——布局变化要么推到 `click`，要么在 `pointerdown` 里 `preventDefault()`。
 
 **本地持久化（客户端）**
 

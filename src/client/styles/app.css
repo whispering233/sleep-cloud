@@ -295,12 +295,15 @@
      不是层叠上下文）。它是下面那块，所以**下圆角 + 下边框**；上沿不画边（交接处那条线由聊天面板的下边画，
      两块都画就是两道线 + 两个圆角凹口，§3）。
      开关不用 `hidden`（`display: none` 过渡不了）：靠 `data-open` 切 `opacity` / `transform`，隐藏靠
-     `visibility: hidden`（不可 Tab、不被读屏读到另外还有组件的 `inert`）。空闲态它与聊天面板同在第 3 行，
-     但 `opacity: 0` + `visibility: hidden` + 空内容，看不见也点不到。
+     `visibility: hidden`（不可 Tab、不被读屏读到；可点性的依据也是它——`inert` 会让命中跳过整棵子树，
+     管不了可点性）。空闲态它与聊天面板同在第 3 行，但 `opacity: 0` + `visibility: hidden` + 空内容，
+     看不见也点不到。
      **为什么必须是 `visibility` 而不是 `pointer-events`**：两块面板同在第 1 列第 3 行完全重叠，
      「看不见但还占位」的那个盒子会把聊天面板的点击全吃掉；而 `pointer-events: none` 一旦在退场一开始就挂上，
      面板还看得见的 160ms 里点击会穿到画布（`docs/design/60-interaction-shell.md` §4）。
-     `visibility` 挂同一条过渡 + `allow-discrete`：退场期间它仍是 `visible`（照旧吃点击），动画末帧才消失 */
+     `visibility` 挂同一条过渡 + `allow-discrete`：退场期间它仍是 `visible`。注意退场本身是**瞬切**的——
+     撤 `data-open` 那一帧盒子就换成第 3 行这个空盒子（内容一起卸），这条过渡画的是一块与聊天面板重合同色的
+     空矩形；真正的可点保障是「点空白在抬手才退场」（`50-slot-panel.md` §5） */
   .slot-panel {
     /* 显式占第 1 列：两块面板都被自动放进第 3 行，不写列会被摆到隐式第 2 列去（整页会多出 2px 死条、世界少 2px） */
     grid-column: 1;

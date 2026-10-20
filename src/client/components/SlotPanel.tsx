@@ -15,18 +15,18 @@ import type { ReactNode } from 'react';
  *   **按抬手那一刻**重新做命中的——那一下于是成了从画布起手的 tap（发一条 `walk`）。按下只
  *   `preventDefault()`：保住输入框焦点，并让浏览器不再派发兼容鼠标事件。
  * - 它不是浮层：没有背景变暗、不做焦点陷阱、不抢焦点（打开时焦点仍在输入行）。出口有两个：
- *   「点面板空白」（由 `onBlankPointerDown` 给出）与动作行右端的「收起」胶囊——面板盖住画布，
+ *   「点面板空白」（由 `onBlank` 给出）与动作行右端的「收起」胶囊——面板盖住画布，
  *   所以画布那条出口在这一态不可达。
  */
 export function SlotPanel({
   active,
-  onBlankPointerDown,
+  onBlank,
   children,
 }: {
   /** 由调用方传（`composer === 'typing'`）：面板显隐只有这一个来源 */
   active: boolean;
   /** 点面板**空白**（没落在内容上）的那一次点按：抬手（`click`）时交给调用方退场 */
-  onBlankPointerDown: () => void;
+  onBlank: () => void;
   children?: ReactNode;
 }) {
   return (
@@ -41,7 +41,7 @@ export function SlotPanel({
       }}
       onClick={(event) => {
         // 退场挂在抬手：整次手势期间盒子不换手，兼容鼠标事件就不会补发到画布上（见顶注释）
-        if (event.target === event.currentTarget) onBlankPointerDown();
+        if (event.target === event.currentTarget) onBlank();
       }}
     >
       {active ? children : null}
