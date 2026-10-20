@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ANNOUNCE, ANNOUNCE_VERSION, shouldShowAbout } from '../about';
+import { ANNOUNCE, shouldShowAbout } from '../about';
 
 describe('shouldShowAbout（docs/design/90-about-panel.md §3）', () => {
   it('缺键 → 弹（从未确认过任何公告）', () => {
@@ -21,9 +21,8 @@ describe('shouldShowAbout（docs/design/90-about-panel.md §3）', () => {
 });
 
 describe('ANNOUNCE 内容形状（docs/design/90-about-panel.md §4）', () => {
-  it('version 形如 x.y.z，且 ANNOUNCE_VERSION 就是它', () => {
+  it('version 形如 x.y.z（逐字比较的基准）', () => {
     expect(ANNOUNCE.version).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(ANNOUNCE_VERSION).toBe(ANNOUNCE.version);
   });
 
   it('intro 非空', () => {

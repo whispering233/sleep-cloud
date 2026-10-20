@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ANNOUNCE, ANNOUNCE_VERSION } from '../about';
+import { ANNOUNCE } from '../about';
 import { exitComposer } from '../focus';
 import { writeAboutSeen } from '../prefs';
 import { closeAbout } from '../store';
@@ -35,7 +35,7 @@ export function AboutOverlay({ source }: AboutOverlayProps) {
 
   /** 关闭只有一个出口：按钮与 `Esc` 都走这里。自动那一次勾着才记已读（§2） */
   const close = useCallback((): void => {
-    if (source === 'auto' && remember) writeAboutSeen(ANNOUNCE_VERSION);
+    if (source === 'auto' && remember) writeAboutSeen(ANNOUNCE.version);
     closeAbout();
   }, [source, remember]);
 

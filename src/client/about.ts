@@ -41,9 +41,6 @@ export const ANNOUNCE: Announce = {
   ],
 };
 
-/** 已读的比较基准（`sc.about.seen` 存的就是这个值）。 */
-export const ANNOUNCE_VERSION = ANNOUNCE.version;
-
 /**
  * 该不该自动弹（§3）：`seen !== ANNOUNCE.version`。
  * **不校验 `seen` 是不是合法版本号**：它只被拿去逐字比较，坏值唯一的后果是**再弹一次**（无副作用）。
