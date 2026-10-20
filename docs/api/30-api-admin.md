@@ -72,13 +72,14 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 
 ### 5.1 `GET /api/admin/identities`
 
-查询参数：`limit` / `before` + `beforeId`（复合游标）/ `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）。
+查询参数：`limit` / `before` + `beforeId`（复合游标）/ `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）/ `name`（昵称**子串**匹配，`%` `_` `\` 已转义）。
 
-**`ip` 与游标可以同时给**：按 IP 反查时也要能翻页。
+**三者与游标可以同时给**：按 IP 或昵称反查时也要能翻页。
 
 | 字段 | 是否必选 | 数据类型 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `userId` | 是 | string | 身份（L1） |
+| `nickname` | 否 | string | 最近一次入场的昵称；`null` = 已过 90 天留存期，或该身份从未写过 |
 | `firstSeenAt` / `lastSeenAt` | 是 | number | epoch 毫秒 |
 | `lastIp` | 否 | string | `null` = 已过 90 天留存期被清空 |
 | `lastCountry` | 否 | string | ISO-3166-1 α2；`"T1"` = TOR |

@@ -53,7 +53,7 @@
 | 数据 | 从哪来 | 用途 | 在哪 | 留存 |
 | :--- | :--- | :--- | :--- | :--- |
 | `user_id` | 服务端随机签发 | 身份（L1）；床位归属的关联键 | cookie + `identity` + `bed` | 见各行 |
-| 昵称 `nickname` | **用户自己输入**（入场层） | 显示 | cookie + `bed.owner_name` 快照 | 床位行随归属 |
+| 昵称 `nickname` | **用户自己输入**（入场层） | 显示；运维在台账里认人 | cookie + `bed.owner_name` 快照 + `identity.nickname`（最近一次） | 床位行随归属；`identity` 那份与来源信息一同 **90 天清空** |
 | 形象 `appearance` | 用户选择，未选则按 `user_id` 派生 | 渲染 | cookie + `bed.owner_appearance` | 同上 |
 | 18 岁自述位 `ageConfirmed` | 入场一次点击（**自述，不是核验**） | 法律免责表述 | cookie | 随 cookie |
 | 床位归属与占用 | 行为派生 | 「我的床」、占用状态 | `bed` | 归属 30 天无访问释放；睡痕 12 小时 |
