@@ -75,14 +75,15 @@ export function ActionRow() {
   };
 
   /** 收菜单：有 Popover 时交给平台（其余开关路径也全归它）；降级路径自己关，并把焦点送回齿轮
-      ——菜单节点随后被卸载，不接回来焦点就落到 `body` 上 */
-  const closeMenu = (): void => {
+      ——菜单节点随后被卸载，不接回来焦点就落到 `body` 上。点外关闭传 `false`：native light-dismiss
+      不搬焦点，搬了它会让 Space / Enter 又把菜单打开 */
+  const closeMenu = (restoreFocus = true): void => {
     if (HAS_POPOVER) {
       menuRef.current?.hidePopover();
       return;
     }
     setMenuOpen(false);
-    gearRef.current?.focus();
+    if (restoreFocus) gearRef.current?.focus();
   };
 
   // 降级路径（Chromium 100 没有 Popover）里菜单的开关、点外关闭、`Esc`、焦点全得自己来
@@ -96,7 +97,7 @@ export function ActionRow() {
       if (!(target instanceof Node)) return;
       // 点齿轮（开关自己）或菜单里（菜单项）都不算点外面
       if (menu.contains(target) || gearRef.current?.contains(target)) return;
-      closeMenu();
+      closeMenu(false);
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') closeMenu();
