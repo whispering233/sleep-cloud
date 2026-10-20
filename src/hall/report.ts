@@ -114,6 +114,53 @@ export function listReports(sql: SqlStorage, query: { limit: number; before?: nu
     .map(toReport);
 }
 
+export interface ReportTargetRecord {
+  targetUserId: string;
+  /** 所有举报行的 `count` 合计（24 小时并合过的行按并合后的次数算） */
+  count: number;
+  /** **不同的举报人个数**（行数，不是次数）：一个人连点只算 1 */
+  reporters: number;
+  lastAt: number;
+  /** **最近那一行**的事由（更早的事由只留在明细里） */
+  reason: string;
+}
+
+interface RawReportTargetRow {
+  [key: string]: string | number | null;
+  target_user_id: string;
+  total: number;
+  reporters: number;
+  last_at: number;
+  reason: string;
+}
+
+/**
+ * 被举报人折叠（`docs/api/30-api-admin.md` §5.7）：封禁是「对一个人」的动作，
+ * 而明细按举报行排序，中间这一跳不折叠就得靠人脑数。**不分页**——排序键不是主键，游标会漏行。
+ */
+export function listReportTargets(sql: SqlStorage, limit: number): ReportTargetRecord[] {
+  return sql
+    .exec<RawReportTargetRow>(
+      `SELECT target_user_id, SUM(r.count) AS total, COUNT(*) AS reporters, MAX(r.last_at) AS last_at,
+              (SELECT latest.reason FROM report AS latest
+                WHERE latest.target_user_id = r.target_user_id
+                ORDER BY latest.last_at DESC LIMIT 1) AS reason
+         FROM report AS r
+        GROUP BY target_user_id
+        ORDER BY total DESC, last_at DESC
+        LIMIT ?`,
+      limit,
+    )
+    .toArray()
+    .map((row) => ({
+      targetUserId: row.target_user_id,
+      count: row.total,
+      reporters: row.reporters,
+      lastAt: row.last_at,
+      reason: row.reason,
+    }));
+}
+
 /** 90 天清理（并入每日唤醒，不新开唤醒）：只删过期行，没被举报过的文本从来就不在库里。 */
 export function purgeExpiredReports(sql: SqlStorage, now: number): void {
   sql.exec('DELETE FROM report WHERE last_at < ?', now - REPORT_TTL_MS);

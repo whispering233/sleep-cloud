@@ -124,6 +124,14 @@ interface ReportPage {
   next: { before: number } | null;
 }
 
+interface ReportTargetItem {
+  target: { userId: string; nickname: string | null };
+  count: number;
+  reporters: number;
+  lastAt: number;
+  reason: string;
+}
+
 const adminGet = (hall: Hall, path: string): Promise<Response> =>
   hall.fetch(new Request(`https://hall.test${path}`, { headers: { 'x-sleep-admin': '1' } }));
 
@@ -457,4 +465,42 @@ test('举报分页：id 倒序，before 排他，两页合起来不重不漏', a
 
   const ids = [...first.items, ...second.items].map((item) => item.id);
   expect(ids).toEqual([3, 2, 1]);
+});
+
+const reportTargetsOf = async (hall: Hall, query = ''): Promise<{ items: ReportTargetItem[] }> =>
+  (await (await adminGet(hall, `/admin/reports/targets${query}`)).json()) as { items: ReportTargetItem[] };
+
+test('按被举报人折叠：合计次数与举报人数对得上，次数多者在前，昵称为 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_heavy', nickname: '夜猫子' }, NOW);
+
+  // u_heavy：两个人报，其中一个连报两次（24 小时内并合成 count 2）
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_heavy', reason: '刷屏', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_heavy', reason: '刷屏', evidence: [] }, NOW + 10);
+  recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_heavy', reason: '最近的那条', evidence: [] }, NOW + 20);
+  // u_light：一个人连报两次，合计 2 次但只有 1 个举报人，且最近一次比 u_heavy 晚
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_light', reason: '另一个人的事由', evidence: [] }, NOW + 30);
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_light', reason: '另一个人的事由', evidence: [] }, NOW + 40);
+
+  const body = await reportTargetsOf(hall);
+  expect(body.items).toEqual([
+    {
+      target: { userId: 'u_heavy', nickname: '夜猫子' },
+      count: 3,
+      reporters: 2,
+      lastAt: NOW + 20,
+      reason: '最近的那条',
+    },
+    {
+      target: { userId: 'u_light', nickname: null },
+      count: 2,
+      reporters: 1,
+      lastAt: NOW + 40,
+      reason: '另一个人的事由',
+    },
+  ]);
+  // 排序键不是主键：不分页，也就没有 `next`
+  expect(body).not.toHaveProperty('next');
+  // `limit` 照旧生效（默认 50、上限 100）
+  expect((await reportTargetsOf(hall, '?limit=1')).items.map((item) => item.target.userId)).toEqual(['u_heavy']);
 });

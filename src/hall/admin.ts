@@ -1,6 +1,6 @@
 import { displayBedNoOf } from '../shared/layout';
 import { findOwnedBed } from './bed-store';
-import { listReports } from './report';
+import { listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
 import {
   blockDetailOf,
@@ -234,6 +234,19 @@ function reportsPage(url: URL, ctx: AdminContext): Response {
   });
 }
 
+/** 被举报人折叠（§5.7）：无 `next`——排序键不是主键，游标翻页在这里会漏行。 */
+function reportTargetsPage(url: URL, ctx: AdminContext): Response {
+  return json({
+    items: listReportTargets(ctx.sql, limitOf(url)).map((row) => ({
+      target: partyOf(ctx.sql, row.targetUserId),
+      count: row.count,
+      reporters: row.reporters,
+      lastAt: row.lastAt,
+      reason: row.reason,
+    })),
+  });
+}
+
 function auditPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const rows = listAudit(ctx.sql, limit + 1, cursorOf(url, 'before'));
@@ -274,6 +287,9 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
   }
   if (resource === 'audit' && second === undefined && request.method === 'GET') {
     return auditPage(url, ctx);
+  }
+  if (resource === 'reports' && second === 'targets' && request.method === 'GET') {
+    return reportTargetsPage(url, ctx);
   }
   if (resource === 'reports' && second === undefined && request.method === 'GET') {
     return reportsPage(url, ctx);

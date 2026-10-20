@@ -31,6 +31,10 @@
         padding-top: 16px;
         border-top: 1px solid var(--line);
       }
+      h3 {
+        font-size: 15px;
+        margin: 20px 0 8px;
+      }
       label {
         display: block;
         margin: 0 0 6px;
@@ -201,6 +205,20 @@
 
         <section>
           <h2>举报</h2>
+          <h3>按被举报人</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>被举报人</th>
+                <th>次数</th>
+                <th>举报人数</th>
+                <th>最近一次</th>
+                <th>最近事由</th>
+              </tr>
+            </thead>
+            <tbody id="reportTargets"></tbody>
+          </table>
+          <h3>明细</h3>
           <div class="pager">
             <button type="button" id="reportsPrev" disabled>上一页</button>
             <button type="button" id="reportsNext" disabled>下一页</button>
@@ -252,6 +270,7 @@
       const auditNext = document.getElementById('auditNext');
 
       const reportRows = document.getElementById('reports');
+      const reportTargetRows = document.getElementById('reportTargets');
       const reportsPrev = document.getElementById('reportsPrev');
       const reportsNext = document.getElementById('reportsNext');
 
@@ -450,6 +469,33 @@
         return tr;
       }
 
+      /** 按被举报人（§5.7）：无分页（响应里没有 `next`），一次读完全部折叠行。 */
+      async function loadReportTargets() {
+        const res = await dataFetch('/api/admin/reports/targets');
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`按被举报人读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        render(reportTargetRows, data.items, reportTargetRow, 5);
+      }
+
+      function reportTargetRow(item) {
+        const tr = document.createElement('tr');
+        const target = document.createElement('td');
+        // 被举报人仍是 `<details>`：点开就是台账详情，封禁只在那一处（§5.2）
+        target.append(partyDetail(item.target));
+        tr.append(
+          target,
+          cell(String(item.count)),
+          cell(String(item.reporters)),
+          cell(fmtTime(item.lastAt)),
+          cell(item.reason),
+        );
+        return tr;
+      }
+
       async function loadReports(index) {
         const cursor = reportCursors[index] ?? null;
         const params = new URLSearchParams({ limit: String(PAGE) });
@@ -643,7 +689,7 @@
             identityCursors = [null];
             auditCursors = [null];
             reportCursors = [null];
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0)]);
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
           } else if (res.status === 429) {
             say('尝试次数过多，请等一分钟再试。', true);
           } else {
@@ -663,6 +709,7 @@
         blockRows.replaceChildren();
         auditRows.replaceChildren();
         reportRows.replaceChildren();
+        reportTargetRows.replaceChildren();
         say('已登出。');
       });
 
@@ -673,7 +720,7 @@
           showLoggedIn(res.status === 200);
           if (res.status === 200) {
             say('已登录。');
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0)]);
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
           }
         } catch {
           say('无法连接服务器。', true);
