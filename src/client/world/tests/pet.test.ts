@@ -6,12 +6,15 @@ import type { Point } from '../../../shared/layout';
 import type { SelfPerson } from '../../../shared/protocol';
 import {
   PET_FOLLOW_OFFSET,
+  PET_GREET_MS,
+  PET_GREET_TEXT,
   PET_RUN_THRESHOLD,
   PET_SPAWN_DISTANCE,
   PET_SPEED_FACTOR,
   PET_SPEED_MAX,
   PET_SPEED_MIN,
   petAnimFor,
+  petGreetVisible,
   petHomeOf,
   petPathFor,
   petShouldSleep,
@@ -152,5 +155,20 @@ describe('猫的速度与动画（§3.3、§4）', () => {
     expect(petShouldSleep({ kind: 'home', point: STREET })).toBe(true);
     expect(petShouldSleep({ kind: 'user', point: STREET })).toBe(false);
     expect(petShouldSleep(undefined)).toBe(false);
+  });
+});
+
+describe('猫的问候（§3.4）', () => {
+  it('说「欢迎进来」、停 4 秒', () => {
+    expect(PET_GREET_MS).toBe(4000);
+    expect(PET_GREET_TEXT).toBe('欢迎进来');
+  });
+
+  it('到期前画、到期即不画、还没问候过也不画', () => {
+    const until = 10_000;
+    expect(petGreetVisible(until, until - 1)).toBe(true);
+    expect(petGreetVisible(until, until)).toBe(false);
+    expect(petGreetVisible(until, until + 1)).toBe(false);
+    expect(petGreetVisible(undefined, until - 1)).toBe(false);
   });
 });

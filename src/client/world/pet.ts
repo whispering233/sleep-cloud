@@ -27,6 +27,10 @@ export const PET_REPATH_PX = 24;
 export const PET_SPAWN_DISTANCE = 120;
 /** 起跑点贴墙夹取后离我不到这么远就改用「我 + 120」本身——否则猫等于原地出现（§3.5）。 */
 export const PET_SPAWN_MIN_GAP = 40;
+/** 问候的时长（毫秒）：到点由渲染时比较时间戳决定，**不挂定时器**（§3.4）。 */
+export const PET_GREET_MS = 4_000;
+/** 问候说什么（§3.4）：只有这一句，没有轮换、不带名字。 */
+export const PET_GREET_TEXT = '欢迎进来';
 
 /** 持续目标的种类：窝里（我躺下）与我脚前（其余情形，含还没有床）。 */
 export type PetTargetKind = 'home' | 'user';
@@ -104,4 +108,12 @@ export function petAnimFor(speed: number): PetAnim {
 /** 到位后睡不睡：只有「窝」这一支睡（§3.2）；我脚前到位只是站着。 */
 export function petShouldSleep(target: PetTarget | undefined): boolean {
   return target?.kind === 'home';
+}
+
+/**
+ * 问候此刻还画不画（§3.4）：**到期即 false**（`now === until` 已经算过期），还没问候过（`undefined`）也是 false。
+ * 过期靠「到期时刻 vs 现在」推导，不在任何地方挂定时器——重连不重发也靠调用方不重新置 `until`。
+ */
+export function petGreetVisible(until: number | undefined, now: number): boolean {
+  return until !== undefined && now < until;
 }

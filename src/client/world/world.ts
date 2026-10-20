@@ -40,7 +40,7 @@ import {
   usableCenterOffset,
 } from './rules';
 import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
-import { PET_REPATH_PX, petAnimFor, petHomeOf, petPathFor, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
+import { PET_GREET_MS, PET_REPATH_PX, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
 import {
   COLORS,
   SPRITES_KEY,
@@ -167,6 +167,13 @@ class WorldScene extends Phaser.Scene {
   /** 上一次折线的目标点与当时的床位数：目标移动 > 24px 或床位数变了才重算（`70-reserve-decor.md` §3.3） */
   private petTargetPoint: Point | undefined;
   private petBedCount: number | undefined;
+  /**
+   * 首次进厅那一次举起的「要不要问候」旗子：猫第一次跑到我旁边时用掉（`70-reserve-decor.md` §3.4）。
+   * 只在 `everOnline` 还是 `false` 的那一帧置上，所以重连不会重举（§3.5），本次会话最多问候一次。
+   */
+  private petGreetPending = false;
+  /** 问候的到期时刻（`undefined` = 没问候过）：到点是否还画由渲染时比较，不挂定时器（§3.4） */
+  private petGreetUntil: number | undefined;
   /** 手指状态：单指拖拽平移；两根手指 = 缩放（见「输入」一节） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
   /** 本次手势里出现过第二根手指：出现过就不算轻点（否则捏合收尾会误发一次走路） */
@@ -245,6 +252,8 @@ class WorldScene extends Phaser.Scene {
     // 断线后重连：首次进厅对准我的床，重连则对准我的小人（宽限恢复会把我放回原位，可能在厅的另一头）
     const online = state.connection === 'online';
     if (online && !this.wasOnline) this.alignCamera(state, this.everOnline);
+    // 首次进厅 = `everOnline` 还没被置 true 的那一次：猫的问候只发这一次（重连不发，§3.4）
+    if (online && !this.everOnline) this.petGreetPending = true;
     this.everOnline = this.everOnline || online;
     this.wasOnline = online;
 
@@ -439,7 +448,16 @@ class WorldScene extends Phaser.Scene {
 
     // 到位：窝里睡（§3.2），脚前站着；没到位按速度切走与跑
     const anim = arrived ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
-    placePet(pet, { x: move.x, y: move.y, depth: DEPTH.person + move.y, anim });
+    // 问候（§3.4）：首次进厅那一次里、猫**第一次**跑到我旁边（折线走空 + 目标是「我」）时开始计时；
+    // 到期由渲染比较时间戳（不挂定时器），`pending` 用掉就没了，所以之后不再问候
+    const now = Date.now();
+    if (this.petGreetPending && arrived && target.kind === 'user') {
+      this.petGreetPending = false;
+      this.petGreetUntil = now + PET_GREET_MS;
+    }
+    // 拉远到文字阈值以下：问候气泡与其它世界文字一起退役（猫本体照画，§3.4）
+    const greet = this.zoom >= ZOOM_TEXT_MIN && petGreetVisible(this.petGreetUntil, now);
+    placePet(pet, { x: move.x, y: move.y, depth: DEPTH.person + move.y, anim, greet });
   }
 
   private syncPeople(state: ClientState, serverNow: number, selfPoint: Point | undefined): void {
