@@ -50,7 +50,7 @@
 | 步骤 | 说明 |
 | :--- | :--- |
 | 0. 登录 | 本机需先有平台账号凭据（`wrangler login`），凭据不写仓库 |
-| 1. 注入密钥 | 会话签名密钥：`npx wrangler secret put SESSION_SECRET`（随便一串 32 字节以上的随机值）。**缺了它生产环境会 500**，不写仓库 |
+| 1. 注入密钥 | 会话签名密钥：`npx wrangler secret put SESSION_SECRET`（随便一串 32 字节以上的随机值）。**缺了它生产环境会 500**，不写仓库。后台令牌：`npx wrangler secret put ADMIN_TOKEN`（同样 32 字节以上随机值）——**缺了它后台接口一律 401**（不是 500），`/admin` 页面能打开但登不进去。轮换签名密钥时再加一把 `SESSION_SECRET_PREV`（上一把，**只用于验签**，见 `config.md` §4） |
 | 2. 部署 | `npm run deploy` 同时更新 Worker 代码与静态资源 |
 | 3. 冒烟检查 | `GET /api/health` 返回 `{"code":"0"}`；打开页面可见；再走完整循环：入场 → 走动 → 躺下 → 另一个客户端确认可见 |
 
@@ -71,6 +71,9 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" np
 ```
 
 只加 `--dns-result-order=ipv4first` **不够**（实测仍旧失败），关键是 `--no-network-family-autoselection`。
+
+**典型症状：`/admin` 登录一直 401**
+`ADMIN_TOKEN` 没注入（或与输入的不是同一个）——缺它时后台**一律** 401，不回落任何默认值。`npx wrangler secret put ADMIN_TOKEN` 之后无需重新部署，下次请求就生效。
 
 **典型症状：忘了注入 `SESSION_SECRET`**
 `/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
