@@ -1,0 +1,6 @@
+# Workers 静态资源会解析构建产物根目录的这个文件（Vite 把 public/ 原样拷进 dist/）。
+# 平台默认头是 `public, max-age=0, must-revalidate` + ETag：那只保证「不重下」，
+# 每次进厅仍要发一次条件请求。雨声是懒加载的 1.9 MB，值得免掉那一次往返。
+# 代价：immutable 下浏览器不会再来问——换素材必须同时把文件名里的版本号 +1。
+/audio/*
+  Cache-Control: public, max-age=31536000, immutable

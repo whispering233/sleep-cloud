@@ -231,12 +231,19 @@
     }
   }
 
-  /* 浮层里那一项：胶囊外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
-     只额外把它撑满浮层一行、与下面的版本号拉开一档 */
+  /* 浮层里的可点击组：两颗胶囊之间是**组内间距**，组与版本号之间才是组间间距（`docs/ui/DESIGN.md` 的 `hud-menu` 行） */
+  .hud-menu-group {
+    display: grid;
+    /* 组内 8px / 组间 12px：与动作行同一套间距口径（`docs/ui/DESIGN.md` 的 `action-row` 行） */
+    gap: var(--spacing-sm);
+    margin-block-end: var(--spacing-md);
+  }
+
+  /* 浮层里的一颗胶囊：外观沿用 `.hud-action`（它就是项目里「这是个按钮」的既有答案），
+     只额外把它撑满浮层一行（间距由 `.hud-menu-group` 给） */
   .hud-menu-action {
     display: block;
     width: 100%;
-    margin-block-end: var(--spacing-sm);
   }
 
   /* 版本号：浮层里唯一一行纯文字（排查用信息，不常驻版面） */

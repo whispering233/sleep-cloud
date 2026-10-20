@@ -2,6 +2,8 @@ import type { SessionView } from '../../shared/http-api';
 import { APPEARANCES } from '../../shared/protocol';
 import type { Appearance } from '../../shared/protocol';
 import { confirmAge, setAppearance, setNickname } from '../api';
+import { unlock } from '../audio';
+import { getState } from '../store';
 import { ERROR_FALLBACK_TEXT, errorTextFor } from '../error-text';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
@@ -50,6 +52,9 @@ export function EntryOverlay({ session, blocked = false, onDone }: EntryOverlayP
   };
 
   const continueEntry = async () => {
+    // 必须在**手势处理器内部同步**解锁音频：Safari 只认这一种，而 `onDone` 已经在几次请求之后了。
+    // 只在雨天做：无雨时连 `AudioContext` 都不建（见了 `audio.ts` 的 `unlock`）
+    if (getState().rain) unlock();
     setError(null);
     setBusy(true);
     try {

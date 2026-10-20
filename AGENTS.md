@@ -20,7 +20,7 @@
 | 客户端本地持久化：准入判据、键协议、键登记表 | `docs/design/40-client-storage.md` |
 | 插槽面板：内容契约、快捷用语、已知代价 | `docs/design/50-slot-panel.md` |
 | 交互外壳：所有权表、输入会话状态机、Grid 两态、退场时序、画布冻结 | `docs/design/60-interaction-shell.md` |
-| 时间常量、限制、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
+| 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、额度监控 | `docs/design/build.md` |
 | 测试环境与流程（哪类测试用哪个环境） | `docs/design/test.md` |
 | 数据模型 | `docs/db/schema.md` |
@@ -91,6 +91,12 @@
 
 37. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
+**天气与声音**
+
+38. **天气是个人偏好，不进协议。** 只有**雨天 / 无雨**两态，一个开关同时驱动**雨层画面与雨声**；缺键时按本地日历日序号的奇偶初始化（只在启动算一次），用户切过之后永久生效。服务端不知道天气，所以同厅两个人可能一个下雨一个不下。**没有独立音量 / 静音**：静音 = 切「无雨」（理由见 `docs/design/backlog.md`）。
+39. **雨层是屏幕空间的并行 Scene。** 自带相机、原点左上、`zoom` = 画布 DPR（取 `1 / scale.zoom`，不要读 `window.devicePixelRatio`——画布才是事实源），因此不随世界缩放、可用视口、面板换位变化，也**不是第二层明暗**（覆盖率约 1.2%）。颗粒是运行时 `generateTexture` 的 2×14 细线，**不走 `npm run art`**。
+40. **音频用原生 WebAudio，不用 Phaser 的 SoundManager**（`audio: { noAudio: true }`，否则每页白建一个 `AudioContext`）。**无雨时连 context 都不建**；只在进场手势里解锁；音频字节走 HTTP 缓存（`public/_headers` 的 `immutable` + **文件名版本号**），不进本地存储。
+
 ## 兼容基线（Chromium 100）
 
 1. **基线是真实内核，不是「尽量兼容」。** 夸克 / UC 的安卓内核停在 Chromium 100（`libwebviewuc.so` = `100.0.4896.58`，无 `showPopover`）。`build.target` 固定 `chrome100`，构建产物必须能被 Chromium 100 解析。
@@ -131,6 +137,9 @@
 | 连接态（`connecting`/`online`/`offline`） | 在线、在线状态 | **渲染层的显示态**，与「人在不在场」（服务端事实）无关 |
 | 插槽面板（slot panel） | 浮层、遮罩、overlay、浮动面板 | 一块**常驻可占用区**，挂在聊天面板**下沿**（`docs/design/50-slot-panel.md`）；位置 / 尺寸 / 层叠全由框架给，**不是浮层** |
 | 触发源（slot source） | 触发器、开关、provider | 插槽面板的开关：**开与关由同一个源负责**（每源一个 `active`，面板显示 = 任一源 active），不写全局的「失焦即退场」 |
+| 天气（雨天 / 无雨） | 晴、天气同步、天气 API | **个人偏好**（本地键 `sc.weather.rain`），一个开关同时驱动雨层与雨声；**不与现实天气同步**，不进协议 |
+| 早播循环（intro loop） | 预览音、小样 | 8 s 的短循环，只负责「尽快出声」；30 s 主循环解码完成后 1 s 交叉淡化接上并释放它 |
+| 雨层（`rain-layer`） | 天气特效、粒子雨 | **屏幕空间**的并行 Scene（相机原点左上 + `zoom` = 画布 DPR）；与世界缩放、可用视口、面板换位无关 |
 
 ## 开发流程（本项目）
 
