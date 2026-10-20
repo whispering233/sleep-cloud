@@ -5,7 +5,10 @@ import { isWalkable, positionOf, reserveBlockOf } from '../../../shared/layout';
 import type { Point } from '../../../shared/layout';
 import type { SelfPerson } from '../../../shared/protocol';
 import {
+  PET_AFFECTION_MS,
   PET_ARRIVE_PX,
+  PET_BODY_LIFT_PX,
+  PET_HIT_PX,
   PET_GREET_MS,
   PET_GREET_TEXT,
   PET_RUN_THRESHOLD,
@@ -14,9 +17,12 @@ import {
   PET_SPEED_MAX,
   PET_SPEED_MIN,
   PET_TRAIL_DISTANCE,
+  petAffectionPick,
   petAnimFor,
+  petBodyPoint,
   petFollowCandidates,
   petGreetVisible,
+  petHitAt,
   petHomeOf,
   petPathFor,
   petRemainingOf,
@@ -216,5 +222,32 @@ describe('猫的问候（§3.4）', () => {
     expect(petGreetVisible(until, until)).toBe(false);
     expect(petGreetVisible(until, until + 1)).toBe(false);
     expect(petGreetVisible(undefined, until - 1)).toBe(false);
+  });
+});
+
+describe('摸猫（§3.6）', () => {
+  const feet = { x: 200, y: 400 };
+
+  it('命中圆心在脚点上方 28、半径 26：身体中靶，脚点与远处不中', () => {
+    expect(petBodyPoint(feet)).toEqual({ x: 200, y: 400 - PET_BODY_LIFT_PX });
+    expect(petHitAt(petBodyPoint(feet), feet)).toBe(true);
+    // 圆心正上方一个半径处仍算命中（边界内含）
+    expect(petHitAt({ x: 200, y: 400 - PET_BODY_LIFT_PX - PET_HIT_PX }, feet)).toBe(true);
+    // 脚点本身在半径外（猫的脚点到圆心正好 28 > 26）
+    expect(petHitAt(feet, feet)).toBe(false);
+    // 再远 20px 就完全不中
+    expect(petHitAt({ x: 200, y: 400 - PET_BODY_LIFT_PX - PET_HIT_PX - 1 }, feet)).toBe(false);
+    expect(petHitAt({ x: 200 + PET_HIT_PX + 1, y: 400 - PET_BODY_LIFT_PX }, feet)).toBe(false);
+  });
+
+  it('随机挑一个：一半摸头、一半蹭手撒娇', () => {
+    expect(petAffectionPick(0)).toBe('cat-pat');
+    expect(petAffectionPick(0.49)).toBe('cat-pat');
+    expect(petAffectionPick(0.5)).toBe('cat-nuzzle');
+    expect(petAffectionPick(0.999)).toBe('cat-nuzzle');
+  });
+
+  it('时长刚好播完 6 帧 @4fps', () => {
+    expect(PET_AFFECTION_MS).toBe(1500);
   });
 });

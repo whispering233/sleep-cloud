@@ -39,7 +39,7 @@ const askedLooks: BedLook[] = [
 const askedFrames = [...askedLooks.map((look) => look.frame), ...APPEARANCES.map((appearance) => personFrame(appearance))];
 
 /**
- * 猫与篝火的帧：素材管线的白名单是 idle / walk / run / sleep / fire 五组（`pat` / `nuzzle` 不打）。
+ * 猫与篝火的帧：素材管线的白名单是 idle / walk / run / pat / nuzzle / sleep / fire 七组。
  * 动画按帧名前缀 + 序号取帧，所以这里也按同一规则点名。
  */
 const numberedFrames = (prefix: string, count: number): string[] =>
@@ -49,6 +49,8 @@ const CAT_FRAMES = [
   ...numberedFrames('cat-walk-', 4),
   ...numberedFrames('cat-run-', 4),
   ...numberedFrames('cat-sleep-', 4),
+  ...numberedFrames('cat-pat-', 6),
+  ...numberedFrames('cat-nuzzle-', 6),
 ];
 const FIRE_FRAMES = numberedFrames('fire-', 6);
 const DECOR_FRAMES = [...CAT_FRAMES, ...FIRE_FRAMES, 'fire-out'];
@@ -150,12 +152,12 @@ describe('图集里的猫与篝火（多色素材，两支映射）', () => {
     }
   });
 
-  it('猫帧的世界尺寸落在 38~50 × 38~60（只是防呆上界，不是语义真值）', () => {
+  it('猫帧的世界尺寸落在 38~56 × 38~60（只是防呆上界，不是语义真值）', () => {
     for (const name of CAT_FRAMES) {
       const frame = atlas.frames[name];
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(38);
-      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(50);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(56);
       expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeGreaterThanOrEqual(38);
       expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeLessThanOrEqual(60);
     }
@@ -172,13 +174,23 @@ describe('图集里的猫与篝火（多色素材，两支映射）', () => {
       ['cat-walk-', 4],
       ['cat-run-', 4],
       ['cat-sleep-', 4],
+      ['cat-pat-', 6],
+      ['cat-nuzzle-', 6],
       ['fire-', 6],
     ] as const) {
       const sizes = new Set(Array.from({ length: count }, (_, index) => sizeOf(`${prefix}${index + 1}`)));
       expect(sizes.size, prefix).toBe(1);
     }
-    // 站立的三组还要彼此同框：idle ⇄ walk ⇄ run 切换时身体不能跳
-    expect(new Set([sizeOf('cat-idle-1'), sizeOf('cat-walk-1'), sizeOf('cat-run-1')]).size).toBe(1);
+    // 站立的五组还要彼此同框：idle ⇄ walk ⇄ run ⇄ 摸头/蹭手切换时身体不能跳
+    expect(
+      new Set([
+        sizeOf('cat-idle-1'),
+        sizeOf('cat-walk-1'),
+        sizeOf('cat-run-1'),
+        sizeOf('cat-pat-1'),
+        sizeOf('cat-nuzzle-1'),
+      ]).size,
+    ).toBe(1);
     // 熄灭帧与燃烧帧同框：切帧时柴堆与石圈不能位移
     expect(sizeOf('fire-out')).toBe(sizeOf('fire-1'));
   });
@@ -192,9 +204,10 @@ describe('图集里的猫与篝火（多色素材，两支映射）', () => {
     }
   });
 
-  it('`pat` / `nuzzle` 不进图集（`npm run art` 只打白名单里的五组）', () => {
-    for (const name of Object.keys(atlas.frames)) {
-      expect(/^(?:cat-)?(?:pat|nuzzle)/.test(name), name).toBe(false);
+  it('摸猫的两组帧都在图集里（点一下才有的看，缺帧只会变成空白）', () => {
+    for (const prefix of ['cat-pat-', 'cat-nuzzle-'] as const) {
+      expect(atlas.frames[`${prefix}1`]).toBeDefined();
+      expect(atlas.frames[`${prefix}6`]).toBeDefined();
     }
   });
 });

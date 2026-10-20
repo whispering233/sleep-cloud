@@ -2,6 +2,7 @@ import { ZOOM_MIN } from '../../shared/constants';
 import type { Appearance, Person, PersonState, SelfPerson } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
+import { petHitAt } from './pet';
 
 /**
  * 世界画布的纯规则：与 Phaser 无关，可单测。坐标一律是**世界像素**（1 世界像素 = 1 CSS 像素）。
@@ -431,6 +432,8 @@ export function personHit(
 
 export type TapTarget =
   | { kind: 'select'; id: string }
+  /** 点到自己的猫：演一下摸头 / 蹭手撒娇。**纯本地**，不产生任何上行（见 `70-reserve-decor.md` §3.6） */
+  | { kind: 'pat' }
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
   | { kind: 'recenter' }
@@ -473,6 +476,12 @@ export interface TapInput {
    * 服务端只校验街网、不做吸附，所以吸附必须发生在客户端（见 `docs/api/20-api-ws.md` §7）。
    */
   walkTarget?: { x: number; y: number };
+  /**
+   * 我的猫此刻的脚点（世界像素；没画出来时为 `undefined`）。它不在 `spots` 里——不是人，也不可选中，
+   * 所以命中判定单独给一个圆；优先级：人 > 自己 > **猫** > 床 > 地面。猫站在走道上、
+   * 可能压到床的一角，但点它只演一个本地动作，不产生任何上行，抢错也不会造成不可逆后果。
+   */
+  pet?: { x: number; y: number };
 }
 
 /**
@@ -491,7 +500,7 @@ export interface TapInput {
  * 用户大多只是点错了。旧床归属的代价不能由一次误点承担（见 `docs/design/00-master-design.md` §4）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching, owned } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching, owned, pet } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
@@ -504,6 +513,9 @@ export function tapTargetFor(input: TapInput): TapTarget {
   if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_PX))) {
     return { kind: 'recenter' };
   }
+
+  // 点我的猫：演一下摸头 / 蹭手撒娇。它站在走道上（可能看似压着床角），先于床位判定
+  if (pet !== undefined && petHitAt(point, pet)) return { kind: 'pat' };
 
   if (bedNo !== undefined) {
     // 自己躺着的床：什么都不做（服务端回 3004 静默），也免得本地外推白走一趟

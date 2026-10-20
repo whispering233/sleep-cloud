@@ -40,8 +40,8 @@ import {
   usableCenterOffset,
 } from './rules';
 import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
-import { PET_ARRIVE_PX, PET_GREET_MS, PET_REPATH_PX, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petRemainingOf, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
-import type { PetTrail } from './pet';
+import { PET_AFFECTION_MS, PET_ARRIVE_PX, PET_GREET_MS, PET_REPATH_PX, petAffectionPick, petAnimFor, petGreetVisible, petHomeOf, petPathFor, petRemainingOf, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
+import type { PetAnim, PetTrail } from './pet';
 import {
   COLORS,
   SPRITES_KEY,
@@ -182,6 +182,9 @@ class WorldScene extends Phaser.Scene {
   private petGreetPending = false;
   /** 问候的到期时刻（`undefined` = 没问候过）：到点是否还画由渲染时比较，不挂定时器（§3.4） */
   private petGreetUntil: number | undefined;
+  /** 摸猫那一下的到期时刻与在演的动作（§3.6）：在这之前它原地演完，不推进、不换动作 */
+  private petAffectionUntil = 0;
+  private petAffectionAnim: PetAnim | undefined;
   /** 手指状态：单指拖拽平移；两根手指 = 缩放（见「输入」一节） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
   /** 本次手势里出现过第二根手指：出现过就不算轻点（否则捏合收尾会误发一次走路） */
@@ -431,6 +434,28 @@ class WorldScene extends Phaser.Scene {
       this.petMove = move;
     }
 
+    // 摸猫的 1.5 秒里它**原地演完**：不推进、不重算折线、不换动作（点一下不该让它跑开）。
+    // 到头后下一帧自然回到「跟着我 / 回窝睡」，不需要任何状态机
+    const now = Date.now();
+    if (now < this.petAffectionUntil) {
+      const frozen = this.viewRect();
+      const onScreen =
+        move.x >= frozen.x - CULL_MARGIN_PX &&
+        move.x <= frozen.x + frozen.width + CULL_MARGIN_PX &&
+        move.y >= frozen.y - CULL_MARGIN_PX &&
+        move.y <= frozen.y + frozen.height + CULL_MARGIN_PX;
+      if (!onScreen) hidePet(pet);
+      else
+        placePet(pet, {
+          x: move.x,
+          y: move.y,
+          depth: DEPTH.person + move.y,
+          anim: this.petAffectionAnim ?? 'cat-idle',
+          greet: false,
+        });
+      return;
+    }
+
     // 重算折线只有三种情形：目标点移动超过 24px、厅的床位数变了（街网几何变了）、还没算过折线（§3.3）
     const targetMoved =
       this.petTargetPoint === undefined
@@ -465,7 +490,6 @@ class WorldScene extends Phaser.Scene {
     const anim = atRest ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
     // 问候（§3.4）：首次进厅那一次里、猫**第一次**跑到我旁边（折线走空 + 目标是「我」）时开始计时；
     // 到期由渲染比较时间戳（不挂定时器），`pending` 用掉就没了，所以之后不再问候
-    const now = Date.now();
     if (this.petGreetPending && arrived && target.kind === 'user') {
       this.petGreetPending = false;
       this.petGreetUntil = now + PET_GREET_MS;
@@ -916,11 +940,18 @@ class WorldScene extends Phaser.Scene {
       ownedBedNo: state.me?.ownedBedNo,
       switching: state.switching,
       walkTarget: nearestStreetPoint(point, bedCount),
+      // 猫可能压在床角上：它先于床位判定，但只演一个本地动作、不产生上行
+      pet: this.petMove ? { x: this.petMove.x, y: this.petMove.y } : undefined,
     });
 
     switch (target.kind) {
       case 'select':
         this.handlers.onSelect(target.id);
+        return;
+      case 'pat':
+        // 摸猫：随机摸头 / 蹭手撒娇，1.5 秒演完。**纯本地**：不动选中、不发上行、不牵扯床位
+        this.petAffectionUntil = Date.now() + PET_AFFECTION_MS;
+        this.petAffectionAnim = petAffectionPick(Math.random());
         return;
       case 'lie': {
         // 模式里那一下就是决定：发出躺下意图后立刻收起模式，下一次点击不再有换床含义

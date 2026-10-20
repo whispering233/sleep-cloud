@@ -448,7 +448,7 @@ function main() {
   };
   // 站立的三个动作用同一个裁框（idle ⇄ walk ⇄ run 切换时身体不跳）；睡与火各一组，火含熄灭帧
   const decorGroups = [
-    [...cellsOf('idle'), ...cellsOf('walk'), ...cellsOf('run')],
+    [...cellsOf('idle'), ...cellsOf('walk'), ...cellsOf('run'), ...cellsOf('pat'), ...cellsOf('nuzzle')],
     cellsOf('sleep'),
     [...cellsOf('fire'), { name: 'fire-out', master: 'cat-fire-out', rect: FIRE_OUT_RECT }],
   ];
@@ -554,7 +554,8 @@ function main() {
   );
 
   const catLicense = [
-    '素材来源与用途：atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4）与',
+    '素材来源与用途：atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4、',
+    'cat-pat-1…6、cat-nuzzle-1…6）与',
     '篝火（fire-1…6、fire-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可',
     '（原文见仓库根目录 LICENSE），用于世界层的床尾猫与床头篝火。',
     '',

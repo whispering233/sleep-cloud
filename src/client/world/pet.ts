@@ -63,6 +63,29 @@ export const PET_GREET_MS = 4_000;
 /** 问候说什么（§3.4）：只有这一句，没有轮换、不带名字。 */
 export const PET_GREET_TEXT = '欢迎进来';
 
+/** 摸猫那一下的时长：6 帧 @ 4fps = 1.5s（素材 fps 就是 4）。在此之前它不移动、不换动作。 */
+export const PET_AFFECTION_MS = 1_500;
+/** 摸猫的命中半径（世界像素）：猫 46.5×58.5，圆心在脚点上方 28——既罩得住身体，又不至于把旁边半张床抢走。 */
+export const PET_HIT_PX = 26;
+/** 命中圆心离脚点多高（世界像素）：猫贴图高 58.5，取一半略低。 */
+export const PET_BODY_LIFT_PX = 28;
+
+/** 猫身体中心的那个点：命中判定用它（脚点是锚点，不是身体中心）。 */
+export function petBodyPoint(pet: Point): Point {
+  return { x: pet.x, y: pet.y - PET_BODY_LIFT_PX };
+}
+
+/** 点到猫身上了吗（世界像素，圆判据——与「点人」同一个形状，只是半径大一点）。 */
+export function petHitAt(point: Point, pet: Point): boolean {
+  const body = petBodyPoint(pet);
+  return Math.hypot(body.x - point.x, body.y - point.y) <= PET_HIT_PX;
+}
+
+/** 摸一下该演哪一个：`random` 是 [0,1) 的随机数，由调用方给（纯函数才可测）。 */
+export function petAffectionPick(random: number): 'cat-pat' | 'cat-nuzzle' {
+  return random < 0.5 ? 'cat-pat' : 'cat-nuzzle';
+}
+
 /**
  * 我可以把猫放在哪里的候选位置（**顺序即优先级**）：沿用给的 `trail`，否则从 y 轴后方开始。
  * 调用方取第一条**可走**的；四条都不可走才退回我自己的位置（例如贴墙的夹缝里）。
@@ -94,8 +117,9 @@ export interface PetTarget {
   trail?: PetTrail;
 }
 
-/** 四组循环动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）。`cat-sleep` 只在窝里到位时播。 */
-export type PetAnim = 'cat-idle' | 'cat-walk' | 'cat-run' | 'cat-sleep';
+/** 四组循环动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）。`cat-sleep` 只在窝里到位时播；
+ * `cat-pat` / `cat-nuzzle` 是**摸猫那一下**的一次性动作（不循环）。 */
+export type PetAnim = 'cat-idle' | 'cat-walk' | 'cat-run' | 'cat-sleep' | 'cat-pat' | 'cat-nuzzle';
 
 /** 我的窝：我那张床的**床尾块底边中心**；没有床就没有窝（§3.1）。 */
 export function petHomeOf(me: SelfPerson | undefined): Point | undefined {

@@ -613,13 +613,15 @@ export interface PetView {
   anim: PetAnim | undefined;
 }
 
-/** 四组循环动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps（§3.2、§3.3）。**全局只注册一次**。 */
+/** 四组循环动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps；摸猫的两组各 6 帧 / 4fps（不循环，§3.6）。**全局只注册一次**。 */
 export function createPetAnims(scene: Phaser.Scene): void {
-  const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number }> = [
-    { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8 },
-    { key: 'cat-walk', prefix: 'cat-walk-', end: 4, frameRate: 6 },
-    { key: 'cat-run', prefix: 'cat-run-', end: 4, frameRate: 6 },
-    { key: 'cat-sleep', prefix: 'cat-sleep-', end: 4, frameRate: 6 },
+  const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number; repeat: number }> = [
+    { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8, repeat: -1 },
+    { key: 'cat-walk', prefix: 'cat-walk-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-run', prefix: 'cat-run-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-sleep', prefix: 'cat-sleep-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-pat', prefix: 'cat-pat-', end: 6, frameRate: 4, repeat: 0 },
+    { key: 'cat-nuzzle', prefix: 'cat-nuzzle-', end: 6, frameRate: 4, repeat: 0 },
   ];
   for (const group of groups) {
     if (scene.anims.exists(group.key)) continue;
@@ -627,7 +629,7 @@ export function createPetAnims(scene: Phaser.Scene): void {
       key: group.key,
       frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: group.prefix, start: 1, end: group.end }),
       frameRate: group.frameRate,
-      repeat: -1,
+      repeat: group.repeat,
     });
   }
 }

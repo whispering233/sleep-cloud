@@ -207,6 +207,26 @@ describe('轻点命中（世界像素）', () => {
     ).toEqual({ kind: 'recenter' });
   });
 
+  it('点我的猫：演摸头 / 蹭手撒娇；先于床位判定，但绝不落成 walk', () => {
+    const pet = { x: 812, y: 430 };
+    const body = { x: 812, y: 402 };
+    // 猫压在空床上那一点：演动作，不是躺下
+    expect(tapTargetFor({ point: body, spots: [], bedNo: 42, pet })).toEqual({ kind: 'pat' });
+    // 猫站在走道上：演动作，不是走过去
+    expect(tapTargetFor({ point: body, spots: [], walkTarget: body, pet })).toEqual({ kind: 'pat' });
+    // 人优先：同一个点上有别人 → 选中别人
+    expect(tapTargetFor({ point: body, spots: [{ id: 'u_other', x: body.x, y: body.y }], pet })).toEqual({
+      kind: 'select',
+      id: 'u_other',
+    });
+    // 离命中圆心 40px（> 26）：回到地面判定
+    expect(tapTargetFor({ point: { x: 812, y: 362 }, spots: [], walkTarget: { x: 812, y: 362 }, pet })).toEqual({
+      kind: 'walk',
+      x: 812,
+      y: 362,
+    });
+  });
+
   it('点自己的床但人不在命中半径内：`none`（回中只认自己这个点，不认床位）', () => {
     expect(tapTargetFor({ point: { x: 64, y: 64 }, spots: [self], selfId: 'u_me', residentId: 'u_me', bedNo: 42 })).toEqual(
       { kind: 'none' },
