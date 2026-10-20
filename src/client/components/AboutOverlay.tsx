@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ANNOUNCE, ANNOUNCE_VERSION } from '../about';
 import { exitComposer } from '../focus';
@@ -20,10 +20,17 @@ export interface AboutOverlayProps {
 export function AboutOverlay({ source }: AboutOverlayProps) {
   /** 「以后不再自动显示」的勾选：**默认勾着**（读一次就够），取消勾选 = 下次还想看 */
   const [remember, setRemember] = useState(true);
+  const knowItRef = useRef<HTMLButtonElement>(null);
 
   // 打开先退打字态：底部组合按布局回到底部，不会留下一个「键盘位置的面板」（60-interaction-shell.md §2）
   useEffect(() => {
     exitComposer();
+  }, []);
+
+  // 焦点给「知道了」，但**不许它把面板滚到底**：`.entry-overlay` 自己可滚，内容超屏时
+  // 默认的聚焦会一次性跳到最下面，读者从中间开始看（`docs/design/90-about-panel.md` §5）
+  useEffect(() => {
+    knowItRef.current?.focus({ preventScroll: true });
   }, []);
 
   /** 关闭只有一个出口：按钮与 `Esc` 都走这里。自动那一次勾着才记已读（§2） */
@@ -67,7 +74,7 @@ export function AboutOverlay({ source }: AboutOverlayProps) {
           </label>
         ) : null}
 
-        <PrimaryAction autoFocus onClick={close}>
+        <PrimaryAction ref={knowItRef} onClick={close}>
           知道了
         </PrimaryAction>
       </div>
