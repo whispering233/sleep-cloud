@@ -15,40 +15,6 @@
 
 ---
 
-## 卡 1：风控地基（`identity` / `block` 表 + 来源头 + `5002`）
-
-**目标**：服务端能记录来源、能判封禁、能把 `5002` 带回给客户端。**不含后台**。
-
-**改动面**
-
-| 文件 | 做什么 |
-| :--- | :--- |
-| `src/hall/schema.ts` | 三张表的 DDL + 索引，拼写与 `../db/schema.md` §4 逐字一致（`identity` / `block` / `admin_audit`） |
-| `src/hall/hall.ts` `initializeStorage()` | 建三张表（幂等，紧跟既有三句） |
-| `src/hall/risk.ts`（新） | 纯函数 + 单行读写：`blockStateOf(sql, {userId, ip}, now)` → `{kind, untilAt} \| null`（**两种维度任一命中取更严的那条**）、`recordIdentity(sql, 来源, now)`（UPSERT）、`upsertBlock` / `removeBlock` / `listBlocks` / `writeAudit` / `listAudit` 的最小形态 |
-| `src/hall/connection.ts` | `ConnectionState` 加 `ip?` / `country?` / `uaHash?`；`IDENTITY_HEADERS` 加 `ip` / `country` / `uaHash` 三个内部头 |
-| `src/hall/hall.ts` `fetch()` | 从内部头读出三项写进连接附加数据（**客户端伪造无效**：Worker 覆盖） |
-| `src/hall/hall.ts` `entryStatus()` | 签名改成 `entryStatus(来源: {userId, ip})` → `{bedCount, full, blocked}`；`blocked` 带 `untilAt`（`null` = 永久） |
-| `src/hall/hall.ts` `hello` 分支 | **第一步**判封禁（排在 `growIfNeeded` / `resumeSession` 之前）→ `reject(ws, '5002', {untilAt})`；同时 `recordIdentity` |
-| `src/hall/hall.ts` `reject()` | 支持携带 `untilAt`；**封禁用 `close(1008, 'blocked')`**，其余保持 `1000` + 码 |
-| `src/shared/protocol.ts` | `ErrorMessage` 加可选 `untilAt?: number \| null` |
-| `src/worker/app.ts` | `/api/me` 读来源（`CF-Connecting-IP`、`c.req.raw.cf.country`、UA）→ 传给 `entryStatus`；命中 → `fail(c, '5002', {...sessionView(session), untilAt})`。`/api/ws` 转发时写入三个内部头 |
-| `src/worker/session.ts` | `slice(0, 10)` → `slice(0, 16)`，注释说明「64 bit 只为撞号防护，不是安全参数」 |
-| `src/worker/env.ts` | 若需要 `ADMIN_TOKEN` 就**本卡先不加**（卡 3 再加） |
-
-**验收**
-
-- 单测：`blockStateOf` 四种组合（永久 / 未到期 / 已到期 / 无记录）× 两种维度（user / ip）与「取更严」。
-- 单测：`recordIdentity` 的 UPSERT（新行 / 同一个 user 换 IP / 同一 IP 两个 user）。
-- 单测：`/api/me` 命中封禁返回 `5002` 且 `data.untilAt` 与库里一致。
-- 单测：`hello` 命中封禁时不发 `snapshot`、不写床位行（用 `sqlite.ts` 的测试库对比前后行数）。
-- 手验：本机 `npm run dev`，直接改库插一条 `block` 行，刷新页面看到 `5002`。
-- `npm run typecheck` + `npm test` 全绿。
-
-**注意**：`CF-Connecting-IP` 在本地 dev 可能为空 → **来源视为未知，跳过封禁判定**，不报错。UA 哈希用 `crypto.subtle.digest('SHA-256', ...)` 取前 16 个十六进制字符。
-
----
-
 ## 卡 2：带语义的 close + `5002` 提示
 
 **目标**：被封 / 被顶掉之后**不再自动重连**，且用户看得见；入场层能显示「还有多久」。
@@ -164,9 +130,11 @@
 ## 卡片顺序
 
 ```text
-卡 1 ──► 卡 2（客户端分支，可与 3/5/6 并行）
-  ├──► 卡 3 ──► 卡 4
-  ├──► 卡 5（独立）
-  ├──► 卡 6（独立）
-  └──► 卡 7（独立，只依赖文案）
+卡 2（客户端分支，可与 3/5/6 并行）
+卡 3 ──► 卡 4
+卡 5（独立）
+卡 6（独立）
+卡 7（独立，只依赖文案）
 ```
+
+> **部署顺序**：卡 2 之前不要在生产库手写 `block` 行 —— 那时客户端还不看 `close` 的 `reason`，被封的人会静默无限重连（硬纪律 39）。
