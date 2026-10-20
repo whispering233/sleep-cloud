@@ -211,3 +211,21 @@ test('只有从画布起手的 tap 才产生 walk', async ({ page }) => {
   await page.touchscreen.tap(floor.x, floor.y);
   await expect.poll(() => walkCount(page)).toBeGreaterThan(0);
 });
+
+test('隐私说明两处入口都指向静态页，入场层仍是三项', async ({ page }) => {
+  await page.goto('/');
+  const link = page.locator('.entry-privacy');
+  await expect(link).toBeVisible();
+  // 12px 一行：折成两行就把入场层挤出屏（393×852 是基线）
+  expect((await link.boundingBox())?.height).toBeLessThan(30);
+  // 「18 岁自述」只有两个 `.entry-field` 同伴：昵称、形象。多一个就成了第四个区块
+  await expect(page.locator('.entry-card .entry-field')).toHaveCount(2);
+
+  const [privacy] = await Promise.all([page.waitForEvent('popup'), link.click()]);
+  await expect(privacy.locator('main > ol > li')).toHaveCount(6);
+  await privacy.close();
+
+  await enterHall(page);
+  await page.locator('.hud-settings-button').click();
+  await expect(page.locator('.hud-menu-link')).toHaveAttribute('href', '/privacy');
+});

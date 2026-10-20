@@ -123,14 +123,22 @@ export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
           </div>
         </div>
 
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={ageConfirmed}
-            onChange={(event) => setAgeConfirmed(event.target.checked)}
-          />
-          我已满 18 岁
-        </label>
+        {/* 18 岁自述与它的隐私入口是**同一块同意面**（`70-privacy-risk.md` §8.1）：两者贴在一起，
+            所以包一层而不是各占一个 `entry-field`——入场层只有三项，第四个区块会让入场层重新排版 */}
+        <div className="entry-age">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={ageConfirmed}
+              onChange={(event) => setAgeConfirmed(event.target.checked)}
+            />
+            我已满 18 岁
+          </label>
+          {/* 静态页、零接口（`public/privacy.html`）。新标签打开：不丢入场层已经填过的昵称 */}
+          <a className="entry-privacy" href="/privacy" target="_blank" rel="noopener">
+            使用须知与隐私说明
+          </a>
+        </div>
 
         {blockText ?? error ? (
           <p className="form-error" role="alert">

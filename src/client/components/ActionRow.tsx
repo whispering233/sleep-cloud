@@ -174,7 +174,7 @@ export function ActionRow() {
 
               {/* 浮层：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
                   也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
-                  两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
+                  三项：**更换床位**（可点，胶囊外观）在上、版本号与**隐私说明**（两行纯文字）在下。模式期间文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
               <div className="hud-menu" id="hud-menu" popover="auto" ref={menuRef}>
                 <button
@@ -191,6 +191,10 @@ export function ActionRow() {
                   {view.switching ? '取消换床' : '更换床位'}
                 </button>
                 <div className="hud-menu-version">v{APP_VERSION}</div>
+                {/* 隐私告知与入场层那一行同源（`70-privacy-risk.md` §8.1）：静态页、零接口 */}
+                <a className="hud-menu-link" href="/privacy" target="_blank" rel="noopener">
+                  使用须知与隐私说明
+                </a>
               </div>
             </>
           )}

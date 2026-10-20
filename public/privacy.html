@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>失眠云 · 使用须知与隐私说明</title>
+    <!-- 公开静态页：零接口、零脚本、不引用 DESIGN.md 的令牌（见 docs/design/70-privacy-risk.md §8.1）。
+         正文六条来自 §8.2，第 6 条照抄 §8.3 的成稿文字——**不要改写**，改了第一句就是误导。 -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --line: #9aa2ad;
+      }
+      body {
+        max-width: 40em;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+        font: 16px/1.7 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      main {
+        display: grid;
+        gap: 12px;
+      }
+      h1 {
+        margin: 0;
+        padding-bottom: 12px;
+        font-size: 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      ol {
+        display: grid;
+        gap: 16px;
+        margin: 0;
+        padding-inline-start: 1.4em;
+      }
+      li > p {
+        margin: 0 0 8px;
+      }
+      li > p:last-child {
+        margin-block-end: 0;
+      }
+      ul {
+        margin: 0;
+        padding-inline-start: 1.2em;
+      }
+      strong {
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>使用须知与隐私说明</h1>
+
+      <ol>
+        <li>
+          <p>
+            <strong>不要求注册</strong>，所以服务端<strong>从未拥有过你的真实身份</strong>。你的身份是一个随机标识，存在你浏览器的
+            cookie 里——清掉它就等于换了身份，<strong>床位也随之丢失</strong>。
+          </p>
+        </li>
+        <li>
+          <p>
+            我们记录什么：访问来源 IP、所在国家、浏览器类型的哈希、首次/最近访问时间、你的昵称与所选形象、你的床位。
+          </p>
+        </li>
+        <li>
+          <p>
+            为什么记：<strong>只用于防止滥用（刷屏、恶意骚扰）与排查故障</strong>。不做画像、不做广告、不提供给任何人。
+          </p>
+        </li>
+        <li>
+          <p>留多久：来源信息 90 天；床位 30 天无访问即释放；聊天<strong>完全不存</strong>。</p>
+        </li>
+        <li>
+          <p>谁能看：只有运维者。封禁决定会记一条审计。</p>
+        </li>
+        <li>
+          <p>
+            服务端<strong>不知道你是谁</strong>。我们没有你的姓名、邮箱、手机号、账号，从来没有过；<strong
+              >唯一能把这份数据与一个活人联系起来的线索，是你浏览器里的那个随机标识</strong
+            >。
+          </p>
+          <p>所以「删除我的数据」只能人工处理：<strong>需要写信/联系，人工处理</strong>。</p>
+          <ul>
+            <li>你如果<strong>还保留着</strong>那个标识，我们就能定位到它，按你的要求删除。</li>
+            <li>
+              你如果<strong>已经清掉</strong>了，服务端那份记录与人的联系就已经断了，<strong>也不需要你另行申请</strong>：来源信息
+              90 天后自动清空，床位 30 天无访问后自动释放，聊天本来就不存。
+            </li>
+          </ul>
+        </li>
+      </ol>
+    </main>
+  </body>
+</html>

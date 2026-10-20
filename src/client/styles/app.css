@@ -236,9 +236,18 @@
     margin-block-end: var(--spacing-sm);
   }
 
-  /* 版本号：浮层里唯一一行纯文字（排查用信息，不常驻版面） */
+  /* 版本号：浮层里两行纯文字之一（排查用信息，不常驻版面） */
   .hud-menu-version {
     white-space: nowrap;
+  }
+
+  /* 同名隐私入口（与入场层那一行同一份告知，`docs/design/70-privacy-risk.md` §8.1）：纯文字链接，
+     外观上仍与版本号同级——它是一条告知，不是按钮 */
+  .hud-menu-link {
+    display: block;
+    margin-block-start: var(--spacing-xs);
+    color: inherit;
+    text-decoration: underline;
   }
 
   /* 门控行（`GO` 的床号输入 / 换床提示 / 缩放档位选项）：面板里的普通一行，不再需要负外边距与自绘底色 */
@@ -651,6 +660,22 @@
     height: 20px;
     margin: 0;
     accent-color: var(--color-neutral);
+  }
+
+  /* 18 岁自述与隐私入口贴在一起（同一块同意面，`docs/design/70-privacy-risk.md` §8.1）：
+     包一层是为了不吃 `entry-card` 的 `spacing-md` 间隙，也不想因为多一行而多出一个区块 */
+  .entry-age {
+    display: grid;
+    gap: var(--spacing-xs);
+  }
+
+  /* 12px 灰字链接（`caption` 档）：preflight 把 `<a>` 的下划线继承成了 `inherit`，所以这里显式画出来 */
+  .entry-privacy {
+    justify-self: start;
+    padding-block: var(--spacing-xs);
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+    text-decoration: underline;
   }
 
   .form-error {
