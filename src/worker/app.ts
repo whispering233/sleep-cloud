@@ -7,6 +7,7 @@ import { LAYOUT_VERSION } from '../shared/layout';
 import { APPEARANCES } from '../shared/protocol';
 import { appearanceFor, IDENTITY_HEADERS } from '../hall/connection';
 import type { EntrySource } from '../hall/risk';
+import admin from './admin';
 import type { Env } from './env';
 import { fail, ok } from './respond';
 import { readExistingSession, readSession, writeSession } from './session';
@@ -163,5 +164,9 @@ app.get('/api/ws', async (c) => {
 
   return c.env.HALL.getByName(HALL_ID).fetch(forwarded);
 });
+
+// 后台运维面：页面壳是 `public/admin.html`（随 `public/` 进 `dist`，不需要 Worker 路由），
+// 数据接口全在这个子路由里（见 `docs/api/30-api-admin.md` §1）
+app.route('/api/admin', admin);
 
 export default app;

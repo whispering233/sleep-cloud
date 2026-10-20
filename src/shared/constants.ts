@@ -134,6 +134,12 @@ export const UPSTREAM_RATE_PER_SEC = 5;
 /** 昵称长度上限（按字符计）。 */
 export const NICKNAME_MAX_LEN = 16;
 
+/** 后台会话（`sc_admin`）有效期：24 小时。过期重登一次，成本可忽略（见 `docs/api/30-api-admin.md` §2.1）。 */
+export const ADMIN_SESSION_MS = 24 * 60 * 60 * 1000;
+
+/** 同一 IP 每分钟登录尝试上限，超出 429；**取不到 IP 时不限速**（本地开发没有那个头）。 */
+export const ADMIN_LOGIN_MAX_PER_MIN = 5;
+
 /** 全局聊天消息长度上限（按字符计）。 */
 export const CHAT_MAX_LEN = 200;
 

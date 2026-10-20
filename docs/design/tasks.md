@@ -15,7 +15,7 @@
 
 ---
 
-## 卡 3：后台登录（`/admin.html` + `/api/admin/login`）
+## 卡 3：后台登录（`/admin` + `/api/admin/login`）
 
 **目标**：能用 `ADMIN_TOKEN` 进后台；未授权一律 401。
 

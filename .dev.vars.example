@@ -1,3 +1,5 @@
 # 本机开发用：复制成 .dev.vars 即可（.dev.vars 不进仓库）。
 # 生产用 `npx wrangler secret put SESSION_SECRET` 注入，两边都不写进代码。
 SESSION_SECRET=local-dev-only-not-a-real-secret
+# 后台登录令牌（/admin.html）；生产用 `npx wrangler secret put ADMIN_TOKEN`。缺了它后台接口一律 401。
+ADMIN_TOKEN=local-dev-admin-token

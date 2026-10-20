@@ -6,7 +6,7 @@
 
 | 项 | 决定 | 理由 |
 | :--- | :--- | :--- |
-| 部署形态 | **同一个 Worker 的子路由**：页面壳 `/admin.html`（静态文件，随 `public/` 进 `dist`），数据接口 `/api/admin/*` | 不需要第二个部署、第二个域名、跨域 cookie。页面壳**不含任何数据**，被公开下载无害（等同任何登录页） |
+| 部署形态 | **同一个 Worker 的子路由**：页面壳 `/admin`（静态文件 `public/admin.html`，随 `public/` 进 `dist`。平台资产默认会把 `/admin.html` 307 到 `/admin`，所以**权威 URL 写 `/admin`**），数据接口 `/api/admin/*` | 不需要第二个部署、第二个域名、跨域 cookie。页面壳**不含任何数据**，被公开下载无害（等同任何登录页） |
 | 鉴权 | 一个平台密钥 `ADMIN_TOKEN` → 登录接口换一枚**独立的**签名 cookie `sc_admin` | 与 `sc_session` 名字、用途、值域**全部不共享**：一个用户的普通会话 cookie 永远不等于后台权限 |
 | 未授权 | **HTTP 401**（不是 `{code:"…"}`） | 错误码表是**用户面**契约（`error-code.md` §1：`msg` 面向开发者、文案由前端按 `code` 映射）。运维面混进 `5xxx` 会让那一段的意义变糊。**这是本项目唯一的契约例外，只限 `/api/admin/*`** |
 | 成功响应 | 直接返回数据对象（**不套** `{code,msg,data}`） | 同上，同一处例外 |
@@ -32,6 +32,7 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | cookie 内容 | 签名 cookie，载荷只有两项：`fp` = `SHA-256(ADMIN_TOKEN)` 的前 8 个十六进制字符、`iat` = 签发时刻。**token 本身不进客户端** |
 | 为什么带 `fp` | 换 `ADMIN_TOKEN` 时旧 cookie 立刻失效——否则「撤权」只能等 24 小时过期 |
 | 会话时长 | 24 小时（过期重新登录一次，成本可忽略） |
+| 登出 | **无状态**：接口只清浏览器侧的 cookie（`Max-Age=0`）。重放旧 cookie 值在 24 小时内仍能过中间件——与 `sc_session` 同一性质。**真正的撤权手段是换 `ADMIN_TOKEN`**（`fp` 不匹配，所有旧 cookie 立刻失效） |
 | 登录限速 | **同一 IP 每分钟 5 次**，超限 429。计数放内存（Worker 是无状态的多实例，这个计数只防在线爆破，不追求精确）；**不牵 `backlog.md` 里的按 IP 限流** |
 | IP 来源 | 与风控同一条读取路径（平台头）。**取不到 IP 时按「不限速」处理并记一条日志**：本地开发没有这个头，硬拦会让本地无法登录 |
 
@@ -45,6 +46,7 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | :--- | :--- | :--- |
 | POST | `/api/admin/login` | 换 `sc_admin` |
 | POST | `/api/admin/logout` | 清 `sc_admin`（HttpOnly，前端删不掉，所以需要接口） |
+| GET | `/api/admin/me` | 只回 `{ ok: true }`：验中间件，也是页面壳判断「刷新后还登着吗」的唯一依据（**不含任何业务数据**） |
 | GET | `/api/admin/identities` | 访客台账（分页；可按 IP 精确反查） |
 | GET | `/api/admin/identities/:userId` | 单个身份详情 |
 | GET | `/api/admin/blocks` | 黑名单（分页） |

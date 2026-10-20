@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>失眠云 · 后台</title>
+    <!-- 运维面：不加载前台 React、不连 WebSocket、不引用 DESIGN.md 的令牌（见 docs/api/30-api-admin.md §1）。 -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --line: #9aa2ad;
+        --muted: #5c6570;
+        --bad: #b3261e;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px;
+        font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 16px;
+      }
+      label {
+        display: block;
+        margin: 0 0 6px;
+      }
+      input,
+      button {
+        font: inherit;
+        min-height: 44px;
+        box-sizing: border-box;
+      }
+      input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+      button {
+        padding: 8px 20px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-block: 12px;
+      }
+      #status {
+        min-height: 1.5em;
+        margin: 0;
+        color: var(--muted);
+      }
+      #status[data-tone='bad'] {
+        color: var(--bad);
+      }
+      #result {
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        white-space: pre-wrap;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>失眠云 · 后台</h1>
+
+      <form id="login">
+        <div id="tokenField">
+          <label for="token">后台令牌</label>
+          <input id="token" name="token" type="password" autocomplete="current-password" required />
+        </div>
+        <div class="row">
+          <button type="submit">登录</button>
+          <button type="button" id="logout" hidden>登出</button>
+        </div>
+      </form>
+
+      <p id="status" role="status"></p>
+      <div id="result"></div>
+    </main>
+
+    <script>
+      const loginForm = document.getElementById('login');
+      const tokenField = document.getElementById('tokenField');
+      const tokenInput = document.getElementById('token');
+      const logoutButton = document.getElementById('logout');
+      const statusLine = document.getElementById('status');
+      const resultArea = document.getElementById('result');
+
+      /** 未授权只有 401、超限 429：后台接口不套 `{code,msg,data}`，所以按 HTTP 状态码分支。 */
+      function say(text, bad) {
+        statusLine.textContent = text;
+        statusLine.dataset.tone = bad ? 'bad' : '';
+      }
+
+      function showLoggedIn(loggedIn) {
+        tokenField.hidden = loggedIn;
+        loginForm.querySelector('button[type="submit"]').hidden = loggedIn;
+        logoutButton.hidden = !loggedIn;
+      }
+
+      async function post(path, body) {
+        return fetch(path, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: body === undefined ? {} : { 'content-type': 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      }
+
+      /** 刷新后还登着吗：受保护的 `/api/admin/me` 是最好的判据（cookie 未过期就 200）。 */
+      async function syncState() {
+        try {
+          const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
+          showLoggedIn(res.status === 200);
+          if (res.status === 200) say('已登录。');
+        } catch {
+          say('无法连接服务器。', true);
+        }
+      }
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = loginForm.querySelector('button[type="submit"]');
+        button.disabled = true;
+        try {
+          const res = await post('/api/admin/login', { token: tokenInput.value });
+          if (res.status === 200) {
+            tokenInput.value = '';
+            showLoggedIn(true);
+            say('已登录。');
+          } else if (res.status === 429) {
+            say('尝试次数过多，请等一分钟再试。', true);
+          } else {
+            say('令牌不对。', true);
+          }
+        } catch {
+          say('请求失败，请检查网络。', true);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      logoutButton.addEventListener('click', async () => {
+        await post('/api/admin/logout');
+        showLoggedIn(false);
+        resultArea.textContent = '';
+        say('已登出。');
+      });
+
+      syncState();
+    </script>
+  </body>
+</html>

@@ -41,14 +41,14 @@ export interface SessionRead {
  * （配了自定义域名路由后，本地 dev 的 request.url 就是生产域名），一旦按域名判本机，
  * 生产就会静默用上一个可猜的密钥——那等于没有会话安全。
  */
-function sessionSecret(c: Context<{ Bindings: Env }>): string {
+export function sessionSecret(c: Context<{ Bindings: Env }>): string {
   const secret = c.env.SESSION_SECRET;
   if (!secret) throw new Error('SESSION_SECRET 未配置');
   return secret;
 }
 
 /** 本地开发跑在 http 上，加 Secure 浏览器就不回传了。解析失败时按 HTTPS 处理（保守）。 */
-function isSecureRequest(request: Request): boolean {
+export function isSecureRequest(request: Request): boolean {
   try {
     return new URL(request.url).protocol === 'https:';
   } catch {
