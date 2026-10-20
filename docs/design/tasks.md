@@ -3,31 +3,6 @@
 > 规则：按端到端垂直切片，一张卡必须能独立提交、独立验证、独立回滚；**完成后从本文件删除**（它不是历史记录）。
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 
-## 卡 1 — 床号胶囊在床上只对准相机
-
-### 背景
-
-动作行那条「床号 n」无条件发 `hop`（不带床号 = 我自己的床）。服务端 `hop` 的语义是「在床上先起身」（`docs/api/20-api-ws.md` §3），于是躺着点它 = 起身 + 站到床脚（别人看得见），睡着点它 = 醒 + 起身。
-
-### 目标行为
-
-`me.state === 'roaming'` 才发 `hop`；已经在床上（`lying` / `asleep` / `trace`）时**只做 `focusMyBed()`、零上行**。`GO`（带床号的 `hop`）语义不变：在床上仍然是「起身 + 跳过去」。
-
-### 改动
-
-- `src/client/components/ActionRow.tsx`：床号胶囊的 `onClick` 加闸门（`getState().me?.state`，快照前为 `undefined` → 按 roaming 处理，照旧发 `hop`）。
-- 设计文档已改：`docs/design/00-master-design.md` 的「导航」行、`docs/ui/DESIGN.md` 的 `action-row` 行。
-- `CHANGELOG.md` 加一条 `### Fixed`（不写任务卡语义）。
-
-### 不做
-
-不改服务端 `hop` 语义、不改 `docs/api/20-api-ws.md`、不给 `lie` 加同类闸门。
-
-### 验收
-
-- `npm test` / `npm run typecheck` 全绿。
-- `ui-verifier`（宿主 Android 模拟器，真 Chrome + 真触摸）：躺下 → 点「床号 n」→ 人**不起身**、床位归属不变、相机对准我的床；睡着（`睡了`）后点它 → **不会被叫醒**；走动中点它 → 仍然回床（原有行为不回退）。条目上限 6 条。
-
 ## 卡 2 — 入场层标题右侧显示版本号
 
 ### 背景
