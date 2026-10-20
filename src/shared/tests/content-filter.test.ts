@@ -85,6 +85,12 @@ describe('内容过滤', () => {
       expect(detect('ＦＵＣＫ')).toBe('fuck');
     });
 
+    it('全角标点也算干扰字符（折叠后判定）', () => {
+      for (const input of ['傻～逼', '傻－逼', '傻＿逼', '傻．逼']) {
+        expect(detect(input)).toBe('傻逼');
+      }
+    });
+
     it('昵称词集是聊天词集的子集', () => {
       const chat = new Set(CHAT_WORDS);
       expect(NICKNAME_WORDS.filter((word) => !chat.has(word))).toEqual([]);

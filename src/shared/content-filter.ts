@@ -55,13 +55,12 @@ export const CHAT_WORDS = normalizeWords([
   ...curated,
 ]);
 
-/** 昵称词集：九类 + 手工表，减掉拆词残留与单字词条（`detect` 用它，是 `CHAT_WORDS` 的子集）。
- * 单字不挡昵称：真词库里的单字条目检测力极低，而昵称命中就意味着进不来。 */
-export const NICKNAME_WORDS = normalizeWords(
-  [...NICKNAME_CATEGORIES.flatMap((name) => categories[name]), ...curated].filter(
-    (word) => word.length > 1 && !NICKNAME_FORGIVE.has(word),
-  ),
-);
+/** 昵称词集：九类 + 手工表，**归一化之后**再剔掉单字与拆词残留（`detect` 用它，是 `CHAT_WORDS` 的子集）。
+ * 单字不挡昵称：货真词库里的单字条目检测力极低，而昵称命中就意味着进不来。 */
+export const NICKNAME_WORDS = normalizeWords([
+  ...NICKNAME_CATEGORIES.flatMap((name) => categories[name]),
+  ...curated,
+]).filter((word) => word.length > 1 && !NICKNAME_FORGIVE.has(word));
 
 interface Span {
   start: number;
@@ -80,8 +79,10 @@ function normalize(input: string): { text: string; positions: number[] } {
   const positions: number[] = [];
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index] as string;
-    if (/\s/.test(char) || interference.has(char)) continue;
-    text += halfWidth(char).toLowerCase();
+    const folded = halfWidth(char);
+    // 干扰字符在折叠后判定：否则全角标点（`～` `－` `＿` `．`）会绕过剥离（`傻～逼` vs `傻~逼`）。
+    if (/\s/.test(folded) || interference.has(char) || interference.has(folded)) continue;
+    text += folded.toLowerCase();
     positions.push(index);
   }
   return { text, positions };
