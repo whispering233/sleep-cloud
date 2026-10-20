@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { composerReducer, type ComposerEvent, type ComposerState } from '../composer';
 
-const EVENTS: ComposerEvent[] = [{ kind: 'focus-in' }, { kind: 'exit' }, { kind: 'lost-focus' }, { kind: 'offline' }];
+const EVENTS: ComposerEvent[] = [
+  { kind: 'focus-in' },
+  { kind: 'report' },
+  { kind: 'exit' },
+  { kind: 'lost-focus' },
+  { kind: 'offline' },
+];
 const EXIT_EVENT_KINDS = new Set(['exit', 'lost-focus', 'offline']);
 
-/** 长度 1..maxLength 的全部事件序列（长度 4 的正好 4^4 = 256 条）。 */
+/** 长度 1..maxLength 的全部事件序列（长度 4 的正好 5^4 = 625 条）。 */
 function sequences(maxLength: number): ComposerEvent[][] {
   let layer: ComposerEvent[][] = [[]];
   const all: ComposerEvent[][] = [];
@@ -20,34 +26,60 @@ function run(events: ComposerEvent[]): ComposerState {
   return events.reduce<ComposerState>((state, event) => composerReducer(state, event), 'idle');
 }
 
+/**
+ * 由序列直接推出的终态（不复用 reducer，免得两边一起错）：
+ * 最后一次退出类事件之后只剩 `focus-in` / `report`——中间出现过 `report` 就停在 `report`
+ * （`report` 下的 `focus-in` 不降级），否则 `focus-in` 进 `typing`。
+ */
+function expectedState(events: ComposerEvent[]): ComposerState {
+  let lastExit = -1;
+  events.forEach((event, index) => {
+    if (EXIT_EVENT_KINDS.has(event.kind)) lastExit = index;
+  });
+  const tail = events.slice(lastExit + 1);
+  if (tail.length === 0) return 'idle';
+  return tail.some((event) => event.kind === 'report') ? 'report' : 'typing';
+}
+
 describe('输入会话状态机', () => {
-  it('穷举长度 ≤ 4 的全部序列：出现过任一次退出类事件之后状态必为 idle', () => {
+  it('穷举长度 ≤ 4 的全部序列：退出类事件把状态清回 idle，之后再按序列重建', () => {
     const all = sequences(4);
-    expect(all).toHaveLength(4 + 16 + 64 + 256);
+    expect(all).toHaveLength(5 + 25 + 125 + 625);
     for (const events of all) {
+      expect(run(events)).toBe(expectedState(events));
+      // 剪到第一次退出为止必须已经回到 idle（幂等的前半句）
       const exitAt = events.findIndex((event) => EXIT_EVENT_KINDS.has(event.kind));
-      if (exitAt < 0) continue;
-      // 剪到第一次退出为止就必须回到 idle（幂等的前半句）
-      expect(run(events.slice(0, exitAt + 1))).toBe('idle');
-      // 终态只由最后一个事件决定：退出类 → idle，focus-in → typing
-      expect(run(events)).toBe(events[events.length - 1].kind === 'focus-in' ? 'typing' : 'idle');
+      if (exitAt >= 0) expect(run(events.slice(0, exitAt + 1))).toBe('idle');
     }
   });
 
   it('任意状态都有一条到 idle 的路（没有死状态）：存在某个事件一步到 idle', () => {
-    for (const state of ['idle', 'typing'] as ComposerState[]) {
+    for (const state of ['idle', 'typing', 'report'] as ComposerState[]) {
       expect(EVENTS.some((event) => composerReducer(state, event) === 'idle')).toBe(true);
     }
   });
 
-  it('四条真实路径：聚焦后三种退场都回 idle，重复退出幂等', () => {
-    expect(run([{ kind: 'focus-in' }, { kind: 'exit' }])).toBe('idle');
-    expect(run([{ kind: 'focus-in' }, { kind: 'lost-focus' }])).toBe('idle');
-    expect(run([{ kind: 'focus-in' }, { kind: 'offline' }])).toBe('idle');
-    expect(run([{ kind: 'exit' }, { kind: 'exit' }, { kind: 'exit' }])).toBe('idle');
+  it('举报入口：idle / typing 都进 report，重复点仍是 report', () => {
+    expect(composerReducer('idle', { kind: 'report' })).toBe('report');
+    expect(composerReducer('typing', { kind: 'report' })).toBe('report');
+    expect(composerReducer('report', { kind: 'report' })).toBe('report');
   });
 
-  it('idle 收到 focus-in 才进 typing，其余事件保持 idle', () => {
+  it('report 下 focus-in 不降级（事由框复焦不能卸掉表单）', () => {
+    expect(run([{ kind: 'report' }, { kind: 'focus-in' }])).toBe('report');
+    expect(run([{ kind: 'report' }, { kind: 'focus-in' }, { kind: 'focus-in' }])).toBe('report');
+    // 一旦退场，同样的事件序列才回到 typing
+    expect(run([{ kind: 'report' }, { kind: 'exit' }, { kind: 'focus-in' }])).toBe('typing');
+  });
+
+  it('三条真实退场：举报态下断线 / 焦点对账失败 / 收起都回 idle', () => {
+    expect(run([{ kind: 'report' }, { kind: 'exit' }])).toBe('idle');
+    expect(run([{ kind: 'report' }, { kind: 'lost-focus' }])).toBe('idle');
+    expect(run([{ kind: 'report' }, { kind: 'offline' }])).toBe('idle');
+    expect(run([{ kind: 'report' }, { kind: 'exit' }, { kind: 'exit' }])).toBe('idle');
+  });
+
+  it('idle 收到 focus-in 才进 typing，其余退场事件保持 idle', () => {
     expect(composerReducer('idle', { kind: 'focus-in' })).toBe('typing');
     expect(composerReducer('typing', { kind: 'focus-in' })).toBe('typing');
     expect(composerReducer('idle', { kind: 'exit' })).toBe('idle');
@@ -56,7 +88,7 @@ describe('输入会话状态机', () => {
   });
 
   it('reducer 是纯函数：同一输入两次调用结果相同', () => {
-    for (const state of ['idle', 'typing'] as ComposerState[]) {
+    for (const state of ['idle', 'typing', 'report'] as ComposerState[]) {
       for (const event of EVENTS) {
         expect(composerReducer(state, event)).toBe(composerReducer(state, event));
       }

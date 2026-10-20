@@ -5,13 +5,14 @@ import { CHAT_MAX_LEN } from '../../shared/constants';
 import { bubbleHintOf } from '../bubble-fit';
 import { EMOTE_SHORTCUTS } from '../emotes';
 import { exitComposer } from '../focus';
-import { clearSelection, getState, subscribe } from '../store';
+import { clearSelection, getState, startReport, subscribe } from '../store';
 import type { ClientState } from '../store';
 import { sendChat, sendRise, sendSleep, sendWhisper } from '../ws';
 import { ActionRow } from './ActionRow';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { QuickPhrases } from './QuickPhrases';
+import { ReportForm } from './ReportForm';
 import { SlotPanel } from './SlotPanel';
 import { TextInput } from './TextInput';
 
@@ -20,7 +21,7 @@ import { TextInput } from './TextInput';
  * 私聊目标行 → 床上动作行 → 气泡弱提示 → 动作行 → 门控行 → 输入行，顺序固定，窄屏也不收进菜单。
  * **没有消息列表**——聊天只在世界里（头顶那一格气泡，见 `world.ts`），
  * 所以面板高度只跟这几行控件有关。私聊目标就是**唯一选中对象**——点 × 取消选中，
- * 目标离开大厅时选中已被清掉。
+ * 目标离开大厅时选中已被清掉。行尾那颗「举报」进 `report` 态：插槽面板换成事由表单。
  *
  * **表情面板与输入行共用同一行**（`emoteOpen` 一个开关、`.chat-composer` 一个行容器）：
  * 收起是 `输入框 + 😀 + 发送`，展开原地换成 `😀 + 5 个 emoji`——不新增行、不做浮层，
@@ -33,8 +34,14 @@ interface PanelView {
   selectedId?: string;
   targetName?: string;
   meState?: PersonState;
-  /** 输入会话：`typing` 时两块面板换行、插槽面板打开（`docs/design/60-interaction-shell.md` §3） */
+  /** 输入会话：非 `idle` 时两块面板换行、插槽面板打开（`docs/design/60-interaction-shell.md` §3） */
   composer: ClientState['composer'];
+  /** 举报表单的对象（`composer === 'report'` 时才有） */
+  reportTo?: string;
+  /** 选中对象已在本次会话内举报过：私聊行那颗按钮置灰成「已举报」 */
+  reported: boolean;
+  /** 面板上那行常驻弱提示（`5003` 回执）：盖过草稿长度提示，常驻到下一次操作 */
+  chatHint?: string;
 }
 
 /** 面板只吃这几个字段：位置节拍每秒通知十次，用不上的变化不该渲染。 */
@@ -44,11 +51,20 @@ function viewOf(state: ClientState): PanelView {
     targetName: state.selectedId === undefined ? undefined : state.people.get(state.selectedId)?.name,
     meState: state.me?.state,
     composer: state.composer,
+    reportTo: state.pendingReportTo,
+    reported: state.selectedId !== undefined && state.reportedIds.has(state.selectedId),
+    chatHint: state.chatHint,
   };
 }
 
 const sameView = (a: PanelView, b: PanelView): boolean =>
-  a.selectedId === b.selectedId && a.targetName === b.targetName && a.meState === b.meState && a.composer === b.composer;
+  a.selectedId === b.selectedId &&
+  a.targetName === b.targetName &&
+  a.meState === b.meState &&
+  a.composer === b.composer &&
+  a.reportTo === b.reportTo &&
+  a.reported === b.reported &&
+  a.chatHint === b.chatHint;
 
 export function ChatPanel() {
   const panelRef = useRef<HTMLElement>(null);
@@ -72,7 +88,7 @@ export function ChatPanel() {
   }, [view.composer]);
 
   const { selectedId, targetName, meState } = view;
-  const hint = bubbleHintOf(draft);
+  const hint = view.chatHint ?? bubbleHintOf(draft);
 
   // 表情切换键：两态共用同一个按钮，两态位置相同（收起时在发送键左边、展开时钉在最右）。
   // **必须保住焦点**：一旦 `pointerdown` 把焦点抢走，下一帧的焦点对账就会退场，
@@ -96,11 +112,25 @@ export function ChatPanel() {
         {/* 连接提示条：占位（不浮层），所以可用视口自动扣掉它；显示与否由自己订阅的连接态决定 */}
         <ConnectionBanner />
 
-        {/* 私聊目标行：查不到名字就不渲染（目标离开时选中已被清掉，这里只是兜底） */}
+        {/* 私聊目标行：查不到名字就不渲染（目标离开时选中已被清掉，这里只是兜底）。
+            三栏：名字 / 竖线 / 「举报」；× 在最右。举报按钮自带文案（纯文字不当按钮用），
+            `pointerdown` 里 `preventDefault()` 保住焦点、独立的 `key` 避开 React 原地复用（硬纪律 35） */}
         {selectedId !== undefined && targetName !== undefined && (
           <div className="whisper-target">
-            {`私聊 ${targetName}`}
+            <span className="whisper-target-name">{`私聊 ${targetName}`}</span>
+            <span className="whisper-target-divider" aria-hidden="true" />
             <button
+              key="report"
+              type="button"
+              className="whisper-target-report"
+              disabled={view.reported}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => startReport(selectedId)}
+            >
+              {view.reported ? '已举报' : '举报'}
+            </button>
+            <button
+              key="clear"
               type="button"
               className="whisper-target-clear"
               aria-label="取消私聊"
@@ -191,8 +221,8 @@ export function ChatPanel() {
 
       {/* 插槽面板在网格第 3 行（打字态铺满到屏底）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
           点一条只改草稿、不发送、不退场 */}
-      <SlotPanel active={view.composer === 'typing'} onBlank={exitComposer}>
-        <QuickPhrases onFill={setDraft} />
+      <SlotPanel active={view.composer !== 'idle'} onBlank={exitComposer}>
+        {view.composer === 'report' ? <ReportForm toId={view.reportTo} /> : <QuickPhrases onFill={setDraft} />}
       </SlotPanel>
     </>
   );
