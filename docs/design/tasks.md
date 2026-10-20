@@ -14,33 +14,4 @@
 
 ---
 
-## 卡 2：雨层画面（屏幕空间并行 Scene）
-
-### 目标
-
-天气 = 雨天时画布上出现细雨；无雨时 400 ms 内消失干净；雨不受世界缩放、可用视口、面板换位影响。
-
-### 依据
-
-`../ui/DESIGN.md` 的 `rain-layer`、`config.md` §4（粒子参数）、`00-master-design.md` §7。
-
-### 改动
-
-| 文件 | 要点 |
-| :--- | :--- |
-| `src/client/world/weather.ts` 🆕 | `WeatherScene`（`active: true`）：相机 `zoom = DPR`、运行时 `generateTexture` 生成 2×14 纹理、粒子发射器、按屏幕高算 `lifespan`、`rain` 变化时 400 ms 线性淡入淡出（走 `update`，不挂 tween / 定时器） |
-| `src/client/world/world.ts` | `scene: [scene, new WeatherScene()]`——天气 Scene 在**后**（渲染在世界之上） |
-| `CHANGELOG.md` | `### Added`：雨天画面 |
-
-### 验收
-
-- 先验第一条（不成立就停）：并行 Scene 在 `Scale.NONE` + 手动 `scale.resize` 下相机视口是否跟随画布——不跟随就会只铺左上角
-- `npm run typecheck` + `npm test` 全绿（本卡预计不新增单测：Scene 里没有可独立成纯函数的东西）
-- 模拟器（`ui-verifier`）：① 雨可见但不刺眼 ② 切无雨 400 ms 内无残留粒子 ③ `全厅` 与 `1×` 两档雨密度相同 ④ 打字态面板换位期间雨不动 ⑤ 同屏 60 fps
-- 真机（降级可接受）：低亮度下能看出在下雨，但不至于把地板压暗
-
-### 不做
-
-地面涟漪 / 水花、`prefers-reduced-motion` 特化、雨随缩放变化、雨进 DOM。
-
----
+**当前没有进行中的卡片。**

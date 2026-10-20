@@ -1,6 +1,5 @@
 import * as Phaser from 'phaser';
 
-import { MAX_DPR } from '../../shared/constants';
 import { getState } from '../store';
 import { COLORS } from './views';
 
@@ -28,8 +27,9 @@ const DROP_ALPHA = { min: 0.24, max: 0.4 };
 /** 出生点在屏幕上方 20px；寿命多留 70px 余量，所以粒子落到下边界之下才死，不是半屏就死。 */
 const EMIT_Y = -20;
 const LIFESPAN_SPAN_PX = 70;
-/** 最慢的一档下落速度：寿命按它算，更快的粒子也一定还没落地。 */
-const FALL_PX_PER_S = 950;
+/** 最慢的一档下落速度：寿命按它算，更快的粒子也一定还没落地。**必须跟着 `SPEED_Y.min` 走**——
+ *  写死一个数的话，谁调慢速度带下限，雨就会在半屏处开始消失，而且没有任何断言会红。 */
+const FALL_PX_PER_S = SPEED_Y.min;
 /** 开 / 关的线性过渡时长（`docs/design/config.md` §4）。 */
 const FADE_MS = 400;
 
@@ -57,6 +57,8 @@ export class WeatherScene extends Phaser.Scene {
     // 屏幕空间的两条前提：原点在左上角（默认原点在视口中心，zoom 会绕中心缩放、雨就画到屏幕外）、
     // zoom = DPR。相机视口跟着画布走由 `CameraManager` 的 `scale` RESIZE 监听完成——
     // `Scale.NONE` + 手动 `scale.resize`（`world.ts` 的 `applySize`）也会发那个事件，这里不用自己量。
+    // 注意：origin(0,0) 之后 `camera.worldView` 仍然是按「视口中心」算的（Phaser 的已知偏差），
+    // 以后要给雨加视锥裁剪或命中判定，得自己把那段偏移算进去。
     this.cameras.main.setOrigin(0, 0);
     this.syncSize();
 
@@ -99,7 +101,9 @@ export class WeatherScene extends Phaser.Scene {
 
   /** DPR、屏幕宽高、寿命：都在这一处从 `scale` 现取（画布像素 / DPR = CSS px）。 */
   private syncSize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    // DPR 的事实源是**画布**（`world.ts` 把它写进 `scale.zoom = 1/dpr`，且已按 `MAX_DPR` 夹过），
+    // 而不是 `window.devicePixelRatio`：跨显示器拖窗时画布不会跟着变，读设备值会让雨与世界不同步。
+    const dpr = 1 / this.scale.zoom;
     if (dpr !== this.dpr) {
       this.dpr = dpr;
       this.cameras.main.setZoom(dpr);
