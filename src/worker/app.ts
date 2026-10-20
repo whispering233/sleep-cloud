@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 
-import { HALL_ID, NICKNAME_MAX_LEN } from '../shared/constants';
+import { HALL_ID, NICKNAME_MAX_LEN, UA_HASH_HEX_LEN } from '../shared/constants';
 import { detect } from '../shared/content-filter';
 import { LAYOUT_VERSION } from '../shared/layout';
 import { APPEARANCES } from '../shared/protocol';
@@ -50,11 +50,12 @@ function stripControl(input: string): string {
   return input.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 }
 
-/** UA 哈希：SHA-256 的前 8 字节（16 个十六进制字符）。**是遮挡不是匿名化**（见 §3.2）。 */
+/** UA 哈希：SHA-256 的前 `UA_HASH_HEX_LEN / 2` 字节。**是遮挡不是匿名化**（见 §3.2）。 */
 async function uaHashOf(userAgent: string | undefined): Promise<string | undefined> {
   if (!userAgent) return undefined;
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(userAgent));
-  return [...new Uint8Array(digest).slice(0, 8)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const bytes = new Uint8Array(digest).slice(0, UA_HASH_HEX_LEN / 2);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**

@@ -28,7 +28,8 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个 `popover`：**更换床位** + 版本号；
+ * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开的浮层是四项：**更换床位** / **天气** /
+ * 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。

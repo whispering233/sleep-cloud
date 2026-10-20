@@ -163,8 +163,7 @@
 # 干净克隆后先跑一次：typecheck 与 test 都依赖生成物 src/client/styles/tokens.*
 npm run tokens
 
-# 要跑完整体验（含 UI 验证）先建 .dev.vars：照 .dev.vars.example 建一份（本机占位密钥，不入库）
-# 没有它 /api/me 报 9001、入场层不渲染 —— 每个新 worktree 都要建一次
+# 每个 worktree 先建 .dev.vars（照 .dev.vars.example，占位密钥、不入库）：缺了它 /api/me 报 9001、入场层不渲染
 
 # 美术素材管线（5 张母图 → 8 张贴图 → 图集 + frames.css；产物入库，不挂进 build）
 npm run art
@@ -182,9 +181,8 @@ npm run typecheck
 # 界面壳层的契约 spec（手机视口；先 npm run dev 起站点，端口自动读 .wrangler/dev-port）
 npm run e2e
 
-# 位置同步观测：带 ?debug=1 打开页面，控制台每 10s 一行
-#   leadMs / regressPx / posAge / tickSpan 的 p50/p95/max；出现倒退整行前置 !!
-# 判据与口径见 docs/design/30-movement-sync.md §6.2
+# 位置同步观测：?debug=1 → 控制台每 10s 一行 leadMs / regressPx / posAge / tickSpan（p50/p95/max；
+#   出现倒退整行前置 !!）；判据与口径见 docs/design/30-movement-sync.md §6.2
 
 # 部署（需要平台账号凭据，见 docs/design/build.md §4）
 npm run deploy

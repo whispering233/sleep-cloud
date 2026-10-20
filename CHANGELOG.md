@@ -38,6 +38,7 @@
 
 ### Fixed
 
+- **隐私说明入口点了没反应（两种情况）**：① 链接省略扩展名写成 `/privacy`——生产上平台资产会 307 到它所以看不出问题，但 `npm run dev:web`（Vite）没有 `html_handling`，它会落进 SPA 回退、打开大厅首页，看起来就是「点不动」；现在链接一律写 `/privacy.html`（生产 307 过去，Vite 直接命中）。② 只靠 `target="_blank"`——新标签被浏览器拦下时没有任何反馈；现在点击时先 `window.open`，成功才 `preventDefault`（避免开两次），返回 `null` 就退回同标签导航
 - **夸克等 Chromium 100 内核进厅后整页空白**：这类内核没有 Popover API（Chromium 114+），`ToneLayer` 一挂载就调 `showPopover()` 抛 `TypeError`，React 根被卸载——入场层正常、点「继续」后整屏只剩底色。现在不再裸调：无 Popover 时减光层退化成普通整屏层（DOM 顺序仍压住界面），齿轮菜单退回自管开关（点外 / `Esc` 关闭、焦点回齿轮）。
 - **点插槽面板空白会让小人意外走开**：面板原来在 `pointerdown` 里就退场，而两态布局是瞬切的——手指底下那一块当场变成画布，浏览器于是在手势收尾补发的兼容鼠标事件（`mousedown` / `mouseup`）上命中了 canvas，被当成一次从画布起手的 tap，`walk` 就发出去了（10 次漏 7 次；鼠标不补发这些事件，所以桌面看不出来）。现在按下只 `preventDefault()`（保住焦点，并让浏览器不再派发兼容鼠标事件），退场改挂 `click`——整次手势期间手指底下一直是面板
 - **`npm run dev:web` 整页空白**：`/api` 代理是前缀匹配，把客户端模块 `api.ts`（浏览器请求 `/api.ts`）也代理给了后端；后端 SPA 回退返回 `index.html`，模块脚本因 MIME 是 `text/html` 被浏览器拒绝，一棵模块图都加载不起来。代理键改成正则 `^/api(/|$)`，只匹配 `/api` 与 `/api/...`（`docs/design/build.md` §2 记了口径）

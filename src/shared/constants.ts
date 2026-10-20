@@ -166,6 +166,12 @@ export const ADMIN_SESSION_MS = 24 * 60 * 60 * 1000;
 /** 同一 IP 每分钟登录尝试上限，超出 429；**取不到 IP 时不限速**（本地开发没有那个头）。 */
 export const ADMIN_LOGIN_MAX_PER_MIN = 5;
 
+/**
+ * UA 哈希的长度（十六进制字符）= 8 字节 = SHA-256 前 8 字节。
+ * **是遮挡不是匿名化**（UA 本身熵很低，哈希后照样可枚举反推），见 `docs/design/70-privacy-risk.md` §3.2。
+ */
+export const UA_HASH_HEX_LEN = 16;
+
 /** 全局聊天消息长度上限（按字符计）。 */
 export const CHAT_MAX_LEN = 200;
 
