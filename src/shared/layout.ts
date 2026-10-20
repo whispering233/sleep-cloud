@@ -322,7 +322,7 @@ export function reserveOf(bedNo: number): Rect | undefined {
  * 行奇偶的左右镜像由预留位本身承担，这里不另写一套。每块的两条 y 边界用同一条式子算，
  * 所以相邻两块在边界上**逐位相等**（不留缝、不重叠），第三块的底边正好是预留位的底边。
  *
- * **这只是摆放锚点，不是包围盒**：素材允许超出自己那一块（猫 54.5 高、篝火 42 高，块只有 33.3），
+ * **这只是摆放锚点，不是包围盒**：素材允许超出自己那一块（猫 58.5 高、篝火燃烧时约 42 高，块只有 33.3），
  * 溢出方向一律向上。既有几何一个像素都没变，所以 `LAYOUT_VERSION` 不 bump。
  */
 export function reserveBlockOf(bedNo: number, block: 'head' | 'middle' | 'foot'): Rect | undefined {

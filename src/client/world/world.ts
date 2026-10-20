@@ -176,7 +176,7 @@ class WorldScene extends Phaser.Scene {
   /** 上一帧我自己的位置：只用来推「我从哪边来」（世界层已有同一个点，不另外取样） */
   private petSelf: Point | undefined;
   /**
-   * 首次进厅那一次举起的「要不要问候」旗子：猫第一次跑到我旁边时用掉（`70-reserve-decor.md` §3.4）。
+   * 首次进厅那一次举起的「要不要问候」旗子：猫第一次跑到我附近时用掉（`70-reserve-decor.md` §3.4）。
    * 只在 `everOnline` 还是 `false` 的那一帧置上，所以重连不会重举（§3.5），本次会话最多问候一次。
    */
   private petGreetPending = false;
@@ -233,7 +233,7 @@ class WorldScene extends Phaser.Scene {
     // 篝火只有一摊（我的床头）：动画注册一次、Sprite 建一次，画不画 / 亮不亮由 `syncCampfire` 逐帧决定
     createCampfireAnims(this);
     this.campfire = createCampfireView(this);
-    // 猫同理：全场只有一只，四组循环动画注册一次，目标与动画由 `syncPet` 逐帧决定
+    // 猫同理：全场只有一只，六个动画注册一次，目标与动画由 `syncPet` 逐帧决定
     createPetAnims(this);
     this.pet = createPetView(this);
     this.observer = new ResizeObserver(() => this.resizeToHost());
@@ -400,9 +400,11 @@ class WorldScene extends Phaser.Scene {
 
   /**
    * 我床尾那只猫（`docs/design/70-reserve-decor.md` §3）：**只有我自己看得见**——绑「我」不绑床
-   * （没有床时也跟），不进 `people` / `state.bubbles` / `spots`（不可点），服务端不知道它存在。
+   * （没有床时也跟），不进 `people` / `state.bubbles` / `spots`（命中走 `petHitAt` 的圆判据，不是可选中的对象），
+   * 服务端不知道它存在。
    *
-   * 目标每帧由**我的显示态**现算（`petTargetFor`）：躺下 / 睡着 → 窝，其余（含还没有床）→ 我脚前。
+   * 目标每帧由**我的显示态**现算（`petTargetFor`）：躺下 / 睡着 → 窝，其余（含还没有床）→ 我身后 60px。
+   * 摸猫的 1.5 秒由 `petAffectionUntil` 冻结在原地（§3.6）。
    * 位置与剩余折线只住在场景字段里，**不写 store、不触发 React 重渲染**（`AGENTS.md` 硬纪律 17）。
    */
   private syncPet(state: ClientState, self: Point | undefined): void {
@@ -488,7 +490,7 @@ class WorldScene extends Phaser.Scene {
     // **到位容差**吃掉最后几像素的碎步：否则每帧在 walk / idle 之间翻一次，静止时就像在抽动
     const atRest = arrived || remaining <= PET_ARRIVE_PX;
     const anim = atRest ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
-    // 问候（§3.4）：首次进厅那一次里、猫**第一次**跑到我旁边（折线走空 + 目标是「我」）时开始计时；
+    // 问候（§3.4）：首次进厅那一次里、猫**第一次**跑到我附近（折线走空 + 目标是「我」）时开始计时；
     // 到期由渲染比较时间戳（不挂定时器），`pending` 用掉就没了，所以之后不再问候
     if (this.petGreetPending && arrived && target.kind === 'user') {
       this.petGreetPending = false;

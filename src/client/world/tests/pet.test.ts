@@ -20,7 +20,6 @@ import {
   petAffectionPick,
   petAnimFor,
   petBodyPoint,
-  petFollowCandidates,
   petGreetVisible,
   petHitAt,
   petHomeOf,
@@ -115,7 +114,7 @@ describe('猫的持续目标：由我的显示态直接决定（§3.2）', () =>
     ]);
     // 不重叠的几何前提：两条贴图都是脚底锚点，猫高 58.5 > 小人高 56.5
     expect(PET_TRAIL_DISTANCE).toBeGreaterThan(58.5);
-    for (const point of petFollowCandidates(STREET, trail)) {
+    for (const point of petTrailSpots(STREET, trail).map((spot) => spot.point)) {
       const dx = Math.abs(point.x - STREET.x);
       const dy = Math.abs(point.y - STREET.y);
       expect(Math.min(dx, dy)).toBe(0);

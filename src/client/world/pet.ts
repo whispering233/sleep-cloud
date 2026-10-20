@@ -7,11 +7,12 @@ import type { SelfPerson } from '../../shared/protocol';
  * 我床尾那只猫的纯规则（`docs/design/70-reserve-decor.md` §3，常量见 §4）。与 Phaser 无关，可单测。
  *
  * 它**绑「我」不绑床**：没有床的时候也有猫（首次进厅就是这种状态，§3.5）。每个状态都由「我的显示态」
- * 直接决定，不自己攒状态——所以这里没有状态机，只有两种持续目标、一个首次落位点、一条折线与两条换算。
+ * 直接决定，不自己攒状态——所以这里没有状态机，只有两种持续目标、一个首次落位点、一条折线、
+ * 两条换算，以及摸猫那一下的两个纯判据（命中圆、随机挑一个动作，§3.6）。
  * 坐标一律是**世界像素**。
  */
 
-/** 速度系数：速度按剩余**直线距离**算（不按时间），所以任何距离都在约 2 秒内追上，不需要追赶模式（§3.3）。 */
+/** 速度系数：速度按剩余**折线长度**算（不按时间），所以任何距离都在约 2 秒内追上，不需要追赶模式（§3.3）。 */
 export const PET_SPEED_FACTOR = 1.2;
 /** 速度下限：近了也收着走，不会原地抖（§3.3）。 */
 export const PET_SPEED_MIN = 260;
@@ -86,14 +87,6 @@ export function petAffectionPick(random: number): 'cat-pat' | 'cat-nuzzle' {
   return random < 0.5 ? 'cat-pat' : 'cat-nuzzle';
 }
 
-/**
- * 我可以把猫放在哪里的候选位置（**顺序即优先级**）：沿用给的 `trail`，否则从 y 轴后方开始。
- * 调用方取第一条**可走**的；四条都不可走才退回我自己的位置（例如贴墙的夹缝里）。
- */
-export function petFollowCandidates(self: Point, trail: PetTrail | undefined): Point[] {
-  return petTrailSpots(self, trail).map((spot) => spot.point);
-}
-
 /** 剩余**折线**长度（不是直线距离）：绕过拐角时速度与动画都按真正要走的路算（§3.3）。 */
 export function petRemainingOf(mover: { x: number; y: number; path: Point[] }): number {
   let total = 0;
@@ -117,7 +110,7 @@ export interface PetTarget {
   trail?: PetTrail;
 }
 
-/** 四组循环动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）。`cat-sleep` 只在窝里到位时播；
+/** 六个动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）：idle / walk / run / sleep 循环，
  * `cat-pat` / `cat-nuzzle` 是**摸猫那一下**的一次性动作（不循环）。 */
 export type PetAnim = 'cat-idle' | 'cat-walk' | 'cat-run' | 'cat-sleep' | 'cat-pat' | 'cat-nuzzle';
 
@@ -130,7 +123,7 @@ export function petHomeOf(me: SelfPerson | undefined): Point | undefined {
 
 /**
  * 猫此刻该去哪（§3.2、§3.3）：
- * - `lying` / `asleep` 且有窝 → 回窝；其余（`roaming`、还没有床、以及没有窝的异常态）→ 我脚前 16px；
+ * - `lying` / `asleep` 且有窝 → 回窝；其余（`roaming`、还没有床、以及没有窝的异常态）→ 我身后 60px（`petTrailSpots`）；
  * - 没有 `me` → 没有目标（不画）。
  *
  * 跟随点正好压在走道边界上（不可走）时退回**我自己的位置**，而不是让 `findPath` 落空（§3.3）。
@@ -190,7 +183,7 @@ export function petAnimFor(speed: number): PetAnim {
   return 'cat-idle';
 }
 
-/** 到位后睡不睡：只有「窝」这一支睡（§3.2）；我脚前到位只是站着。 */
+/** 到位后睡不睡：只有「窝」这一支睡（§3.2）；跟随时到位只是站着。 */
 export function petShouldSleep(target: PetTarget | undefined): boolean {
   return target?.kind === 'home';
 }

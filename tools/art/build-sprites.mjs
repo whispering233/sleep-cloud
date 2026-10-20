@@ -36,7 +36,7 @@ const CAT_LICENSE_OUT = join(OUT_DIR, 'LICENSE-cat-fire.txt');
 const ATLAS_WIDTH = 256;
 const GAP = 1;
 /**
- * 猫与篝火只打这五组进图集（`pat` / `nuzzle` 留在 backlog）；顺序 = 图集里帧的顺序。
+ * 猫与篝火只打这七组进图集（站着：idle / walk / run / pat / nuzzle；躺着：sleep；道具：fire）；顺序 = 图集里帧的顺序。
  * 帧名按组推：`cat-<组>-<序号>`，篝火是 `fire-<序号>`（`generateFrameNames` 按前缀取帧）。
  */
 /** 篝火熄灭帧：整格母图，同一张图里火苗 / 火星 / 辉光已经屏掉。 */

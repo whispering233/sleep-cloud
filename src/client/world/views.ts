@@ -613,7 +613,7 @@ export interface PetView {
   anim: PetAnim | undefined;
 }
 
-/** 四组循环动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps；摸猫的两组各 6 帧 / 4fps（不循环，§3.6）。**全局只注册一次**。 */
+/** 六个动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps（循环）；摸猫的两组各 6 帧 / 4fps（不循环，§3.6）。**全局只注册一次**。 */
 export function createPetAnims(scene: Phaser.Scene): void {
   const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number; repeat: number }> = [
     { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8, repeat: -1 },
@@ -641,10 +641,10 @@ export function createPetView(scene: Phaser.Scene): PetView {
 }
 
 /**
- * 问候气泡的底边（尾巴根）在猫**脚点之上**多高（世界像素）：猫贴图高 109 × `ART_SCALE` ≈ 54.5，
- * 尾巴再往下 6px，尾巴尖正好落在头顶、不压脸（§3.4）。
+ * 问候气泡的底边（尾巴根）在猫**脚点之上**多高（世界像素）：站立帧的墨迹高 117 × `ART_SCALE` ≈ 58.5，
+ * 尾巴再往下 6px，尾巴尖落在头顶之上、不压脸（§3.4）。
  */
-const PET_GREET_ABOVE_PX = 60;
+const PET_GREET_ABOVE_PX = 66;
 
 /** 一帧的摆放：**底边中心**的世界坐标（与小人、篝火同一个锚点）、深度、动画 key、头上的问候气泡。 */
 export interface PetPaint {
