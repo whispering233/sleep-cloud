@@ -28,6 +28,8 @@ export default defineConfig({
   build: {
     outDir: '../../dist',
     emptyOutDir: true,
+    // 兼容基线是 Chromium 100（夸克 / UC 内核，见 `docs/design/architecture.md` §1）：Vite 8 的默认 target 比它新。
+    target: 'chrome100',
     // 引擎单独切包：Phaser 占了整个懒加载分支的 99%（自己 1.37 MB），单独成一个 chunk 后它的 hash
     // 只在升级 Phaser 时变化；老用户回访只需重下十几 kB 的世界代码，而不是整包。
     rolldownOptions: {

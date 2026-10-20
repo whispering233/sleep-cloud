@@ -214,3 +214,65 @@ test('只有从画布起手的 tap 才产生 walk', async ({ page }) => {
   await page.touchscreen.tap(floor.x, floor.y);
   await expect.poll(() => walkCount(page)).toBeGreaterThan(0);
 });
+
+/**
+ * 降级路径：没有 Popover API 的内核（Chromium 100 = 夸克 / UC，见 `docs/design/architecture.md` §1）。
+ *
+ * 判据（`docs/design/60-interaction-shell.md` §4 末条）：三个 Popover 方法全删掉后仍能进厅、不抛错，
+ * 减光层退回普通 `position: fixed` 整屏块，齿轮菜单退回手写开关：开 → `Esc` 关且焦点回齿轮 → 再开
+ * 能选中「更换床位」→ 点外面关。原生 Popover 那条路（其余四条用例）行为不变。
+ *
+ * 初始化脚本只能加在用例里（不能进 `beforeEach`）：其余四条跑的是原生 Popover 环境。
+ */
+test('没有 Popover API 的内核能进厅，齿轮菜单靠手写开关走完开 / 关 / 换床', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await page.addInitScript(() => {
+    const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    for (const name of ['showPopover', 'hidePopover', 'togglePopover']) delete proto[name];
+  });
+
+  await enterHall(page);
+  await expect(shell(page)).toBeVisible();
+
+  // 减光层不是顶层 `popover` 了，靠 `position: fixed; inset: 0` 仍是整屏一块
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('量不到视口尺寸');
+  const tone = await page.locator('.tone-layer').boundingBox();
+  if (!tone) throw new Error('找不到减光层');
+  expect(Math.abs(tone.width - viewport.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(tone.height - viewport.height)).toBeLessThanOrEqual(1);
+
+  const gear = page.getByRole('button', { name: '设置' });
+  const menu = page.locator('.hud-menu');
+
+  // ① 开：菜单出现、`aria-expanded` 手写为 true、焦点进菜单首项
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await expect(gear).toHaveAttribute('aria-expanded', 'true');
+  await expect(menu.getByRole('button', { name: '更换床位' })).toBeFocused();
+
+  // ② `Esc` 关：菜单卸载，焦点回齿轮（不接回来就落到 `body`）
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toHaveAttribute('aria-expanded', 'false');
+  await expect(gear).toBeFocused();
+
+  // ③ 菜单项可用：进换床模式后门控行给出常驻提示
+  await gear.click();
+  await menu.getByRole('button', { name: '更换床位' }).click();
+  await expect(page.getByText('点一张空床搬过去')).toBeVisible();
+  await expect(menu).toHaveCount(0);
+
+  // ④ 点外面关：顶部 HUD 是 `pointer-events: none` 的显示条，点落到画布上 = 点外面
+  await gear.click();
+  await expect(menu).toBeVisible();
+  const hud = await page.locator('.hud').boundingBox();
+  if (!hud) throw new Error('量不到顶部 HUD');
+  await page.touchscreen.tap(hud.x + 4, hud.y + hud.height / 2);
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toHaveAttribute('aria-expanded', 'false');
+
+  // 全程不抛错：降级路径不许裸调那三个方法
+  expect(errors).toEqual([]);
+});
