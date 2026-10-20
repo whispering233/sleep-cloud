@@ -14,6 +14,7 @@ const PREFS_VERSION = 1;
 export const PREFS = {
   zoomMode: 'sc.zoom.mode',
   weatherRain: 'sc.weather.rain',
+  aboutSeen: 'sc.about.seen',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
@@ -143,4 +144,27 @@ export function readWeatherRain(now: Date = new Date(), storage?: PrefStorage): 
 /** 写 `sc.weather.rain`：切到「无雨」也照写（**写入路径只一条**，`false` 不是「删键」）。 */
 export function writeWeatherRain(rain: boolean, storage?: PrefStorage): void {
   writePref(PREFS.weatherRain, { v: PREFS_VERSION, rain }, storage);
+}
+
+/** `sc.about.seen` 的值形状：`seen` 是**公告版本**（与 `ANNOUNCE.version` 逐字比较，不是发布版本）。 */
+type StoredAboutSeen = { v: number; seen: string };
+
+/**
+ * 白名单：`seen` 是非空字符串且 ≤ 32 字符（`docs/design/40-client-storage.md` §3）。
+ * **不校验版本号格式**：坏值唯一的后果是再弹一次面板（无副作用）。
+ */
+function isStoredAboutSeen(value: unknown): value is StoredAboutSeen {
+  if (typeof value !== 'object' || value === null) return false;
+  const seen = (value as { seen?: unknown }).seen;
+  return typeof seen === 'string' && seen.length > 0 && seen.length <= 32;
+}
+
+/** 读 `sc.about.seen`：缺键 = 从未确认过任何公告（首访），回 `undefined`。 */
+export function readAboutSeen(storage?: PrefStorage): string | undefined {
+  return readPref<StoredAboutSeen | undefined>(PREFS.aboutSeen, isStoredAboutSeen, undefined, storage)?.seen;
+}
+
+/** 写 `sc.about.seen`：值就是那一刻的公告版本（只有自动路径且勾选着关才写）。 */
+export function writeAboutSeen(version: string, storage?: PrefStorage): void {
+  writePref(PREFS.aboutSeen, { v: PREFS_VERSION, seen: version }, storage);
 }

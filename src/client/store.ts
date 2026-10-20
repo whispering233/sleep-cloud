@@ -17,13 +17,14 @@ import { CHAT_BUBBLE_MS, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../sha
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
+import { shouldShowAbout } from './about';
 import { composerReducer } from './composer';
 import type { ComposerEvent, ComposerState } from './composer';
 import type { Connection, HaltReason } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
-import { readWeatherRain, readZoomMode, writeWeatherRain, writeZoomMode } from './prefs';
+import { readAboutSeen, readWeatherRain, readZoomMode, writeWeatherRain, writeZoomMode } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
@@ -47,6 +48,12 @@ export interface Notice {
   id: number;
   text: string;
 }
+
+/**
+ * 说明面板为什么打开（`docs/design/90-about-panel.md` §1）：`auto` = 首访 / 新公告自动弹的那一次，
+ * `manual` = 自己从齿轮里点开。只有 `auto` 带「以后不再自动显示」的勾选框、也只有它会写已读。
+ */
+export type AboutSource = 'auto' | 'manual';
 
 /**
  * 世界渲染读的那一份状态。**刻意不放 React**：位置与插值不进框架的渲染循环，
@@ -117,6 +124,12 @@ export interface ClientState {
    */
   rain: boolean;
   /**
+   * **说明面板**（客户端本地状态，不进协议、不进快照）：`null` = 关着，否则是打开的原因。
+   * **一个字段**同时表达「开没开、为什么开」：拆成两个布尔就会出现「开着却不知道为什么」的状态，
+   * 而勾选框与「关掉时记不记已读」都只由原因决定。
+   */
+  aboutOpen: AboutSource | null;
+  /**
    * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
    */
@@ -135,6 +148,7 @@ const emptyState = (): ClientState => ({
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
   zoomMode: readZoomMode(),
   rain: readWeatherRain(),
+  aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
 });
 
 let state: ClientState = emptyState();
@@ -253,6 +267,21 @@ export function setRain(on: boolean): void {
   if (state.rain === on) return;
   setState({ rain: on });
   writeWeatherRain(on);
+}
+
+/** 打开说明面板（见 `ClientState.aboutOpen`）：同值不写。 */
+export function openAbout(source: AboutSource): void {
+  if (state.aboutOpen === source) return;
+  setState({ aboutOpen: source });
+}
+
+/**
+ * 关闭说明面板：**只改状态、不写本地键**。写已读只发生在组件关闭那一刻——勾选框在组件里，
+ * store 看不到它（`docs/design/90-about-panel.md` §2）。
+ */
+export function closeAbout(): void {
+  if (state.aboutOpen === null) return;
+  setState({ aboutOpen: null });
 }
 
 /**

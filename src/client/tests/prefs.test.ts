@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
-import { PREFS, readWeatherRain, readZoomMode, writeWeatherRain } from '../prefs';
+import { PREFS, readAboutSeen, readWeatherRain, readZoomMode, writeAboutSeen, writeWeatherRain } from '../prefs';
 import type { PrefStorage } from '../prefs';
 import { getState, setRain, setZoomMode } from '../store';
 
@@ -134,6 +134,45 @@ describe('天气偏好（sc.weather.rain）', () => {
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
+  });
+});
+
+describe('说明面板已读（sc.about.seen）', () => {
+  it('缺键 → undefined（首访），且不因此写入一条键', () => {
+    const storage = fakeStorage();
+    expect(readAboutSeen(storage)).toBeUndefined();
+    expect(storage.data.has(PREFS.aboutSeen)).toBe(false);
+  });
+
+  it('写后读回：落盘形状是 { v: 1, seen }', () => {
+    const storage = fakeStorage();
+    writeAboutSeen('0.0.7', storage);
+    expect(JSON.parse(storage.data.get(PREFS.aboutSeen) ?? '')).toEqual({ v: 1, seen: '0.0.7' });
+    expect(readAboutSeen(storage)).toBe('0.0.7');
+  });
+
+  it('坏 JSON / 版本不符 / 空串 / 非字符串 / 超 32 字符 → undefined，且该键已被删', () => {
+    const raws = [
+      '{不是 JSON',
+      JSON.stringify({ v: 2, seen: '0.0.7' }),
+      JSON.stringify({ v: 1, seen: '' }),
+      JSON.stringify({ v: 1, seen: 7 }),
+      JSON.stringify({ v: 1, seen: 'x'.repeat(33) }),
+    ];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.aboutSeen, raw);
+      expect(readAboutSeen(storage)).toBeUndefined();
+      expect(storage.data.has(PREFS.aboutSeen)).toBe(false);
+    }
+  });
+
+  it('长度边界：正好 32 字符收，33 字符判废（不校验版本号格式）', () => {
+    const storage = fakeStorage();
+    writeAboutSeen(`1.0.0-${'x'.repeat(26)}`, storage);
+    expect(readAboutSeen(storage)).toHaveLength(32);
+    storage.data.set(PREFS.aboutSeen, JSON.stringify({ v: 1, seen: 'y'.repeat(33) }));
+    expect(readAboutSeen(storage)).toBeUndefined();
   });
 });
 
