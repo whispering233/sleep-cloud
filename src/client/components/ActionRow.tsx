@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { exitComposer } from '../focus';
+import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
 import { getState, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -192,9 +193,12 @@ export function ActionRow() {
                 </button>
                 <div className="hud-menu-version">v{APP_VERSION}</div>
                 {/* 隐私告知与入场层那一行同源（`70-privacy-risk.md` §8.1）：静态页、零接口 */}
-                {/* 带扩展名的理由见 `EntryOverlay`：Vite 开发服务器没有 `html_handling`，省略扩展名的
-                    `/privacy` 会落进 SPA 回退、打开一个和刚才一样的大厅页面 */}
-                <a className="hud-menu-link" href="/privacy.html" target="_blank" rel="noopener">
+                {/* 与入场层同一个入口行为（新标签、被拦退回同标签），理由见 `../privacy-link.ts` */}
+                <a
+                  className="hud-menu-link"
+                  href={PRIVACY_PAGE_HREF}
+                  onClick={(event) => openPrivacyPage(event, (url, target) => window.open(url, target))}
+                >
                   使用须知与隐私说明
                 </a>
               </div>
