@@ -12,6 +12,8 @@ import {
   LABEL_PX,
 } from '../bubble-fit';
 import tokens from '../styles/tokens.json';
+import type { PetAnim } from './pet';
+import { PET_GREET_TEXT } from './pet';
 import { MARKER_RADIUS, personAlpha, personFrame, truncateToLines } from './rules';
 import type { BedLook, BedMarker } from './rules';
 
@@ -87,6 +89,13 @@ const WALK_SWAY_HZ = 4.5;
 
 /** 图集 key：`public/sprites/atlas.png` + `atlas.json`（构建期产物，见 `tools/art/build-sprites.mjs`）。 */
 export const SPRITES_KEY = 'sprites';
+
+/**
+ * 篝火的两支状态（`docs/design/80-reserve-decor.md` §2.2）：燃烧 = 6 帧循环，熄灭 = 单帧（柴 + 灰 + 石圈）。
+ * 动画 key 不带 `world-` 前缀：它是全局 `AnimationManager` 里的一支，与「组件名」不是同一类东西。
+ */
+export const FIRE_BURNING_ANIM = 'fire-burning';
+export const FIRE_OUT_FRAME = 'fire-out';
 
 export const COLORS = {
   floor: color('primary'),
@@ -283,20 +292,116 @@ function drawEyes(view: BedView, on: boolean): void {
   eyes.setVisible(true);
 }
 
+/**
+ * 一条气泡的外观件：底（圆角矩形）+ 尾巴（三角）+ 文字，**程序化绘制、不走素材**
+ * （理由见 `docs/ui/DESIGN.md`「气泡不走素材」）。聊天气泡与猫的问候共用这一份——外观同一份、通道两条。
+ */
+export interface BubbleView {
+  readonly body: Phaser.GameObjects.Rectangle;
+  readonly tail: Phaser.GameObjects.Triangle;
+  readonly text: Phaser.GameObjects.Text;
+  /** 上一次画的内容（种类 + 文字）：不变就跳过重排——重排要重新量文字（`getWrappedText`） */
+  content: string;
+  /** 上一次摆的槽位（取整后的 x 与底线）：不变就跳过挪位置 */
+  slot: string;
+  /** 上一次算出的气泡高度（世界像素，0 = 没画）：名字行靠它排在气泡上方 */
+  height: number;
+}
+
+/** 气泡画在哪：**底边中心**贴在 `(x, baseY)` 上，尾巴从那里往下伸（`baseY` 就是尾巴尖）。 */
+export interface BubbleSlot {
+  x: number;
+  baseY: number;
+}
+
+/** 气泡里的内容：文字与它是不是私聊（私聊加一个前缀，收发两边都加）。 */
+export interface BubbleInput {
+  text: string;
+  kind: 'chat' | 'whisper';
+}
+
+export function createBubbleView(scene: Phaser.Scene): BubbleView {
+  // 底锚在**下沿**（原点 0.5, 1），尾巴锚在**上沿**（0.5, 0）：两个都贴在槽位底线上就对上了
+  const body = scene.add
+    .rectangle(0, 0, 0, 0, COLORS.bubbleFill)
+    .setOrigin(0.5, 1)
+    .setRounded(BUBBLE_RADIUS)
+    .setStrokeStyle(1, COLORS.bubbleLine)
+    .setVisible(false);
+  // 尾巴画在底**之后**：底的 1px 下边框被三角的填充盖掉，接缝处不会多出一条横线
+  const tail = scene.add
+    .triangle(0, 0, 0, 0, TAIL_W, 0, TAIL_W / 2, TAIL_H, COLORS.bubbleFill)
+    .setOrigin(0.5, 0)
+    .setStrokeStyle(1, COLORS.bubbleLine)
+    .setVisible(false);
+  const text = scene.add.text(0, 0, '', CHAT_TEXT_STYLE).setOrigin(0.5, 0.5).setVisible(false);
+  // 换行宽度要自己给：不给就是一个字都不折（Phaser 的换行是 opt-in）
+  text.setWordWrapWidth(BUBBLE_TEXT_PX, true);
+  return { body, tail, text, content: '', slot: '', height: 0 };
+}
+
+/**
+ * 把气泡摆在槽位上（**尺寸与位置一律取整**：半像素的描边照样会糊），`undefined` = 不画。
+ * 返回气泡高度（世界像素，0 = 没画）：名字行靠它排在气泡上方。
+ *
+ * 高度跟着行数撑开、宽度跟文字走；内容与槽位各有一支变化守卫，逐帧调用不做多余的事
+ * （猫的问候随猫移动，位置每帧都可能变，而文字只在内容变了时才重新量）。
+ */
+export function setBubble(view: BubbleView, input: BubbleInput | undefined, slot: BubbleSlot): number {
+  if (input === undefined) {
+    hideBubble(view);
+    return 0;
+  }
+  const content = `${input.kind}|${input.text}`;
+  if (content !== view.content) {
+    view.content = content;
+    view.body.setVisible(true);
+    view.tail.setVisible(true);
+    view.text.setVisible(true);
+    fitBubbleText(view.text, input.kind === 'whisper' ? `${WHISPER_PREFIX}${input.text}` : input.text);
+    // 文字自带内边距，所以气泡尺寸直接就是文字外框；高度跟着行数长，不是固定的一行高。
+    // 宽度取偶：底的水平锚点在正中，奇宽会让左右两条竖边落在半像素上（还是糊）
+    view.height = Math.round(view.text.height);
+    view.body.setSize(Math.round(view.text.width / 2) * 2, view.height);
+    // 高度可能变了：位置即使看起来一样也要重排一次
+    view.slot = '';
+  }
+  const x = Math.round(slot.x);
+  const baseY = Math.round(slot.baseY);
+  const signature = `${x}|${baseY}`;
+  if (signature !== view.slot) {
+    view.slot = signature;
+    view.body.setPosition(x, baseY);
+    view.tail.setPosition(x, baseY);
+    view.text.setPosition(x, baseY - Math.round(view.height / 2));
+  }
+  return view.height;
+}
+
+/** 不画（三件一起藏、内容清空）：下次出现时重新量文字。已经在不画的状态就不做任何事。 */
+export function hideBubble(view: BubbleView): void {
+  if (view.content === '') return;
+  view.content = '';
+  view.slot = '';
+  view.height = 0;
+  view.body.setVisible(false);
+  view.tail.setVisible(false);
+  view.text.setVisible(false);
+}
+
 export interface PersonView {
   readonly container: Phaser.GameObjects.Container;
   readonly sprite: Phaser.GameObjects.Image;
   readonly footMarker: Phaser.GameObjects.Graphics;
   readonly name: Phaser.GameObjects.Text;
-  readonly bubbleTail: Phaser.GameObjects.Triangle;
-  readonly bubbleBody: Phaser.GameObjects.Rectangle;
-  readonly bubbleText: Phaser.GameObjects.Text;
+  /** 头顶那一条气泡（底 / 尾巴 / 文字）：与猫的问候共用同一个件（`createBubbleView`） */
+  readonly bubble: BubbleView;
   /** 气泡上方的名字行（只在别人的消息上画）。与床下那条裸标签 `name` 是两个对象 */
   readonly bubbleName: Phaser.GameObjects.Text;
   /** 上一次画法签名（外观、显示态、我的标记）：不变就跳过换贴图 */
   paint: string;
-  /** 上一次画的气泡（槽位底线 + 种类 + 文字）：不变就跳过整段重排（重排要重新量文字） */
-  chat: string;
+  /** 上一次画的名字行（槽位 + 名字）：不变就跳过重排 */
+  namePaint: string;
   /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字一起换 */
   chatBaseY: number;
 }
@@ -309,22 +414,7 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
   footMarker.fillCircle(0, 0, MARKER_RADIUS);
   footMarker.setVisible(false);
   // 气泡压在人物贴图**之下**：尾巴落在头上不会遮住脸
-  // 底锚在**下沿**（原点 0.5, 1），尾巴锚在**上沿**（0.5, 0）：两个都贴在 `chatBaseY` 上就对上了
-  const bubbleBody = scene.add
-    .rectangle(0, 0, 0, 0, COLORS.bubbleFill)
-    .setOrigin(0.5, 1)
-    .setRounded(BUBBLE_RADIUS)
-    .setStrokeStyle(1, COLORS.bubbleLine)
-    .setVisible(false);
-  // 尾巴画在底**之后**：底的 1px 下边框被三角的填充盖掉，接缝处不会多出一条横线
-  const bubbleTail = scene.add
-    .triangle(0, 0, 0, 0, TAIL_W, 0, TAIL_W / 2, TAIL_H, COLORS.bubbleFill)
-    .setOrigin(0.5, 0)
-    .setStrokeStyle(1, COLORS.bubbleLine)
-    .setVisible(false);
-  const bubbleText = scene.add.text(0, 0, '', CHAT_TEXT_STYLE).setOrigin(0.5, 0.5).setVisible(false);
-  // 换行宽度要自己给：不给就是一个字都不折（Phaser 的换行是 opt-in）
-  bubbleText.setWordWrapWidth(BUBBLE_TEXT_PX, true);
+  const bubble = createBubbleView(scene);
   const bubbleName = scene.add
     .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: MUTED_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
@@ -334,18 +424,24 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
     .setVisible(false);
-  const container = scene.add.container(0, 0, [bubbleBody, bubbleTail, bubbleText, sprite, footMarker, name, bubbleName]);
+  const container = scene.add.container(0, 0, [
+    bubble.body,
+    bubble.tail,
+    bubble.text,
+    sprite,
+    footMarker,
+    name,
+    bubbleName,
+  ]);
   return {
     container,
     sprite,
     footMarker,
     name,
-    bubbleTail,
-    bubbleBody,
-    bubbleText,
+    bubble,
     bubbleName,
     paint: '',
-    chat: '',
+    namePaint: '',
     chatBaseY: CHAT_Y,
   };
 }
@@ -399,34 +495,24 @@ export interface ChatBubbleInput {
 /**
  * 头顶那一个槽位里的聊天气泡（**槽位优先级 聊天 > 选中名字** 由调用方保证，这一支只管自己画不画）。
  *
- * 底是圆角矩形、尾巴是三角，都程序化画（不走素材，理由见 `docs/ui/DESIGN.md`「气泡不走素材」）：
- * 高度跟着行数撑开，宽度跟文字走，所以**尺寸与位置一律取整**——半像素的描边照样会糊。
+ * 底 / 尾巴 / 文字与量文字都由可复用件 `setBubble` 负责（猫的问候用的是同一份外观）。
  * 名字行单独一行画在气泡上方，内容在**渲染时**从 `people` 现取（改名不用重挂气泡）。
  */
 export function setPersonChat(view: PersonView, input: ChatBubbleInput | undefined): void {
-  // 槽位底线在签名里：人物从站着变成躺在床上时，同一段文字也要换个高度重排
+  // 槽位底线跟着人物走：站着的小人原点在脚下、躺着的人在床心，同一段文字也要换个高度重排
+  const height = setBubble(
+    view.bubble,
+    input === undefined ? undefined : { text: input.text, kind: input.kind },
+    { x: 0, baseY: view.chatBaseY },
+  );
   const name = input?.name ?? '';
-  const signature = input === undefined ? '' : `${view.chatBaseY}|${input.kind}|${input.text}|${name}`;
-  if (signature === view.chat) return;
-  view.chat = signature;
-  const visible = input !== undefined;
-  view.bubbleBody.setVisible(visible);
-  view.bubbleTail.setVisible(visible);
-  view.bubbleText.setVisible(visible);
-  view.bubbleName.setVisible(visible && name !== '');
-  if (!input) return;
-
-  fitBubbleText(view.bubbleText, input.kind === 'whisper' ? `${WHISPER_PREFIX}${input.text}` : input.text);
+  const paint = input === undefined || name === '' ? '' : `${view.chatBaseY}|${height}|${name}`;
+  if (paint === view.namePaint) return;
+  view.namePaint = paint;
+  view.bubbleName.setVisible(paint !== '');
+  if (paint === '') return;
   fitBubbleName(view.bubbleName, name);
-  // 文字自带内边距，所以气泡尺寸直接就是文字外框；高度跟着行数长，不是固定的一行高。
-  // 宽度取偶：底的水平锚点在正中，奇宽会让左右两条竖边落在半像素上（还是糊）
-  const width = Math.round(view.bubbleText.width / 2) * 2;
-  const height = Math.round(view.bubbleText.height);
-  const baseY = Math.round(view.chatBaseY);
-  view.bubbleBody.setSize(width, height).setPosition(0, baseY);
-  view.bubbleTail.setPosition(0, baseY);
-  view.bubbleText.setPosition(0, baseY - Math.round(height / 2));
-  view.bubbleName.setPosition(0, baseY - height - NAME_GAP_PX);
+  view.bubbleName.setPosition(0, Math.round(view.chatBaseY) - height - NAME_GAP_PX);
 }
 
 /**
@@ -450,4 +536,149 @@ function fitBubbleName(nameText: Phaser.GameObjects.Text, name: string): void {
     return nameText.getWrappedText().length;
   };
   nameText.setText(truncateToLines(name, 1, linesOf));
+}
+
+/**
+ * 我床头的那堆火（`docs/design/80-reserve-decor.md` §2）：**只有我自己看得见**——不进 `people`、
+ * 不广播，服务端不知道它存在。全场只有这一摊（我的那张床），所以不进对象池。
+ *
+ * 位置与深度由调用方给（世界坐标就是它自己的坐标，不套容器）：遮挡与小人同一条
+ * ——画面上更靠下 = 更靠前（`DEPTH.person + y`，见 `world.ts`）。
+ */
+export interface CampfireView {
+  /** 必须是 `Sprite`：燃烧是 6 帧循环动画，`Image` 播不了（`anims` 只在 Sprite 上） */
+  readonly sprite: Phaser.GameObjects.Sprite;
+  /** 上一次的亮灭（`undefined` = 还没画过）：不变就跳过换贴图与起停动画 */
+  lit: boolean | undefined;
+}
+
+/** 燃烧循环：`fire-1…6`、8fps、无限重复。**全局 `AnimationManager` 只注册一次**（重复 create 会告警并原样返回）。 */
+export function createCampfireAnims(scene: Phaser.Scene): void {
+  if (scene.anims.exists(FIRE_BURNING_ANIM)) return;
+  scene.anims.create({
+    key: FIRE_BURNING_ANIM,
+    frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: 'fire-', start: 1, end: 6 }),
+    frameRate: 8,
+    repeat: -1,
+  });
+}
+
+export function createCampfireView(scene: Phaser.Scene): CampfireView {
+  // 初始贴图给熄灭帧：还没有我的时候它本来就是一堆柴；火燃起来才换帧
+  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, FIRE_OUT_FRAME).setScale(ART_SCALE).setVisible(false);
+  return { sprite, lit: undefined };
+}
+
+/** 一帧的摆放：**底边中心**的世界坐标（素材锚点也是墨迹底边中心，火堆就压在那条线上）、深度、亮灭。 */
+export interface CampfirePaint {
+  x: number;
+  y: number;
+  depth: number;
+  lit: boolean;
+}
+
+/** 摆一帧（逐帧调用）：位置与深度每帧写，亮灭只在翻转时换贴图 / 起停动画。 */
+export function placeCampfire(view: CampfireView, paint: CampfirePaint): void {
+  view.sprite.setVisible(true).setPosition(paint.x, paint.y).setDepth(paint.depth);
+  if (view.lit === paint.lit) return;
+  view.lit = paint.lit;
+  if (paint.lit) {
+    view.sprite.play(FIRE_BURNING_ANIM);
+    return;
+  }
+  // 熄灭 = 停动画 + 换成单帧，**不隐藏**：留下柴、灰与石圈（「熄灭」是状态，不是消失）
+  view.sprite.anims.stop();
+  view.sprite.setTexture(SPRITES_KEY, FIRE_OUT_FRAME);
+}
+
+/** 不画（没有我 / 没有床 / 那张床不在视野里）：藏起来并停掉动画，亮灭签名清空——下次出现时重新落位。 */
+export function hideCampfire(view: CampfireView): void {
+  if (!view.sprite.visible) return;
+  view.sprite.setVisible(false);
+  view.sprite.anims.stop();
+  view.lit = undefined;
+}
+
+/**
+ * 我床尾那只猫（`docs/design/80-reserve-decor.md` §3）：与篝火同一套边界——**只有我自己看得见**、
+ * 全场只有一只（绑「我」不绑床），所以不进对象池。位置与深度由调用方给（世界坐标就是它自己的坐标，
+ * 不套容器）：遮挡与小人同一条——画面上更靠下 = 更靠前（`DEPTH.person + y`，见 `world.ts`）。
+ */
+export interface PetView {
+  /** 必须是 `Sprite`：走 / 跑 / 睡都是帧循环，`Image` 播不了（`anims` 只在 Sprite 上） */
+  readonly sprite: Phaser.GameObjects.Sprite;
+  /** 头上的问候气泡（§3.4）：外观与聊天气泡同一个件，但它**不是聊天**——不进 `state.bubbles` */
+  readonly bubble: BubbleView;
+  /** 上一次播的动画（`undefined` = 还没播过）：不变就跳过 `play`——每帧重播会把循环钉在第一帧 */
+  anim: PetAnim | undefined;
+}
+
+/** 六个动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps（循环）；摸猫的两组各 6 帧 / 4fps（不循环，§3.6）。**全局只注册一次**。 */
+export function createPetAnims(scene: Phaser.Scene): void {
+  const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number; repeat: number }> = [
+    { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8, repeat: -1 },
+    { key: 'cat-walk', prefix: 'cat-walk-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-run', prefix: 'cat-run-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-sleep', prefix: 'cat-sleep-', end: 4, frameRate: 6, repeat: -1 },
+    { key: 'cat-pat', prefix: 'cat-pat-', end: 6, frameRate: 4, repeat: 0 },
+    { key: 'cat-nuzzle', prefix: 'cat-nuzzle-', end: 6, frameRate: 4, repeat: 0 },
+  ];
+  for (const group of groups) {
+    if (scene.anims.exists(group.key)) continue;
+    scene.anims.create({
+      key: group.key,
+      frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: group.prefix, start: 1, end: group.end }),
+      frameRate: group.frameRate,
+      repeat: group.repeat,
+    });
+  }
+}
+
+export function createPetView(scene: Phaser.Scene): PetView {
+  // 初始贴图给 idle 的第一帧：动画由 `placePet` 按目标形态切，建出来时先不播
+  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, 'cat-idle-1').setScale(ART_SCALE).setVisible(false);
+  return { sprite, bubble: createBubbleView(scene), anim: undefined };
+}
+
+/**
+ * 问候气泡的底边（尾巴根）在猫**脚点之上**多高（世界像素）：站立帧的墨迹高 117 × `ART_SCALE` ≈ 58.5，
+ * 尾巴再往下 6px，尾巴尖落在头顶之上、不压脸（§3.4）。
+ */
+const PET_GREET_ABOVE_PX = 66;
+
+/** 一帧的摆放：**底边中心**的世界坐标（与小人、篝火同一个锚点）、深度、动画 key、头上的问候气泡。 */
+export interface PetPaint {
+  x: number;
+  y: number;
+  depth: number;
+  anim: PetAnim;
+  /** 这一刻画不画问候气泡（§3.4）：文案与挂载位置都由这一支负责，世界层只算「还该不该画」 */
+  greet: boolean;
+}
+
+/** 摆一帧（逐帧调用）：位置与深度每帧写，动画只在翻转时 `play`，问候气泡随猫走。 */
+export function placePet(view: PetView, paint: PetPaint): void {
+  view.sprite.setVisible(true).setPosition(paint.x, paint.y).setDepth(paint.depth);
+  // 气泡挂在猫的**脚点上方**、随猫移动；深度压在猫身上一点，尾巴不会被猫自己的头盖掉。
+  // 拉远到文字阈值以下时它就是 `undefined`（与其它世界文字一起退役，猫本体照画）
+  setBubble(view.bubble, paint.greet ? { text: PET_GREET_TEXT, kind: 'chat' } : undefined, {
+    x: paint.x,
+    baseY: paint.y - PET_GREET_ABOVE_PX,
+  });
+  if (paint.greet) {
+    const depth = paint.depth + 1;
+    for (const object of [view.bubble.body, view.bubble.tail, view.bubble.text]) object.setDepth(depth);
+  }
+  if (view.anim === paint.anim) return;
+  view.anim = paint.anim;
+  view.sprite.play(paint.anim);
+}
+
+/** 不画（没有我 / 睡痕 / 不在视野）：本体与问候气泡一起收掉，动画签名清空——下次出现时重新播。 */
+export function hidePet(view: PetView): void {
+  hideBubble(view.bubble);
+  if (!view.sprite.visible) return;
+  view.sprite.setVisible(false);
+  view.sprite.anims.stop();
+  view.anim = undefined;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, ZOOM_MIN } from '../../../shared/constants';
 import { HALL_LEVELS, levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
-import type { Person } from '../../../shared/protocol';
+import type { Person, SelfPerson } from '../../../shared/protocol';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
 import {
   MARKER_RADIUS,
@@ -14,6 +14,7 @@ import {
   bedMarkerOf,
   cameraBounds,
   clampZoom,
+  campfireLit,
   cameraStep,
   followStep,
   isFaded,
@@ -96,6 +97,22 @@ describe('小人贴图', () => {
   it('外观决定站姿贴图（第一版两种）', () => {
     expect(personFrame('boy')).toBe('boy_stand');
     expect(personFrame('girl')).toBe('girl_stand');
+  });
+});
+
+describe('我床头的篝火：亮灭跟着我的显示态', () => {
+  const lying: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'lying', bedNo: 7, ownedBedNo: 7 };
+  const roaming: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 300, y: 280, ownedBedNo: 7 };
+
+  it('躺着与睡着燃；漫游、睡痕与没有我都熄（五种输入）', () => {
+    const cases: Array<[string, SelfPerson | undefined, boolean]> = [
+      ['lying', lying, true],
+      ['asleep', { ...lying, state: 'asleep' }, true],
+      ['roaming', roaming, false],
+      ['trace', { ...lying, state: 'trace' }, false],
+      ['没有 me', undefined, false],
+    ];
+    for (const [state, me, lit] of cases) expect(campfireLit(me), state).toBe(lit);
   });
 });
 
@@ -188,6 +205,26 @@ describe('轻点命中（世界像素）', () => {
     expect(
       tapTargetFor({ point: { x: 812, y: 430 }, spots: [self], selfId: 'u_me', walkTarget: { x: 812, y: 430 } }),
     ).toEqual({ kind: 'recenter' });
+  });
+
+  it('点我的猫：演摸头 / 蹭手撒娇；先于床位判定，但绝不落成 walk', () => {
+    const pet = { x: 812, y: 430 };
+    const body = { x: 812, y: 402 };
+    // 猫压在空床上那一点：演动作，不是躺下
+    expect(tapTargetFor({ point: body, spots: [], bedNo: 42, pet })).toEqual({ kind: 'pat' });
+    // 猫站在走道上：演动作，不是走过去
+    expect(tapTargetFor({ point: body, spots: [], walkTarget: body, pet })).toEqual({ kind: 'pat' });
+    // 人优先：同一个点上有别人 → 选中别人
+    expect(tapTargetFor({ point: body, spots: [{ id: 'u_other', x: body.x, y: body.y }], pet })).toEqual({
+      kind: 'select',
+      id: 'u_other',
+    });
+    // 离命中圆心 40px（> 26）：回到地面判定
+    expect(tapTargetFor({ point: { x: 812, y: 362 }, spots: [], walkTarget: { x: 812, y: 362 }, pet })).toEqual({
+      kind: 'walk',
+      x: 812,
+      y: 362,
+    });
   });
 
   it('点自己的床但人不在命中半径内：`none`（回中只认自己这个点，不认床位）', () => {

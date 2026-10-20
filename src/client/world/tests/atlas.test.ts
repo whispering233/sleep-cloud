@@ -38,6 +38,23 @@ const askedLooks: BedLook[] = [
 ];
 const askedFrames = [...askedLooks.map((look) => look.frame), ...APPEARANCES.map((appearance) => personFrame(appearance))];
 
+/**
+ * 猫与篝火的帧：素材管线的白名单是 idle / walk / run / pat / nuzzle / sleep / fire 七组。
+ * 动画按帧名前缀 + 序号取帧，所以这里也按同一规则点名。
+ */
+const numberedFrames = (prefix: string, count: number): string[] =>
+  Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
+const CAT_FRAMES = [
+  ...numberedFrames('cat-idle-', 8),
+  ...numberedFrames('cat-walk-', 4),
+  ...numberedFrames('cat-run-', 4),
+  ...numberedFrames('cat-sleep-', 4),
+  ...numberedFrames('cat-pat-', 6),
+  ...numberedFrames('cat-nuzzle-', 6),
+];
+const FIRE_FRAMES = numberedFrames('fire-', 6);
+const DECOR_FRAMES = [...CAT_FRAMES, ...FIRE_FRAMES, 'fire-out'];
+
 describe('图集与客户端的接口', () => {
   it('客户端会要的每一帧都在图集里（缺帧只会在画面里变成空白，靠目视发现太晚）', () => {
     expect(askedFrames.length).toBeGreaterThan(0);
@@ -116,6 +133,81 @@ describe('图集与客户端的接口', () => {
           other.y + other.h <= rect.y;
         expect(apart, `${rect.name} 与 ${other.name}`).toBe(true);
       }
+    }
+  });
+});
+
+describe('图集里的猫与篝火（多色素材，两支映射）', () => {
+  it('猫 20 帧与篝火 7 帧都在图集里（缺一帧就是一段空动画）', () => {
+    for (const name of DECOR_FRAMES) expect(atlas.frames[name], name).toBeDefined();
+  });
+
+  it('每帧的裁剪字段与帧一致，锚点是墨迹底边中心 {0.5, 1}', () => {
+    for (const name of DECOR_FRAMES) {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      expect(frame.spriteSourceSize, name).toEqual({ x: 0, y: 0, w: frame.frame.w, h: frame.frame.h });
+      expect(frame.sourceSize, name).toEqual({ w: frame.frame.w, h: frame.frame.h });
+      expect(frame.anchor, name).toEqual({ x: 0.5, y: 1 });
+    }
+  });
+
+  it('猫帧的世界尺寸落在 38~56 × 38~60（只是防呆上界，不是语义真值）', () => {
+    for (const name of CAT_FRAMES) {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(38);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(56);
+      expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeGreaterThanOrEqual(38);
+      expect(frame.frame.h * ART_SCALE, `${name} 高`).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it('同一个动作的帧共用一个裁框（逐帧各裁 bbox 会让锚点随帧宽漂移，静止时看起来左右抽动）', () => {
+    const sizeOf = (name: string) => {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      return `${frame.frame.w}x${frame.frame.h}`;
+    };
+    for (const [prefix, count] of [
+      ['cat-idle-', 8],
+      ['cat-walk-', 4],
+      ['cat-run-', 4],
+      ['cat-sleep-', 4],
+      ['cat-pat-', 6],
+      ['cat-nuzzle-', 6],
+      ['fire-', 6],
+    ] as const) {
+      const sizes = new Set(Array.from({ length: count }, (_, index) => sizeOf(`${prefix}${index + 1}`)));
+      expect(sizes.size, prefix).toBe(1);
+    }
+    // 站立的五组还要彼此同框：idle ⇄ walk ⇄ run ⇄ 摸头/蹭手切换时身体不能跳
+    expect(
+      new Set([
+        sizeOf('cat-idle-1'),
+        sizeOf('cat-walk-1'),
+        sizeOf('cat-run-1'),
+        sizeOf('cat-pat-1'),
+        sizeOf('cat-nuzzle-1'),
+      ]).size,
+    ).toBe(1);
+    // 熄灭帧与燃烧帧同框：切帧时柴堆与石圈不能位移
+    expect(sizeOf('fire-out')).toBe(sizeOf('fire-1'));
+  });
+
+  it('篝火帧的世界宽度落在 46~50（火堆不能比床还大）', () => {
+    for (const name of [...FIRE_FRAMES, 'fire-out']) {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(46);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it('摸猫的两组帧都在图集里（点一下才有的看，缺帧只会变成空白）', () => {
+    for (const prefix of ['cat-pat-', 'cat-nuzzle-'] as const) {
+      expect(atlas.frames[`${prefix}1`]).toBeDefined();
+      expect(atlas.frames[`${prefix}6`]).toBeDefined();
     }
   });
 });

@@ -316,6 +316,25 @@ export function reserveOf(bedNo: number): Rect | undefined {
 }
 
 /**
+ * 床号 + 块 → **预留位的一块**：沿床长方向等分三块（`docs/design/20-layout.md` §2.1）。
+ *
+ * `head` 靠床头（y 最小一侧）、`foot` 靠床脚（y 最大一侧）；x 与宽跟着 `reserveOf` 走——
+ * 行奇偶的左右镜像由预留位本身承担，这里不另写一套。每块的两条 y 边界用同一条式子算，
+ * 所以相邻两块在边界上**逐位相等**（不留缝、不重叠），第三块的底边正好是预留位的底边。
+ *
+ * **这只是摆放锚点，不是包围盒**：素材允许超出自己那一块（猫 58.5 高、篝火燃烧时约 42 高，块只有 33.3），
+ * 溢出方向一律向上。既有几何一个像素都没变，所以 `LAYOUT_VERSION` 不 bump。
+ */
+export function reserveBlockOf(bedNo: number, block: 'head' | 'middle' | 'foot'): Rect | undefined {
+  const reserve = reserveOf(bedNo);
+  if (!reserve) return undefined;
+  const order = block === 'head' ? 0 : block === 'middle' ? 1 : 2;
+  const top = reserve.y + (reserve.height * order) / 3;
+  const bottom = reserve.y + (reserve.height * (order + 1)) / 3;
+  return { x: reserve.x, y: top, width: reserve.width, height: bottom - top };
+}
+
+/**
  * 世界像素 → 床号（命中判定，含行奇偶错位）。
  *
  * 不传 `bedCount` 时按**整张表**判定（最高档的区域）；传了当前床位数，则越过它的床不算床

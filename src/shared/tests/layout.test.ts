@@ -14,6 +14,7 @@ import {
   nearestStreetPoint,
   positionOf,
   regionOf,
+  reserveBlockOf,
   reserveOf,
   roomOf,
   scrollRegionOf,
@@ -300,6 +301,134 @@ describe('不变式 ⑥：房间内部（床 + 预留位）不可走', () => {
       }
       if (room.width !== BED_W + RESERVE_W || room.height !== BED_H) bad.push(`床 ${bedNo} 的房间矩形不对`);
       if (room.x !== cellOf(bedNo)?.col! * CELL_W + AISLE) bad.push(`床 ${bedNo} 的房间不在格里`);
+    });
+    expect(bad).toEqual([]);
+  });
+});
+
+// ————————————————————————— 不变式 ⑧：预留位等分三块（`docs/design/20-layout.md` §2.1） —————————————————————————
+
+/** 三块按摆放顺序：床头 → 床中 → 床尾。 */
+const RESERVE_BLOCKS = ['head', 'middle', 'foot'] as const;
+
+/** 独立的「等分三块」公式：与 `layout.ts` 内部那份是同一公式的第二次实现。 */
+function reserveThird(cell: Cell, order: number): Rect {
+  const top = cell.row * CELL_H + (BED_H * order) / 3;
+  const bottom = cell.row * CELL_H + (BED_H * (order + 1)) / 3;
+  return {
+    x: cell.col * CELL_W + AISLE + (cell.row % 2 === 0 ? BED_W : 0),
+    y: top,
+    width: RESERVE_W,
+    height: bottom - top,
+  };
+}
+
+describe('不变式 ⑧：预留位沿床长方向等分三块（床头 / 床中 / 床尾）', () => {
+  it('逐档逐床：三块并起来正好是预留位（高度之和对上、互不重叠、也不越界）', () => {
+    const bad: string[] = [];
+    everyBed((_level, bedNo) => {
+      const reserve = reserveOf(bedNo) as Rect;
+      const head = reserveBlockOf(bedNo, 'head') as Rect;
+      const middle = reserveBlockOf(bedNo, 'middle') as Rect;
+      const foot = reserveBlockOf(bedNo, 'foot') as Rect;
+      const total = head.height + middle.height + foot.height;
+
+      if (Math.abs(total - reserve.height) > 1e-9) bad.push(`床 ${bedNo} 三块高度之和 ${total} ≠ 预留位高`);
+      if (head.y + head.height > middle.y) bad.push(`床 ${bedNo} 的 head 与 middle 重叠`);
+      if (middle.y + middle.height > foot.y) bad.push(`床 ${bedNo} 的 middle 与 foot 重叠`);
+      for (const [name, rect] of [
+        ['head', head],
+        ['middle', middle],
+        ['foot', foot],
+      ] as Array<[string, Rect]>) {
+        if (rect.y < reserve.y || rect.y + rect.height > reserve.y + reserve.height) {
+          bad.push(`床 ${bedNo} 的 ${name} 越出了预留位`);
+        }
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('相邻边界逐位相等：head 靠床头、foot 靠床脚，三块之间无缝', () => {
+    const bad: string[] = [];
+    everyBed((level, bedNo) => {
+      const reserve = reserveOf(bedNo) as Rect;
+      const head = reserveBlockOf(bedNo, 'head') as Rect;
+      const middle = reserveBlockOf(bedNo, 'middle') as Rect;
+      const foot = reserveBlockOf(bedNo, 'foot') as Rect;
+
+      if (head.y !== reserve.y) bad.push(`床 ${bedNo} 的 head 不靠床头（${head.y} ≠ ${reserve.y}）`);
+      if (head.y + head.height !== middle.y) bad.push(`床 ${bedNo} 的 head 与 middle 之间有缝`);
+      if (middle.y + middle.height !== foot.y) bad.push(`床 ${bedNo} 的 middle 与 foot 之间有缝`);
+      if (foot.y + foot.height !== reserve.y + reserve.height) bad.push(`床 ${bedNo} 的 foot 不靠床脚`);
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('每块高约等于 BED_H / 3（不取整，块边界才首尾相接）', () => {
+    const bad: string[] = [];
+    everyBed((_level, bedNo) => {
+      for (const block of RESERVE_BLOCKS) {
+        const rect = reserveBlockOf(bedNo, block) as Rect;
+        if (Math.abs(rect.height - BED_H / 3) > 1e-9) bad.push(`床 ${bedNo} 的 ${block} 高 ${rect.height} ≠ BED_H/3`);
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('三块的 x 与 width 都等于预留位（宽 = RESERVE_W，不随块变）', () => {
+    const bad: string[] = [];
+    everyBed((_level, bedNo) => {
+      const reserve = reserveOf(bedNo) as Rect;
+      for (const block of RESERVE_BLOCKS) {
+        const rect = reserveBlockOf(bedNo, block) as Rect;
+        if (rect.x !== reserve.x) bad.push(`床 ${bedNo} 的 ${block} 没跟着预留位的 x`);
+        if (rect.width !== reserve.width || rect.width !== RESERVE_W) bad.push(`床 ${bedNo} 的 ${block} 宽度不对`);
+      }
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('偶行与奇行各取一张床：三块都落在那一行的预留位里（镜像跟着预留位走，不另写一套）', () => {
+    // 床 0 = 偶行（预留位在床右侧）、床 14 = 奇行（预留位在床左侧，镜像量 = RESERVE_W）
+    const samples: Array<[bedNo: number, rowParity: number]> = [
+      [0, 0],
+      [14, 1],
+    ];
+    for (const [bedNo, rowParity] of samples) {
+      const cell = cellOf(bedNo) as Cell;
+      const reserve = reserveOf(bedNo) as Rect;
+      const bed = positionOf(bedNo) as Point;
+      expect(cell.row % 2).toBe(rowParity);
+      expect(reserve.x).toBe(rowParity === 0 ? bed.x + BED_W : bed.x - RESERVE_W);
+      for (const block of RESERVE_BLOCKS) {
+        const rect = reserveBlockOf(bedNo, block) as Rect;
+        expect(rect.x).toBe(reserve.x);
+        expect(rect.y).toBeGreaterThanOrEqual(reserve.y);
+        expect(rect.y + rect.height).toBeLessThanOrEqual(reserve.y + reserve.height);
+      }
+    }
+  });
+
+  it('越界或不存在的床号 → 三块都是 undefined（与 reserveOf 同时为空）', () => {
+    for (const bedNo of [-1, 1.5, TOP.capacity, TOP.capacity + 100, Number.NaN]) {
+      expect(reserveOf(bedNo)).toBeUndefined();
+      for (const block of RESERVE_BLOCKS) expect(reserveBlockOf(bedNo, block)).toBeUndefined();
+    }
+  });
+
+  it('不吃 bedCount：签名只有床号与块，矩形与独立的等分公式逐档一致', () => {
+    expect(reserveBlockOf.length).toBe(2);
+    const bad: string[] = [];
+    everyBed((_level, bedNo) => {
+      const cell = cellOf(bedNo) as Cell;
+      RESERVE_BLOCKS.forEach((block, order) => {
+        const rect = reserveBlockOf(bedNo, block) as Rect;
+        const expected = reserveThird(cell, order);
+        if (rect.x !== expected.x || rect.y !== expected.y) bad.push(`床 ${bedNo} 的 ${block} 位置不符`);
+        if (rect.width !== expected.width) bad.push(`床 ${bedNo} 的 ${block} 宽度不符`);
+        if (Math.abs(rect.height - expected.height) > 1e-9) bad.push(`床 ${bedNo} 的 ${block} 高度不符`);
+      });
     });
     expect(bad).toEqual([]);
   });

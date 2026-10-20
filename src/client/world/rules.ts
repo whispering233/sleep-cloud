@@ -1,7 +1,8 @@
 import { ZOOM_MIN } from '../../shared/constants';
-import type { Appearance, Person, PersonState } from '../../shared/protocol';
+import type { Appearance, Person, PersonState, SelfPerson } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
+import { petHitAt } from './pet';
 
 /**
  * 世界画布的纯规则：与 Phaser 无关，可单测。坐标一律是**世界像素**（1 世界像素 = 1 CSS 像素）。
@@ -121,6 +122,15 @@ export function bedMarkerOf(input: {
 /** 站着的小人：外观（`boy` / `girl`）→ 贴图。**不做逐帧行走动画**，走动靠极轻微的缩放摆动。 */
 export function personFrame(appearance: Appearance): PersonFrame {
   return appearance === 'girl' ? 'girl_stand' : 'boy_stand';
+}
+
+/**
+ * 我床头那堆火此刻燃不燃（`docs/design/80-reserve-decor.md` §2.1）：**跟着我的显示态**走——
+ * 躺着 / 睡着才燃，漫游 / 睡痕（以及还没有我）都熄。熄是**状态**不是消失：熄了留柴、灰与石圈，
+ * 与「床有人 / 没人」靠形态而不是靠消失表达是同一条语言。
+ */
+export function campfireLit(me: SelfPerson | undefined): boolean {
+  return me !== undefined && (me.state === 'lying' || me.state === 'asleep');
 }
 
 /**
@@ -389,7 +399,7 @@ export function isFaded(person: Person, serverNow: number): boolean {
 }
 
 /**
- * 轻点命中（屏幕点已换算成**世界像素**）：人 > 空床 > 地面（见 `docs/ui/DESIGN.md`）。
+ * 轻点命中（屏幕点已换算成**世界像素**）：人 > 自己 > 猫 > 床 > 地面（见 `docs/ui/DESIGN.md`、`80-reserve-decor.md` §3.6）。
  * 命中判定与渲染器无关，可单测。
  */
 
@@ -422,6 +432,8 @@ export function personHit(
 
 export type TapTarget =
   | { kind: 'select'; id: string }
+  /** 点到自己的猫：演一下摸头 / 蹭手撒娇。**纯本地**，不产生任何上行（见 `80-reserve-decor.md` §3.6） */
+  | { kind: 'pat' }
   | { kind: 'lie'; bedNo: number }
   | { kind: 'walk'; x: number; y: number }
   | { kind: 'recenter' }
@@ -464,10 +476,17 @@ export interface TapInput {
    * 服务端只校验街网、不做吸附，所以吸附必须发生在客户端（见 `docs/api/20-api-ws.md` §7）。
    */
   walkTarget?: { x: number; y: number };
+  /**
+   * 我的猫此刻的脚点（世界像素；没画出来时为 `undefined`）。它不在 `spots` 里——不是人，也不可选中，
+   * 所以命中判定单独给一个圆；优先级：人 > 自己 > **猫** > 床 > 地面。猫站在走道上、
+   * 可能压到床的一角，但点它只演一个本地动作，不产生任何上行，抢错也不会造成不可逆后果。
+   */
+  pet?: { x: number; y: number };
 }
 
 /**
  * 轻点该干什么：① 半径内的别人 → 选中；② 点自己 → 相机居中自己（不是「什么都不做」）；
+ * ②’ 点到我的猫 → 演一下摸头 / 蹭手撒娇（纯本地，不发上行）；
  * ③ 可躺的床 → 躺下（**我还没床**、**就是我自己那张**、**换床模式里**这三种情形）；
  * ④ 床上有人（含自己）→ 见下面的床位分支；⑨ 可走的街网 → 走过去；⑩ 其余 → 什么都不做。
  * ② 与「点自己躺着的床」都要点到自己：前者是「把镜头拉回自己」，后者是床上那个位置本来就没有动作可做。
@@ -482,7 +501,7 @@ export interface TapInput {
  * 用户大多只是点错了。旧床归属的代价不能由一次误点承担（见 `docs/design/00-master-design.md` §4）。
  */
 export function tapTargetFor(input: TapInput): TapTarget {
-  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching, owned } = input;
+  const { point, spots, selfId, residentId, bedNo, walkTarget, ownedBedNo, switching, owned, pet } = input;
 
   const other = personHit(
     spots.filter((spot) => spot.id !== selfId),
@@ -495,6 +514,9 @@ export function tapTargetFor(input: TapInput): TapTarget {
   if (selfId !== undefined && spots.some((spot) => spot.id === selfId && inReach(spot, point, PERSON_HIT_PX))) {
     return { kind: 'recenter' };
   }
+
+  // 点我的猫：演一下摸头 / 蹭手撒娇。它站在走道上（可能看似压着床角），先于床位判定
+  if (pet !== undefined && petHitAt(point, pet)) return { kind: 'pat' };
 
   if (bedNo !== undefined) {
     // 自己躺着的床：什么都不做（服务端回 3004 静默），也免得本地外推白走一趟
