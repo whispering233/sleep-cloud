@@ -59,6 +59,17 @@ npm run dev                                               # 项目仍跑在 WSL 
 # 然后对 http://127.0.0.1:9222/json/list 里的 webSocketDebuggerUrl 发 Runtime.evaluate
 ```
 
+`forward` 的端口绑在**宿主 Windows 的 127.0.0.1** 上，WSL 里连不上（`curl 127.0.0.1:9222` refused）。所以驱动脚本跑在 Windows 侧（`/mnt/c/Program Files/nodejs/node.exe <脚本>`，Node ≥ 22 自带 `WebSocket`），或者用 `/mnt/c/Windows/System32/curl.exe` 读 `/json/list`。
+
+**用 `adb shell input tap` 点按钮前先换算坐标**：tap 吃的是**设备像素**，页内 `getBoundingClientRect()` 是**视口 CSS 像素**，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。
+
+```text
+deviceY = (cssY + (screen.height - innerHeight)) * devicePixelRatio
+deviceX = cssX * devicePixelRatio
+```
+
+漏掉外壳那一段的表现是「点某颗按钮却点到了它上方的画布或另一行按钮」——实测曾把「点了『睡了』人却站起来」误判成产品 bug（其实是点到了画布 → 发了 `walk`）。稳妥做法：先用 CDP 读出控件的 rect，再按上式换算。
+
 **AVD 要求**：系统镜像必须带 Play Store（`google_apis_playstore`），否则没有真 Chrome 与真 Gboard。要验软键盘还得确认 AVD 的 `hw.keyboard=no`——有物理键盘时部分输入框不弹软键盘。屏幕参数不必与基线一致（窄档就是窄档），可以用运行时覆盖对齐：
 
 ```text
