@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { exitComposer } from '../focus';
-import { getState, setSwitching, showNotice } from '../store';
+import { getState, setRain, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
+import { weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -174,22 +175,37 @@ export function ActionRow() {
 
               {/* 浮层：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
                   也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
-                  两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
+                  三项：**更换床位**（可点，胶囊外观）与**天气开关**（文案 = 当前天气）在上、版本号（纯文字）在下。模式期间第一项文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
               <div className="hud-menu" id="hud-menu" popover="auto" ref={menuRef}>
-                <button
-                  type="button"
-                  className="hud-action hud-menu-action"
-                  aria-pressed={view.switching}
-                  onClick={() => {
-                    setSwitching(!view.switching);
-                    // 选择即完成：浮层自己收起（其余路径全由平台管）
-                    menuRef.current?.hidePopover();
-                    closeGate();
-                  }}
-                >
-                  {view.switching ? '取消换床' : '更换床位'}
-                </button>
+                <div className="hud-menu-group">
+                  <button
+                    type="button"
+                    className="hud-action hud-menu-action"
+                    aria-pressed={view.switching}
+                    onClick={() => {
+                      setSwitching(!view.switching);
+                      // 选择即完成：浮层自己收起（其余路径全由平台管）
+                      menuRef.current?.hidePopover();
+                      closeGate();
+                    }}
+                  >
+                    {view.switching ? '取消换床' : '更换床位'}
+                  </button>
+                  {/* 天气开关：文案 = 当前天气，`aria-pressed` 表达开 / 关。点它**不关浮层**
+                      ——天气是可连续切换的设置（不像「更换床位」那样是模式入口）。
+                      独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理，免得被原地复用 / 聚焦换位 */}
+                  <button
+                    key="weather"
+                    type="button"
+                    className="hud-action hud-menu-action"
+                    aria-pressed={view.rain}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setRain(!view.rain)}
+                  >
+                    {weatherLabel(view.rain)}
+                  </button>
+                </div>
                 <div className="hud-menu-version">v{APP_VERSION}</div>
               </div>
             </>

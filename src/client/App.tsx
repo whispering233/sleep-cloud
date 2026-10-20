@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
+import { setRain as setRainAudio, unlock } from './audio';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
@@ -62,6 +63,18 @@ export function App() {
     });
   }, []);
 
+  // 雨声跟着天气偏好走：只在状态变化时驱动一次（音频不进逐帧路径）
+  useEffect(() => {
+    if (!entered) return undefined;
+    let last = getState().rain;
+    setRainAudio(last);
+    return subscribe((state) => {
+      if (state.rain === last) return;
+      last = state.rain;
+      setRainAudio(state.rain);
+    });
+  }, [entered]);
+
   useEffect(() => {
     if (!entered || !layoutVersion) return;
     return connectHall({ layoutVersion });
@@ -92,6 +105,9 @@ export function App() {
           blocked={full}
           onDone={(next) => {
             setSession(next);
+            // 再补一道解锁：`EntryOverlay` 已在提交手势里同步调过（Safari 只认那一次），
+            // 这里覆盖「进厅后重新 resume」的路径，幂等
+            unlock();
             setEntered(true);
           }}
         />

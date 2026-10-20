@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { PREFS, readZoomMode } from '../prefs';
+import { readDoc, tableRows } from '../../shared/tests/doc';
+import { PREFS, readWeatherRain, readZoomMode, writeWeatherRain } from '../prefs';
 import type { PrefStorage } from '../prefs';
-import { getState, setZoomMode } from '../store';
+import { getState, setRain, setZoomMode } from '../store';
 
 /** 假 storage：单测跑在 Node（没有 `localStorage`），读写都走这张表。 */
 const fakeStorage = (): PrefStorage & { data: Map<string, string> } => {
@@ -85,5 +86,65 @@ describe('缩放档位偏好（sc.zoom.mode）', () => {
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
+  });
+});
+
+describe('天气偏好（sc.weather.rain）', () => {
+  /** 缺键时的日期默认（`docs/design/config.md` §4 的公式）。 */
+  const datedDefault = (y: number, m: number, d: number): boolean =>
+    Math.floor(Date.UTC(y, m, d) / 86_400_000) % 2 === 1;
+
+  it('缺键 → 日期默认（相邻日相反），且不因此写入一条键', () => {
+    const storage = fakeStorage();
+    expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(datedDefault(2024, 0, 15));
+    expect(readWeatherRain(new Date(2024, 0, 16), storage)).toBe(!datedDefault(2024, 0, 15));
+    expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+  });
+
+  it('读回写下的值；`false` 也照写（单写入路径，不做「无雨就删键」）', () => {
+    const storage = fakeStorage();
+    writeWeatherRain(false, storage);
+    expect(JSON.parse(storage.data.get(PREFS.weatherRain) ?? '')).toEqual({ v: 1, rain: false });
+    // 已有键时日期默认不参与
+    expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(false);
+  });
+
+  it('坏 JSON / 版本不符 / 非布尔 rain → 日期默认，且该键已被删（不删就永久循环判废）', () => {
+    const raws = ['{不是 JSON', JSON.stringify({ v: 2, rain: true }), JSON.stringify({ v: 1, rain: 'yes' })];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.weatherRain, raw);
+      expect(readWeatherRain(new Date(2024, 0, 15), storage)).toBe(datedDefault(2024, 0, 15));
+      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+    }
+  });
+
+  it('setRain 写 store 与偏好；同值不写', () => {
+    const storage = fakeStorage();
+    (globalThis as { localStorage?: PrefStorage }).localStorage = storage;
+    try {
+      const next = !getState().rain;
+      setRain(next);
+      expect(getState().rain).toBe(next);
+      expect(JSON.parse(storage.data.get(PREFS.weatherRain) ?? '')).toEqual({ v: 1, rain: next });
+
+      storage.data.delete(PREFS.weatherRain);
+      setRain(next);
+      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+    } finally {
+      delete (globalThis as { localStorage?: PrefStorage }).localStorage;
+    }
+  });
+});
+
+describe('键登记表镜像（docs/design/40-client-storage.md §3）', () => {
+  it('文档里的键集合 === prefs.ts 的 PREFS 注册表', () => {
+    const rows = tableRows(
+      readDoc('design/40-client-storage.md'),
+      '## 3. 键登记表',
+      '**`sc.zoom.mode` 的语义**',
+    );
+    const documented = rows.map(([key]) => (key ?? '').replaceAll('`', '')).sort();
+    expect(documented).toEqual(Object.values(PREFS).sort());
   });
 });
