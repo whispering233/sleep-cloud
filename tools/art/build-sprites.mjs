@@ -12,6 +12,10 @@
  *    预览当图片用——图集坐标只能有这一份，别处不许手抄；
  * 4. 产物是**提交物**（`public/sprites/`），`npm run art` 重新生成；**不挂进 `npm run build`**。
  *
+ * 猫与篝火（`cat-sheet.png` / `cat-fire-out.png`）走另一条路：它们是**自绘 SVG 一次性离线栅格化**
+ * 的产物（去纸底 / 去注记 / 去虚线格框 → `sharp` density 72），帧坐标来自
+ * `cat-all-sprites-atlas.json`。本脚本只读那两张 PNG，**不引入任何 SVG 依赖**。
+ *
  * 色值只从 `docs/ui/DESIGN.md` 的 frontmatter 读（脚本里不写第二份）。
  * 不新增依赖：PNG 读写用 `node:zlib` 自己做（8-bit RGBA、非隔行——母图就是这种格式）。
  */
@@ -25,10 +29,19 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MASTERS = join(ROOT, 'tools', 'art', 'masters');
 const OUT_DIR = join(ROOT, 'public', 'sprites');
 const DESIGN = join(ROOT, 'docs', 'ui', 'DESIGN.md');
+const CAT_ATLAS = join(MASTERS, 'cat-all-sprites-atlas.json');
 const LICENSE_OUT = join(OUT_DIR, 'LICENSE-wheatcloudsleep.txt');
+const CAT_LICENSE_OUT = join(OUT_DIR, 'LICENSE-cat-fire.txt');
 /** 图集宽度取 256（2 列床 = 2×122 + 间隙）：够宽、又不浪费填充率。 */
 const ATLAS_WIDTH = 256;
 const GAP = 1;
+/**
+ * 猫与篝火只打这五组进图集（`pat` / `nuzzle` 留在 backlog）；顺序 = 图集里帧的顺序。
+ * 帧名按组推：`cat-<组>-<序号>`，篝火是 `fire-<序号>`（`generateFrameNames` 按前缀取帧）。
+ */
+const CAT_GROUPS = ['idle', 'walk', 'run', 'sleep', 'fire'];
+/** 篝火熄灭帧：整格母图，同一张图里火苗 / 火星 / 辉光已经屏掉。 */
+const FIRE_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
 
 /**
  * 8 张贴图（`docs/ui/DESIGN.md`「构建期要产出的变体」）：
@@ -48,6 +61,8 @@ const VARIANTS = [
 /** 锚点：床贴图的墨迹左上角 = 格子左上角；小人贴图的墨迹底边中心 = 站立点。 */
 const BED_ANCHOR = { x: 0, y: 0 };
 const STAND_ANCHOR = { x: 0.5, y: 1 };
+/** 猫与篝火：墨迹底边中心（猫与小人的站立点同一条；篝火 = 火堆压地那条线）。 */
+const DECOR_ANCHOR = { x: 0.5, y: 1 };
 
 // ————————————————————————— 设计令牌（唯一来源：DESIGN.md frontmatter） —————————————————————————
 
@@ -230,6 +245,48 @@ function mapFrame(image, box, ink, fill) {
   return out;
 }
 
+/**
+ * 从一张图里裁一块（左上角 + 宽高），返回同格式的新图。
+ * 猫的帧坐标来自 `cat-all-sprites-atlas.json`，越界当场报错——静默裁出一块空图更难查。
+ */
+function crop(image, rect) {
+  if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > image.width || rect.y + rect.h > image.height) {
+    throw new Error(`裁剪区 (${rect.x}, ${rect.y}) ${rect.w}×${rect.h} 超出母图 ${image.width}×${image.height}`);
+  }
+  const data = Buffer.alloc(rect.w * rect.h * 4);
+  for (let y = 0; y < rect.h; y += 1) {
+    const from = ((rect.y + y) * image.width + rect.x) * 4;
+    image.data.copy(data, y * rect.w * 4, from, from + rect.w * 4);
+  }
+  return { width: rect.w, height: rect.h, data };
+}
+
+/**
+ * 多色素材的「两支映射」：只有**近白纸**与**近黑墨**两类像素被换成令牌，其余（橙火、光晕、
+ * 腮粉、木、灰，以及它们之间的抗锯齿过渡）**原样保留**——否则猫与篝火会被压成灰阶、火就不像火。
+ *
+ * 两支判据：`sat = (max−min)/max`（max 为 0 时按 0）、`lum = 0.299r+0.587g+0.114b`；
+ * 两支都不命中时保留母图 RGB。alpha 一律照抄母图（不做空芯、不乘系数）。
+ */
+function mapMultiColor(image, paper, neutral) {
+  const out = Buffer.alloc(image.width * image.height * 4);
+  for (let i = 0; i < out.length; i += 4) {
+    const r = image.data[i];
+    const g = image.data[i + 1];
+    const b = image.data[i + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    const lum = luminance(r, g, b);
+    const target = sat < 0.12 && lum > 0.9 ? paper : sat < 0.3 && lum < 0.2 ? neutral : null;
+    out[i] = target ? target.r : r;
+    out[i + 1] = target ? target.g : g;
+    out[i + 2] = target ? target.b : b;
+    out[i + 3] = image.data[i + 3];
+  }
+  return out;
+}
+
 /** 4 邻域连通块（面积 + bbox），用于「哪块是床铺、哪块是脸」。 */
 function regions(mask, width, height) {
   const seen = new Uint8Array(width * height);
@@ -364,6 +421,33 @@ function main() {
     });
   }
 
+  // 猫与篝火：按 JSON 的 x/y/w/h 裁 → 裁到墨迹 bbox（母图已去纸底与格框，非全透明就是墨迹）
+  // → 两支映射。锚点一律墨迹底边中心。
+  const decorFrame = (name, master, rect) => {
+    const piece = crop(load(master), rect);
+    const box = inkBox(piece);
+    return {
+      name,
+      master,
+      w: box.w,
+      h: box.h,
+      pixels: mapMultiColor(crop(piece, box), inkOf('paper'), inkOf('neutral')),
+      anchor: DECOR_ANCHOR,
+      fill: 'paper',
+      ink: 'neutral',
+    };
+  };
+  const catAtlas = JSON.parse(readFileSync(CAT_ATLAS, 'utf8'));
+  for (const groupId of CAT_GROUPS) {
+    const group = catAtlas.animations.find((animation) => animation.id === groupId);
+    if (!group) throw new Error(`cat-all-sprites-atlas.json 里没有 ${groupId} 组`);
+    for (const [index, rect] of group.frames.entries()) {
+      const name = groupId === 'fire' ? `fire-${index + 1}` : `cat-${groupId}-${index + 1}`;
+      frames.push(decorFrame(name, 'cat-sheet', rect));
+    }
+  }
+  frames.push(decorFrame('fire-out', 'cat-fire-out', FIRE_OUT_RECT));
+
   const { placements, height } = pack(frames);
   const atlas = Buffer.alloc(ATLAS_WIDTH * height * 4);
   for (const frame of frames) {
@@ -448,6 +532,18 @@ function main() {
     ].join('\n'),
   );
 
+  const catLicense = [
+    '素材来源与用途：atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4）与',
+    '篝火（fire-1…6、fire-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可',
+    '（原文见仓库根目录 LICENSE），用于世界层的床尾猫与床头篝火。',
+    '',
+    '生成方式：先写成 SVG，再一次性离线栅格化为 PNG（去纸底 / 去注记 / 去格框，density 72）；',
+    '母图存于 tools/art/masters/（cat-sheet.png、cat-fire-out.png，帧坐标见 cat-all-sprites-atlas.json），',
+    '构建期脚本只读 PNG，不引入任何 SVG 依赖。',
+    '',
+  ].join('\n');
+  writeFileSync(CAT_LICENSE_OUT, catLicense);
+
   for (const frame of frames) {
     report.push(
       [
@@ -467,6 +563,7 @@ function main() {
   );
   console.log(`坐标：public/sprites/frames.css（${frames.length} 条规则）`);
   console.log(`许可：public/sprites/LICENSE-wheatcloudsleep.txt 在位（${license.length} 字节，MIT / © 2022 WheatBox）`);
+  console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫与篝火为项目自绘，MIT）`);
 }
 
 main();

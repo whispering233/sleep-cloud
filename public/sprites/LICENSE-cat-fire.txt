@@ -1,0 +1,7 @@
+素材来源与用途：atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4）与
+篝火（fire-1…6、fire-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可
+（原文见仓库根目录 LICENSE），用于世界层的床尾猫与床头篝火。
+
+生成方式：先写成 SVG，再一次性离线栅格化为 PNG（去纸底 / 去注记 / 去格框，density 72）；
+母图存于 tools/art/masters/（cat-sheet.png、cat-fire-out.png，帧坐标见 cat-all-sprites-atlas.json），
+构建期脚本只读 PNG，不引入任何 SVG 依赖。
