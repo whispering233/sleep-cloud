@@ -10,7 +10,7 @@ import {
   WALL_WIDTH,
   ZOOM_TEXT_MIN,
 } from '../../shared/constants';
-import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
+import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, reserveBlockOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { errorTextFor } from '../error-text';
@@ -24,6 +24,7 @@ import {
   bedLook,
   bedMarkerOf,
   cameraBounds,
+  campfireLit,
   clampZoom,
   followStep,
   isFaded,
@@ -41,14 +42,18 @@ import {
   COLORS,
   SPRITES_KEY,
   createBedView,
+  createCampfireAnims,
+  createCampfireView,
   createPersonView,
   hideBed,
+  hideCampfire,
   paintPerson,
   placeBed,
+  placeCampfire,
   setPersonChat,
   setPersonName,
 } from './views';
-import type { BedView, PersonView } from './views';
+import type { BedView, CampfireView, PersonView } from './views';
 
 /**
  * 世界画布（Phaser 4）。**渲染层是一个纯函数**：状态快照 → 画出来（见 `docs/design/architecture.md` §2.3）。
@@ -143,6 +148,8 @@ class WorldScene extends Phaser.Scene {
   /** 对象池：只装得下同屏的那几十张床，与总床数无关 */
   private readonly beds: BedView[] = [];
   private readonly people = new Map<string, PersonView>();
+  /** 我床头那堆火：全场只有一张（我的那张床），不进对象池 */
+  private campfire: CampfireView | undefined;
   /** 手指状态：单指拖拽平移；两根手指 = 缩放（见「输入」一节） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
   /** 本次手势里出现过第二根手指：出现过就不算轻点（否则捏合收尾会误发一次走路） */
@@ -188,6 +195,9 @@ class WorldScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.outside);
     this.resizeToHost();
     this.ensurePool();
+    // 篝火只有一摊（我的床头）：动画注册一次、Sprite 建一次，画不画 / 亮不亮由 `syncCampfire` 逐帧决定
+    createCampfireAnims(this);
+    this.campfire = createCampfireView(this);
     this.observer = new ResizeObserver(() => this.resizeToHost());
     this.observer.observe(this.host);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -219,6 +229,7 @@ class WorldScene extends Phaser.Scene {
     this.wasOnline = online;
 
     this.syncBeds(state);
+    this.syncCampfire(state);
     // **一帧只取一次位**：渲染与跟随共用这个点（各取一次就会出现「相机追着上一帧的点」的稳态锯齿）
     const selfPoint = this.selfPoint(state, serverNow);
     this.syncPeople(state, serverNow, selfPoint);
@@ -312,6 +323,38 @@ class WorldScene extends Phaser.Scene {
       }
     }
     for (let i = used; i < this.beds.length; i += 1) hideBed(this.beds[i] as BedView);
+  }
+
+  /**
+   * 我床头那摊篝火（`docs/design/70-reserve-decor.md` §2）：**只有我自己看得见**——不进 `people`、
+   * 不广播，服务端不知道它存在。不画的情形：没有我、没有床、那张床不在视野里（与床位同一套裁剪口径）。
+   *
+   * 「我躺的那张床」：在床上就是那张（`bedNo`），在厅里走时是我拥有的那张（`ownedBedNo`）——
+   * 换床必然先起身，所以搬过去的那一刻它本来就是熄灭的，不存在「火苗搬家」（§2.1）。
+   *
+   * 逐帧状态只住在这一层（场景字段 + 视图签名）：不写 store、不触发 React 重渲染（`AGENTS.md` 硬纪律 17）。
+   */
+  private syncCampfire(state: ClientState): void {
+    const fire = this.campfire;
+    if (!fire) return;
+    const me = state.me;
+    const bedNo = me === undefined ? undefined : me.state === 'roaming' ? me.ownedBedNo : me.bedNo;
+    // 锚点 = 床头块的**底边中心**（素材锚点也是墨迹底边中心，火堆就压在那条线上）；
+    // 余量沿用床位那一级的 `CULL_MARGIN_PX`，所以「床画不画」与「火画不画」不会在边界上打架
+    const head = bedNo === undefined ? undefined : reserveBlockOf(bedNo, 'head');
+    const view = this.viewRect();
+    if (
+      head === undefined ||
+      head.x + head.width < view.x - CULL_MARGIN_PX ||
+      head.x > view.x + view.width + CULL_MARGIN_PX ||
+      head.y + head.height < view.y - CULL_MARGIN_PX ||
+      head.y > view.y + view.height + CULL_MARGIN_PX
+    ) {
+      hideCampfire(fire);
+      return;
+    }
+    const y = head.y + head.height;
+    placeCampfire(fire, { x: head.x + head.width / 2, y, depth: DEPTH.person + y, lit: campfireLit(me) });
   }
 
   private syncPeople(state: ClientState, serverNow: number, selfPoint: Point | undefined): void {

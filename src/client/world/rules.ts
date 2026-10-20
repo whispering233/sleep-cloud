@@ -1,5 +1,5 @@
 import { ZOOM_MIN } from '../../shared/constants';
-import type { Appearance, Person, PersonState } from '../../shared/protocol';
+import type { Appearance, Person, PersonState, SelfPerson } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
 
@@ -121,6 +121,15 @@ export function bedMarkerOf(input: {
 /** 站着的小人：外观（`boy` / `girl`）→ 贴图。**不做逐帧行走动画**，走动靠极轻微的缩放摆动。 */
 export function personFrame(appearance: Appearance): PersonFrame {
   return appearance === 'girl' ? 'girl_stand' : 'boy_stand';
+}
+
+/**
+ * 我床头那堆火此刻燃不燃（`docs/design/70-reserve-decor.md` §2.1）：**跟着我的显示态**走——
+ * 躺着 / 睡着才燃，漫游 / 睡痕（以及还没有我）都熄。熄是**状态**不是消失：熄了留柴、灰与石圈，
+ * 与「床有人 / 没人」靠形态而不是靠消失表达是同一条语言。
+ */
+export function campfireLit(me: SelfPerson | undefined): boolean {
+  return me !== undefined && (me.state === 'lying' || me.state === 'asleep');
 }
 
 /**
