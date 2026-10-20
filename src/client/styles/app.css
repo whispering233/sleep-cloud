@@ -699,6 +699,47 @@
     letter-spacing: var(--tracking-label);
   }
 
+  /* ——— 说明面板（复用入场层那套壳与卡片，只补正文排版） ——— */
+
+  .about-intro {
+    margin: 0;
+    color: var(--color-neutral);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  .about-section {
+    display: grid;
+    gap: var(--spacing-xs);
+  }
+
+  .about-heading {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  .about-items {
+    display: grid;
+    gap: var(--spacing-xs);
+    margin: 0;
+    padding: 0;
+    color: var(--color-neutral-muted);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    list-style: none;
+  }
+
+  /* 「·」是列表标记，不是正文：读屏不该把它念出来 */
+  .about-items li::before {
+    content: '·';
+    margin-inline-end: var(--spacing-xs);
+  }
+
   /* ——— 形象二选一 ——— */
 
   .appearance-row {

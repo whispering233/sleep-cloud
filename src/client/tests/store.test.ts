@@ -16,7 +16,9 @@ import {
   applyState,
   applyWhisper,
   clearSelection,
+  closeAbout,
   getState,
+  openAbout,
   selectPerson,
   setBedDirection,
   setComposer,
@@ -425,5 +427,27 @@ describe('输入会话', () => {
     setComposer({ kind: 'focus-in' });
     setComposer({ kind: 'offline' });
     expect(getState().composer).toBe('idle');
+  });
+});
+
+describe('说明面板', () => {
+  it('初值按已读判定给自动弹（测试机没有 storage = 缺键）；打开记原因，关闭只清状态', () => {
+    expect(getState().aboutOpen).toBe('auto');
+
+    let notified = 0;
+    const off = subscribe(() => {
+      notified += 1;
+    });
+
+    openAbout('manual');
+    openAbout('manual');
+    expect(getState().aboutOpen).toBe('manual');
+    expect(notified).toBe(1);
+
+    closeAbout();
+    closeAbout();
+    expect(getState().aboutOpen).toBeNull();
+    expect(notified).toBe(2);
+    off();
   });
 });

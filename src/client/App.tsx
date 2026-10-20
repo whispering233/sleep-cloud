@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
 import { setRain as setRainAudio } from './audio';
+import { AboutOverlay } from './components/AboutOverlay';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
@@ -13,6 +14,7 @@ import { WorldCanvas } from './components/WorldCanvas';
 import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
 import { getState, setComposer, subscribe } from './store';
+import type { AboutSource } from './store';
 import { connectHall } from './ws';
 
 /**
@@ -25,6 +27,8 @@ export function App() {
   /** 入场前的拦截（`/api/me` 的 `2002` 厅满 / `5002` 封禁）：不让人建连再被踢 */
   const [entryBlock, setEntryBlock] = useState<EntryBlock | undefined>(undefined);
   const [entered, setEntered] = useState(false);
+  /** 说明面板：`null` = 关着，否则是打开的原因（自动 / 手动） */
+  const [aboutOpen, setAboutOpen] = useState<AboutSource | null>(() => getState().aboutOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +42,14 @@ export function App() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // 说明面板的开关只改 store 那一个字段（`aboutOpen`）：App 只负责按它选页面态
+  useEffect(() => {
+    setAboutOpen(getState().aboutOpen);
+    return subscribe((state) => {
+      setAboutOpen((prev) => (prev === state.aboutOpen ? prev : state.aboutOpen));
+    });
   }, []);
 
   const layoutVersion = session?.layoutVersion;
@@ -95,13 +107,14 @@ export function App() {
           </div>
 
           <ChatPanel />
-
-          {/* 三档减光：入场层不参与档位，所以只挂在 `entered` 之后 */}
-          <ToneLayer />
         </>
       ) : null}
 
-      {session && !entered ? (
+      {/* 页面态顺序：说明面板 → 入场层 → 大厅（面板开着时入场层不显示）。层级靠 DOM 顺序、
+          不加 `z-index`：它在聊天面板之后、`tone-layer` 之前，所以人工路径下三档减光照旧盖得住它 */}
+      {session && aboutOpen ? <AboutOverlay source={aboutOpen} /> : null}
+
+      {session && !entered && !aboutOpen ? (
         <EntryOverlay
           session={session}
           block={entryBlock}
@@ -111,6 +124,9 @@ export function App() {
           }}
         />
       ) : null}
+
+      {/* 三档减光：入场层不参与档位，所以只挂在 `entered` 之后 */}
+      {entered ? <ToneLayer /> : null}
     </div>
   );
 }
