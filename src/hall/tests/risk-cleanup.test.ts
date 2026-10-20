@@ -14,15 +14,20 @@ import { freshSql, insertBed, rawRow } from './sqlite';
 const NOW = 1_700_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;
 
-/** 一条身份（三个来源列都写满），`first_seen_at` 与 `last_seen_at` 都落在 `lastSeenAt`。 */
+/** 一条身份（三个来源列与昵称都写满），`first_seen_at` 与 `last_seen_at` 都落在 `lastSeenAt`。 */
 function identitySeenAt(sql: SqlStorage, userId: string, lastSeenAt: number): void {
-  recordIdentity(sql, { userId, ip: '1.1.1.1', country: 'CN', uaHash: '0123456789abcdef' }, lastSeenAt);
+  recordIdentity(
+    sql,
+    { userId, nickname: '夜猫', ip: '1.1.1.1', country: 'CN', uaHash: '0123456789abcdef' },
+    lastSeenAt,
+  );
 }
 
 function identityRow(sql: SqlStorage, userId: string): Record<string, unknown> | undefined {
   return sql
     .exec(
-      `SELECT user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity WHERE user_id = ?`,
+      `SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash
+         FROM identity WHERE user_id = ?`,
       userId,
     )
     .toArray()[0];
@@ -39,8 +44,8 @@ function auditValues(sql: SqlStorage): string[] {
   return listAudit(sql, 10).map((row) => row.value);
 }
 
-describe('forgetStaleSources：只清三个来源列，绝不删行', () => {
-  it('89 天无访问 → 三列仍在', () => {
+describe('forgetStaleSources：只清三个来源列与昵称，绝不删行', () => {
+  it('89 天无访问 → 各列仍在', () => {
     const sql = freshSql();
     identitySeenAt(sql, 'u_a', NOW - 89 * DAY);
 
@@ -48,6 +53,7 @@ describe('forgetStaleSources：只清三个来源列，绝不删行', () => {
 
     expect(identityRow(sql, 'u_a')).toEqual({
       user_id: 'u_a',
+      nickname: '夜猫',
       first_seen_at: NOW - 89 * DAY,
       last_seen_at: NOW - 89 * DAY,
       last_ip: '1.1.1.1',
@@ -56,7 +62,7 @@ describe('forgetStaleSources：只清三个来源列，绝不删行', () => {
     });
   });
 
-  it('91 天无访问 → 三列置空，行与 user_id / first_seen_at / last_seen_at 都不变', () => {
+  it('91 天无访问 → 各列（含昵称）置空，行与 user_id / first_seen_at / last_seen_at 都不变', () => {
     const sql = freshSql();
     identitySeenAt(sql, 'u_a', NOW - 91 * DAY);
 
@@ -64,6 +70,7 @@ describe('forgetStaleSources：只清三个来源列，绝不删行', () => {
 
     expect(identityRow(sql, 'u_a')).toEqual({
       user_id: 'u_a',
+      nickname: null,
       first_seen_at: NOW - 91 * DAY,
       last_seen_at: NOW - 91 * DAY,
       last_ip: null,

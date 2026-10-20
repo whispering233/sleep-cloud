@@ -74,17 +74,22 @@ describe('recordIdentity：入场台账 UPSERT', () => {
   const identityRows = (sql: SqlStorage) =>
     sql
       .exec<{ [key: string]: string | number | null }>(
-        'SELECT user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity ORDER BY user_id',
+        'SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity ORDER BY user_id',
       )
       .toArray();
 
-  it('新行：首见与最近一见都是此刻，来源三项照写', () => {
+  it('新行：首见与最近一见都是此刻，来源三项与昵称照写', () => {
     const sql = freshSql();
-    recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1', country: 'CN', uaHash: '0123456789abcdef' }, NOW);
+    recordIdentity(
+      sql,
+      { userId: 'u_a', nickname: '夜猫', ip: '1.1.1.1', country: 'CN', uaHash: '0123456789abcdef' },
+      NOW,
+    );
 
     expect(identityRows(sql)).toEqual([
       {
         user_id: 'u_a',
+        nickname: '夜猫',
         first_seen_at: NOW,
         last_seen_at: NOW,
         last_ip: '1.1.1.1',
@@ -94,19 +99,42 @@ describe('recordIdentity：入场台账 UPSERT', () => {
     ]);
   });
 
-  it('同一个 user 换 IP：首见不动，最近一见与来源刷新', () => {
+  it('同一个 user 换 IP 与昵称：首见不动，其余刷新', () => {
     const sql = freshSql();
-    recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1', country: 'CN', uaHash: 'a' }, NOW);
-    recordIdentity(sql, { userId: 'u_a', ip: '2.2.2.2', country: 'JP', uaHash: 'b' }, NOW + 1_000);
+    recordIdentity(sql, { userId: 'u_a', nickname: '夜猫', ip: '1.1.1.1', country: 'CN', uaHash: 'a' }, NOW);
+    recordIdentity(
+      sql,
+      { userId: 'u_a', nickname: '早睡', ip: '2.2.2.2', country: 'JP', uaHash: 'b' },
+      NOW + 1_000,
+    );
 
     expect(identityRows(sql)).toEqual([
       {
         user_id: 'u_a',
+        nickname: '早睡',
         first_seen_at: NOW,
         last_seen_at: NOW + 1_000,
         last_ip: '2.2.2.2',
         last_country: 'JP',
         ua_hash: 'b',
+      },
+    ]);
+  });
+
+  it('没带昵称的那次入场不抹掉旧值（只刷新最近一见）', () => {
+    const sql = freshSql();
+    recordIdentity(sql, { userId: 'u_a', nickname: '夜猫' }, NOW);
+    recordIdentity(sql, { userId: 'u_a' }, NOW + 1_000);
+
+    expect(identityRows(sql)).toEqual([
+      {
+        user_id: 'u_a',
+        nickname: '夜猫',
+        first_seen_at: NOW,
+        last_seen_at: NOW + 1_000,
+        last_ip: null,
+        last_country: null,
+        ua_hash: null,
       },
     ]);
   });

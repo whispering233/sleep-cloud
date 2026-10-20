@@ -84,6 +84,7 @@ const NOW = Date.now();
 
 interface IdentityItem {
   userId: string;
+  nickname: string | null;
   lastSeenAt: number;
   lastIp: string | null;
   bedNo: number | null;
@@ -162,6 +163,25 @@ test('按 IP 反查只回该 IP 的行', async () => {
   const page = await pageOf(await adminGet(hall, '/admin/identities?ip=1.1.1.1'));
   expect(page.items.map((item) => item.userId).sort()).toEqual(['u_a', 'u_b']);
   expect(page.items.every((item) => item.lastIp === '1.1.1.1')).toBe(true);
+});
+
+test('按昵称子串反查：命中 / 不命中，`%` 只是个百分号', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', nickname: '夜猫子' }, NOW + 3);
+  recordIdentity(sql, { userId: 'u_b', nickname: '早睡' }, NOW + 2);
+  recordIdentity(sql, { userId: 'u_c', nickname: '100%的人' }, NOW + 1);
+
+  const hit = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('夜猫')}`));
+  expect(hit.items.map(({ userId, nickname }) => ({ userId, nickname }))).toEqual([
+    { userId: 'u_a', nickname: '夜猫子' },
+  ]);
+
+  const miss = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('猫夜')}`));
+  expect(miss.items).toEqual([]);
+
+  // 不转义的话 `%` 会当成通配符，把三条全返回
+  const percent = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('%')}`));
+  expect(percent.items.map((item) => item.userId)).toEqual(['u_c']);
 });
 
 test('bedNo 是显示床号（内部 0 → 1），online 只对已握手的连接为真', async () => {

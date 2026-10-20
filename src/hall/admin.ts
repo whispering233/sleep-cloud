@@ -91,6 +91,7 @@ function identityView(row: IdentityRecord, ctx: AdminContext, now: number): Reco
   const bedNo = findOwnedBed(ctx.sql, row.userId, now)?.bedNo;
   return {
     userId: row.userId,
+    nickname: row.nickname,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     lastIp: row.lastIp,
@@ -110,10 +111,12 @@ function identitiesPage(url: URL, ctx: AdminContext): Response {
   // 而静默当成第一页会让「下一页」原地打转（见 `docs/api/30-api-admin.md` §4）。
   if (before !== undefined && beforeId === undefined) return badRequest();
   const ip = url.searchParams.get('ip') ?? undefined;
+  const name = url.searchParams.get('name') ?? undefined;
   // 多取一行只用来判断「还有没有下一页」
   const rows = listIdentities(ctx.sql, {
     limit: limit + 1,
     ...(ip === undefined ? {} : { ip }),
+    ...(name === undefined ? {} : { name }),
     ...(before === undefined || beforeId === undefined ? {} : { before, beforeId }),
   });
   const now = Date.now();

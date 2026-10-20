@@ -126,7 +126,8 @@
           <h2>台账</h2>
           <div class="bar">
             <label for="ipFilter">按 IP 反查<input id="ipFilter" placeholder="1.2.3.4" autocomplete="off" /></label>
-            <button type="button" id="ipSearch">反查</button>
+            <label for="nameFilter">按昵称搜<input id="nameFilter" placeholder="名字的一部分" autocomplete="off" /></label>
+            <button type="button" id="ipSearch">搜索</button>
             <button type="button" id="ipClear">清除</button>
           </div>
           <div class="pager">
@@ -137,6 +138,7 @@
             <thead>
               <tr>
                 <th>身份</th>
+                <th>昵称</th>
                 <th>最近出现</th>
                 <th>IP</th>
                 <th>国家</th>
@@ -212,6 +214,7 @@
       const sections = document.getElementById('sections');
 
       const ipFilter = document.getElementById('ipFilter');
+      const nameFilter = document.getElementById('nameFilter');
       const identityRows = document.getElementById('identities');
       const identitiesPrev = document.getElementById('identitiesPrev');
       const identitiesNext = document.getElementById('identitiesNext');
@@ -303,6 +306,7 @@
         const tr = document.createElement('tr');
         tr.append(
           cell(item.userId),
+          cell(item.nickname ?? '—'),
           cell(fmtTime(item.lastSeenAt)),
           cell(item.lastIp ?? '—'),
           cell(item.lastCountry ?? '—'),
@@ -351,6 +355,8 @@
         const params = new URLSearchParams({ limit: String(PAGE) });
         const ip = ipFilter.value.trim();
         if (ip) params.set('ip', ip);
+        const name = nameFilter.value.trim();
+        if (name) params.set('name', name);
         if (cursor) {
           params.set('before', String(cursor.before));
           params.set('beforeId', cursor.beforeId);
@@ -367,7 +373,7 @@
         if (data.next) identityCursors[index + 1] = data.next;
         identitiesPrev.disabled = index === 0;
         identitiesNext.disabled = !data.next;
-        render(identityRows, data.items, identityRow, 7);
+        render(identityRows, data.items, identityRow, 8);
       }
 
       async function loadBlocks() {
@@ -494,6 +500,7 @@
       });
       document.getElementById('ipClear').addEventListener('click', () => {
         ipFilter.value = '';
+        nameFilter.value = '';
         identityCursors = [null];
         void loadIdentities(0);
       });

@@ -46,6 +46,7 @@ export const META_KEYS = { bedCount: 'bed_count', dailyWakeAt: 'daily_wake_at' }
  */
 export const IDENTITY_TABLE_SQL = `CREATE TABLE IF NOT EXISTS identity (
   user_id TEXT PRIMARY KEY,
+  nickname TEXT,
   first_seen_at INTEGER NOT NULL,
   last_seen_at INTEGER NOT NULL,
   last_ip TEXT,

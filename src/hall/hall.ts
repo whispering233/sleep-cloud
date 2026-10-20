@@ -128,6 +128,13 @@ export class Hall extends DurableObject<Env> {
     for (const statement of BED_INDEX_SQL) sql.exec(statement);
     sql.exec(META_TABLE_SQL);
     sql.exec(IDENTITY_TABLE_SQL);
+    try {
+      // 已部署的库不会被 `CREATE TABLE IF NOT EXISTS` 改动：新列得在表后面补一次。
+      // 重复加列是一种错误（`duplicate column name`），真语法错也会被这里吞掉——靠单测钉住列真的可读可写。
+      sql.exec('ALTER TABLE identity ADD COLUMN nickname TEXT');
+    } catch {
+      // 列已经在了
+    }
     for (const statement of IDENTITY_INDEX_SQL) sql.exec(statement);
     sql.exec(BLOCK_TABLE_SQL);
     sql.exec(ADMIN_AUDIT_TABLE_SQL);
@@ -249,7 +256,18 @@ export class Hall extends DurableObject<Env> {
           return;
         }
         // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」
-        recordIdentity(this.ctx.storage.sql, connection, now);
+        recordIdentity(
+          this.ctx.storage.sql,
+          {
+            userId: connection.userId,
+            // 走到这里昵称已经过入场层校验：台账里的那一份是运维认人的快照（见 `docs/db/schema.md` §4.1）
+            nickname: connection.name,
+            ip: connection.ip,
+            country: connection.country,
+            uaHash: connection.uaHash,
+          },
+          now,
+        );
 
         const ready: ConnectionState = { ...resumed, ready: true };
         // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）

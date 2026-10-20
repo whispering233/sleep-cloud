@@ -19,6 +19,8 @@ export type BlockKind = 'user' | 'ip';
  */
 export interface EntrySource {
   userId: string;
+  /** 最近一次入场用的昵称（已经过入场层的校验）。 */
+  nickname?: string | null;
   ip?: string | null;
   country?: string | null;
   uaHash?: string | null;
@@ -77,19 +79,22 @@ export function blockStateOf(sql: SqlStorage, source: EntrySource, now: number):
 }
 
 /**
- * 入场台账：`first_seen_at` 只在第一次写，其余四项每次刷新。
+ * 入场台账：`first_seen_at` 只在第一次写，其余各项每次刷新。
  * 来源缺失时写 `null`——与「90 天留存期被清空」是同一种空值语义（见 `docs/db/schema.md` §4.1）。
+ * 昵称缺失时**保留旧值**：不该因为这一次没带名字，就抹掉上次认得出来的那个人。
  */
 export function recordIdentity(sql: SqlStorage, source: EntrySource, now: number): void {
   sql.exec(
-    `INSERT INTO identity (user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO identity (user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
+       nickname = COALESCE(excluded.nickname, identity.nickname),
        last_seen_at = excluded.last_seen_at,
        last_ip = excluded.last_ip,
        last_country = excluded.last_country,
        ua_hash = excluded.ua_hash`,
     source.userId,
+    source.nickname ?? null,
     now,
     now,
     source.ip ?? null,
@@ -257,13 +262,14 @@ export function hasBlock(sql: SqlStorage, kind: BlockKind, value: string): boole
 }
 
 /**
- * 来源信息过期：超过留存期的行把三个来源列置空，**行与 `user_id` / `first_seen_at` 都不动**。
+ * 来源信息过期：超过留存期的行把三个来源列与昵称置空，**行与 `user_id` / `first_seen_at` 都不动**。
  * `IS NOT NULL` 那一条只是免得每晚重写一遍已经清空过的行（同一个值再写一次也算一次写）。
  */
 export function forgetStaleSources(sql: SqlStorage, now: number): void {
   sql.exec(
-    `UPDATE identity SET last_ip = NULL, last_country = NULL, ua_hash = NULL
-      WHERE last_seen_at < ? AND (last_ip IS NOT NULL OR last_country IS NOT NULL OR ua_hash IS NOT NULL)`,
+    `UPDATE identity SET last_ip = NULL, last_country = NULL, ua_hash = NULL, nickname = NULL
+      WHERE last_seen_at < ?
+        AND (last_ip IS NOT NULL OR last_country IS NOT NULL OR ua_hash IS NOT NULL OR nickname IS NOT NULL)`,
     now - IDENTITY_FORGET_MS,
   );
 }
@@ -284,6 +290,7 @@ export function purgeExpiredAudit(sql: SqlStorage, now: number): void {
 /** 一条身份（`identity` 是**来源的载体，不是用户档案**，见 `docs/db/schema.md` §4.1）。 */
 export interface IdentityRecord {
   userId: string;
+  nickname: string | null;
   firstSeenAt: number;
   lastSeenAt: number;
   lastIp: string | null;
@@ -294,6 +301,7 @@ export interface IdentityRecord {
 interface RawIdentityRow {
   [key: string]: string | number | null;
   user_id: string;
+  nickname: string | null;
   first_seen_at: number;
   last_seen_at: number;
   last_ip: string | null;
@@ -304,6 +312,7 @@ interface RawIdentityRow {
 function toIdentity(row: RawIdentityRow): IdentityRecord {
   return {
     userId: row.user_id,
+    nickname: row.nickname,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     lastIp: row.last_ip,
@@ -312,13 +321,18 @@ function toIdentity(row: RawIdentityRow): IdentityRecord {
   };
 }
 
+/** `LIKE '%…%'` 的子串匹配：把 `\` `%` `_` 转义掉，用户输 `%` 就只是个百分号（`100%` 不该命中全表）。 */
+function likeSubstring(value: string): string {
+  return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
+
 /**
  * 台账一页：`last_seen_at DESC, user_id DESC`。**复合游标**是必须的——只按时刻分页会漏掉
- * 同一毫秒的那些行（见 `docs/api/30-api-admin.md` §4）。`ip` 与游标可以同时给。
+ * 同一毫秒的那些行（见 `docs/api/30-api-admin.md` §4）。`ip` / `name` 与游标可以同时给。
  */
 export function listIdentities(
   sql: SqlStorage,
-  query: { limit: number; ip?: string; before?: number; beforeId?: string },
+  query: { limit: number; ip?: string; name?: string; before?: number; beforeId?: string },
 ): IdentityRecord[] {
   // 两个游标值要么都给、要么都不给：只给一个时无法定位「从哪里接着看」
   const cursor =
@@ -326,14 +340,18 @@ export function listIdentities(
       ? { before: query.before, beforeId: query.beforeId }
       : { before: null, beforeId: null };
   const ip = query.ip ?? null;
+  const name = query.name === undefined ? null : likeSubstring(query.name);
   return sql
     .exec<RawIdentityRow>(
-      `SELECT user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity
+      `SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity
         WHERE (? IS NULL OR last_ip = ?)
+          AND (? IS NULL OR nickname LIKE ? ESCAPE '\\')
           AND (? IS NULL OR last_seen_at < ? OR (last_seen_at = ? AND user_id < ?))
         ORDER BY last_seen_at DESC, user_id DESC LIMIT ?`,
       ip,
       ip,
+      name,
+      name,
       cursor.before,
       cursor.before,
       cursor.before,
@@ -348,7 +366,7 @@ export function listIdentities(
 export function findIdentity(sql: SqlStorage, userId: string): IdentityRecord | undefined {
   const row = sql
     .exec<RawIdentityRow>(
-      'SELECT user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity WHERE user_id = ?',
+      'SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity WHERE user_id = ?',
       userId,
     )
     .toArray()[0];
@@ -365,7 +383,7 @@ export function listIpPeers(
 ): IdentityRecord[] {
   return sql
     .exec<RawIdentityRow>(
-      `SELECT user_id, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity
+      `SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity
         WHERE last_ip = ? AND user_id <> ? ORDER BY last_seen_at DESC, user_id DESC LIMIT ?`,
       ip,
       excludeUserId,
