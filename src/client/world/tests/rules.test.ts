@@ -127,10 +127,10 @@ describe('「还在走」的判据（渲染的摆动与相机跟随共用）', (
 });
 
 describe('名字、不透明度与睡痕淡出', () => {
-  it('名字只画在有人的床上，且自己不画', () => {
+  it('名字只画在别人身上（床上与走动都一样），自己一律不画', () => {
     expect(shouldDrawName(sleeper, 'u_me')).toBe(true);
     expect(shouldDrawName(sleeper, 'u_1')).toBe(false);
-    expect(shouldDrawName(walker, 'u_me')).toBe(false);
+    expect(shouldDrawName(walker, 'u_me')).toBe(true);
   });
 
   it('睡痕的小人整体更暗', () => {
