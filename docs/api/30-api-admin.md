@@ -1,0 +1,161 @@
+# 接口设计：后台管理
+
+> 风控语义（封禁的维度、时长、提示口径、留存）见 `../design/70-privacy-risk.md`；本文只管**接口形态与字段**。
+
+## 1. 形态与隔离
+
+| 项 | 决定 | 理由 |
+| :--- | :--- | :--- |
+| 部署形态 | **同一个 Worker 的子路由**：页面壳 `/admin.html`（静态文件，随 `public/` 进 `dist`），数据接口 `/api/admin/*` | 不需要第二个部署、第二个域名、跨域 cookie。页面壳**不含任何数据**，被公开下载无害（等同任何登录页） |
+| 鉴权 | 一个平台密钥 `ADMIN_TOKEN` → 登录接口换一枚**独立的**签名 cookie `sc_admin` | 与 `sc_session` 名字、用途、值域**全部不共享**：一个用户的普通会话 cookie 永远不等于后台权限 |
+| 未授权 | **HTTP 401**（不是 `{code:"…"}`） | 错误码表是**用户面**契约（`error-code.md` §1：`msg` 面向开发者、文案由前端按 `code` 映射）。运维面混进 `5xxx` 会让那一段的意义变糊。**这是本项目唯一的契约例外，只限 `/api/admin/*`** |
+| 成功响应 | 直接返回数据对象（**不套** `{code,msg,data}`） | 同上，同一处例外 |
+| 视觉 | **不套前台视觉令牌**（`../ui/DESIGN.md` 不适用于后台） | 后台是运维面，不是产品面。改用前台令牌会把 `DESIGN.md` 的 lint 绑定到一个不面向用户的页面 |
+| 操作者 | 首版恒为 `admin`（单令牌，没有账号表） | 只有一个人用。出现第二个操作者时才需要账号与角色（见 `../design/backlog.md`） |
+
+**为什么不做「独立域名 + 独立 Worker」**：隔离部署面有真实价值，但代价是第二次部署、第二个 secret、跨对象访问。而现在页面壳本来就无数据，隔离买到的只是「后台 URL 不被发现」——那不是安全边界。
+
+## 2. 鉴权
+
+### 2.1 登录
+
+```text
+POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
+→ 200  Set-Cookie: sc_admin=…（HttpOnly / SameSite=Strict / Secure / 24 小时）
+→ 401  token 不对
+→ 429  同一 IP 一分钟内超过 5 次尝试
+```
+
+| 细节 | 决定 |
+| :--- | :--- |
+| 比较方式 | **常量时间比较**（长度先比，再逐字节异或累加），不走 `===` |
+| cookie 内容 | 签名 cookie，载荷只有两项：`fp` = `SHA-256(ADMIN_TOKEN)` 的前 8 个十六进制字符、`iat` = 签发时刻。**token 本身不进客户端** |
+| 为什么带 `fp` | 换 `ADMIN_TOKEN` 时旧 cookie 立刻失效——否则「撤权」只能等 24 小时过期 |
+| 会话时长 | 24 小时（过期重新登录一次，成本可忽略） |
+| 登录限速 | **同一 IP 每分钟 5 次**，超限 429。计数放内存（Worker 是无状态的多实例，这个计数只防在线爆破，不追求精确）；**不牵 `backlog.md` 里的按 IP 限流** |
+| IP 来源 | 与风控同一条读取路径（平台头）。**取不到 IP 时按「不限速」处理并记一条日志**：本地开发没有这个头，硬拦会让本地无法登录 |
+
+### 2.2 中间件
+
+`/api/admin/*` 除 `login` 外全部先过一道中间件：读 `sc_admin` → 验签 → 核对 `fp` 与当前 `ADMIN_TOKEN` 一致 → 核对未过期。**任一不满足 → 401，不返回任何数据**。
+
+## 3. 接口清单
+
+| 方法 | 路径 | 用途 |
+| :--- | :--- | :--- |
+| POST | `/api/admin/login` | 换 `sc_admin` |
+| POST | `/api/admin/logout` | 清 `sc_admin`（HttpOnly，前端删不掉，所以需要接口） |
+| GET | `/api/admin/identities` | 访客台账（分页；可按 IP 精确反查） |
+| GET | `/api/admin/identities/:userId` | 单个身份详情 |
+| GET | `/api/admin/blocks` | 黑名单（分页） |
+| POST | `/api/admin/blocks` | 封禁（新增或改判） |
+| DELETE | `/api/admin/blocks/:kind/:value` | 解封 |
+| GET | `/api/admin/audit` | 审计（分页） |
+
+**没有的接口**：删除用户数据、改昵称/形象、禁言、举报受理、素材上传。前四项没有需求方，最后一项没有管线（见 `../design/backlog.md`）。
+
+## 4. 分页
+
+| 项 | 约定 |
+| :--- | :--- |
+| 请求 | `?limit=50&before=<排序键>`，`limit` 默认 50、上限 100 |
+| 响应 | `{ "items": [...], "nextBefore": <排序键或 null> }`。`null` = 没有下一页 |
+| 排序键 | `identities` → `last_seen_at`；`blocks` → `created_at`；`audit` → 自增主键 `id`。**一律倒序** |
+| 理由 | 不用 offset：`before` 分页在「边看边有人进出」时不会翻出重复行，也不依赖行数 |
+
+## 5. 接口详情
+
+### 5.1 `GET /api/admin/identities`
+
+查询参数：`limit` / `before` / `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）。
+
+**`ip` 与 `before` 可以同时给**：按 IP 反查时也要能翻页。
+
+| 字段 | 是否必选 | 数据类型 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `userId` | 是 | string | 身份（L1） |
+| `firstSeenAt` / `lastSeenAt` | 是 | number | epoch 毫秒 |
+| `lastIp` | 否 | string | `null` = 已过 90 天留存期被清空 |
+| `lastCountry` | 否 | string | ISO-3166-1 α2；`"T1"` = TOR |
+| `uaHash` | 否 | string | 16 个十六进制字符 |
+| `bedNo` | 否 | number | **显示床号**（内部值 +1）；`null` = 当前无床 |
+| `online` | 是 | boolean | 此刻是否有活着的连接 |
+| `block` | 否 | object | 命中封禁时给 `{ kind, untilAt, reason }`，否则 `null` |
+
+`bedNo` 与 `online` 需要逐行查一次床 + 一次连接集合：列表 50 行 = 50 次单行读。**这个成本是刻意的**——「这人现在有没有床、在不在」正是台账最要判读的两件事，为省 50 次读去多点一次反而更差。
+
+### 5.2 `GET /api/admin/identities/:userId`
+
+在 5.1 的字段之外，多两项：
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `ipHistory` | 与该身份**同一个 `last_ip` 的其他身份**（最多 20 条，只给 `userId` / `lastSeenAt` / `block`）。这是「清 cookie 换身份」唯一的可见线索 |
+| `audit` | 针对该身份的封禁/解封记录（最多 20 条） |
+
+`userId` 不存在 → **404**（不返回空对象：后台要能区分「查错了」与「没有这个人」）。
+
+### 5.3 `POST /api/admin/blocks`
+
+```json
+{ "kind": "user" | "ip", "value": "u_…" | "1.2.3.4", "untilAt": 1730000000000 | null, "reason": "刷屏" }
+```
+
+| 字段 | 是否必选 | 说明 |
+| :--- | :--- | :--- |
+| `kind` | 是 | `user` 或 `ip`，其他值 → 400 |
+| `value` | 是 | 对应的 userId / IP 字面量。**不校验存在性**：封一个没有记录的值也生效 |
+| `untilAt` | 否 | `null` 或缺省 = **永久**；必须是「现在之后」的毫秒数，否则 400（避免手滑填成过去时间，导致「点了封禁但没封上」） |
+| `reason` | 是 | **必填**（审计要它）。1~64 字符。**不下发给被封者** |
+
+响应：
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `block` | 落库后的 `{ kind, value, untilAt, reason, createdAt }` |
+| `created` | `false` = 覆盖了既有的一条（改判，不是新增） |
+| `affected` | `{ identities: n, online: m }`。**封 IP 时必须让操作者看见自己在封一片人**：`identities` = 该 IP 名下记录过的身份数，`online` = 此刻在线的连接数 |
+
+副作用（由厅执行，与写库在同一个对象里，见 `../design/70-privacy-risk.md` §5.3）：**遍历命中的在线连接并关闭**（`close(1008, 'blocked')`），写一条审计。
+
+### 5.4 `DELETE /api/admin/blocks/:kind/:value`
+
+| 响应 | 说明 |
+| :--- | :--- |
+| `{ "removed": true }` | 删掉了 |
+| `{ "removed": false }` | 本来就没有 |
+
+**没有 404**：解封是幂等动作，重复点不该报错。写一条审计。
+
+### 5.5 `GET /api/admin/audit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `id` | 自增主键 |
+| `at` | epoch 毫秒 |
+| `action` | `block` / `unblock` |
+| `kind` / `value` | 作用对象 |
+| `untilAt` | `null` = 永久 |
+| `reason` | 解封时也可能带一条说明 |
+| `actor` | 首版恒为 `"admin"` |
+
+## 6. 错误语义
+
+| 状态码 | 场景 |
+| :--- | :--- |
+| 200 | 成功（含「解封时本来就没有」） |
+| 400 | 参数非法（`kind` 不在枚举、`untilAt` 在过去、`reason` 空或超长） |
+| 401 | 未授权（无 cookie / 验签失败 / `fp` 不匹配 / 过期） |
+| 404 | `identities/:userId` 不存在 |
+| 429 | 登录尝试超限 |
+| 500 | 内部错误（日志留真实原因，响应不带细节） |
+
+**不返回任何用户面错误码**，也不复用 `error-code.md`。理由见 §1。
+
+## 7. 与前台的关系
+
+| 项 | 关系 |
+| :--- | :--- |
+| cookie | `sc_admin` 与 `sc_session` **互不影响**：有后台权限不代表有更好/更坏的玩家身份；反之后台权限也不能把 `sc_session` 换成别人的 |
+| 页面 | 后台页是独立静态文件，**不引入前台 React 应用**（不加载 Phaser、不连 WebSocket） |
+| 数据 | 后台只经 `/api/admin/*` 读写，**不直连厅的 SQLite**：写操作由厅对象执行，因为它持有连接集合与唯一权威 |
