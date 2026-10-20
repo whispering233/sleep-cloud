@@ -12,6 +12,8 @@ import {
 } from '../../shared/constants';
 import { bedNoAt, frontPointOf, levelIndexOfBedCount, nearestStreetPoint, positionOf, reserveBlockOf, scrollRegionOf, wallRegionOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
+import { advanceMover } from '../../shared/movement';
+import type { MoverState } from '../../shared/movement';
 import type { Person } from '../../shared/protocol';
 import { errorTextFor } from '../error-text';
 import { predictionPointAt } from '../prediction';
@@ -38,6 +40,7 @@ import {
   usableCenterOffset,
 } from './rules';
 import type { Occupant, PersonSpot, Size, ViewInsets } from './rules';
+import { PET_REPATH_PX, petAnimFor, petHomeOf, petPathFor, petShouldSleep, petSpawnPoint, petSpeedFor, petTargetFor } from './pet';
 import {
   COLORS,
   SPRITES_KEY,
@@ -45,15 +48,19 @@ import {
   createCampfireAnims,
   createCampfireView,
   createPersonView,
+  createPetAnims,
+  createPetView,
   hideBed,
   hideCampfire,
+  hidePet,
   paintPerson,
   placeBed,
   placeCampfire,
+  placePet,
   setPersonChat,
   setPersonName,
 } from './views';
-import type { BedView, CampfireView, PersonView } from './views';
+import type { BedView, CampfireView, PersonView, PetView } from './views';
 
 /**
  * 世界画布（Phaser 4）。**渲染层是一个纯函数**：状态快照 → 画出来（见 `docs/design/architecture.md` §2.3）。
@@ -150,6 +157,16 @@ class WorldScene extends Phaser.Scene {
   private readonly people = new Map<string, PersonView>();
   /** 我床头那堆火：全场只有一张（我的那张床），不进对象池 */
   private campfire: CampfireView | undefined;
+  /** 我床尾那只猫的视图：全场只有一只（绑「我」不绑床），不进对象池 */
+  private pet: PetView | undefined;
+  /**
+   * 猫的位置与剩余折线（`{ x, y, path }`）：**本地装饰量**，不是权威状态——不进 store、不进 `spots`、
+   * 不广播。`anim` 的签名住在视图上（同篝火的 `lit`）：位置每帧写，动画只在翻转时换。
+   */
+  private petMove: MoverState | undefined;
+  /** 上一次折线的目标点与当时的床位数：目标移动 > 24px 或床位数变了才重算（`70-reserve-decor.md` §3.3） */
+  private petTargetPoint: Point | undefined;
+  private petBedCount: number | undefined;
   /** 手指状态：单指拖拽平移；两根手指 = 缩放（见「输入」一节） */
   private readonly pointers = new Map<number, { x: number; y: number; moved: number }>();
   /** 本次手势里出现过第二根手指：出现过就不算轻点（否则捏合收尾会误发一次走路） */
@@ -198,6 +215,9 @@ class WorldScene extends Phaser.Scene {
     // 篝火只有一摊（我的床头）：动画注册一次、Sprite 建一次，画不画 / 亮不亮由 `syncCampfire` 逐帧决定
     createCampfireAnims(this);
     this.campfire = createCampfireView(this);
+    // 猫同理：全场只有一只，四组循环动画注册一次，目标与动画由 `syncPet` 逐帧决定
+    createPetAnims(this);
+    this.pet = createPetView(this);
     this.observer = new ResizeObserver(() => this.resizeToHost());
     this.observer.observe(this.host);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -229,9 +249,10 @@ class WorldScene extends Phaser.Scene {
     this.wasOnline = online;
 
     this.syncBeds(state);
-    this.syncCampfire(state);
-    // **一帧只取一次位**：渲染与跟随共用这个点（各取一次就会出现「相机追着上一帧的点」的稳态锯齿）
+    // **一帧只取一次位**：渲染、猫、跟随共用这个点（各取一次就会出现「相机追着上一帧的点」的稳态锯齿）
     const selfPoint = this.selfPoint(state, serverNow);
+    this.syncCampfire(state);
+    this.syncPet(state, selfPoint);
     this.syncPeople(state, serverNow, selfPoint);
     this.follow(state, serverNow, delta, selfPoint);
     // 方位在相机这一帧动完之后算：拖拽/回中当帧就把字形换成对的
@@ -355,6 +376,70 @@ class WorldScene extends Phaser.Scene {
     }
     const y = head.y + head.height;
     placeCampfire(fire, { x: head.x + head.width / 2, y, depth: DEPTH.person + y, lit: campfireLit(me) });
+  }
+
+  /**
+   * 我床尾那只猫（`docs/design/70-reserve-decor.md` §3）：**只有我自己看得见**——绑「我」不绑床
+   * （没有床时也跟），不进 `people` / `state.bubbles` / `spots`（不可点），服务端不知道它存在。
+   *
+   * 目标每帧由**我的显示态**现算（`petTargetFor`）：躺下 / 睡着 → 窝，其余（含还没有床）→ 我脚前。
+   * 位置与剩余折线只住在场景字段里，**不写 store、不触发 React 重渲染**（`AGENTS.md` 硬纪律 17）。
+   */
+  private syncPet(state: ClientState, self: Point | undefined): void {
+    const pet = this.pet;
+    if (!pet) return;
+    const me = state.me;
+    const bedCount = this.loadedBedCount;
+    if (me === undefined || self === undefined || bedCount === undefined) {
+      hidePet(pet);
+      return;
+    }
+    const target = petTargetFor({ me, self, bedCount });
+    // 没有目标 / 睡痕：不画（睡痕是「人已经走了」，猫不该留在那儿）
+    if (target === undefined || me.state === 'trace') {
+      hidePet(pet);
+      return;
+    }
+
+    // 首次落位：有窝从窝里开始（我躺下时它本来就在那儿），没有窝从沿街网 120px 的起跑点开始（§3.5）；
+    // 之后一律由目标 + 折线推进——**起点不因为目标没变就被当成终点**（无床时这就是「从旁边跑来」）
+    let move = this.petMove;
+    if (!move) {
+      const start = petSpawnPoint({ self, bedCount, home: petHomeOf(me) });
+      move = { x: start.x, y: start.y, path: [] };
+      this.petMove = move;
+    }
+
+    // 重算折线只有三种情形：目标点移动超过 24px、厅的床位数变了（街网几何变了）、还没算过折线（§3.3）
+    const targetMoved =
+      this.petTargetPoint === undefined
+        ? Infinity
+        : Math.hypot(target.point.x - this.petTargetPoint.x, target.point.y - this.petTargetPoint.y);
+    if (targetMoved > PET_REPATH_PX || this.petBedCount !== bedCount) {
+      move.path = petPathFor(move, target, bedCount);
+      this.petTargetPoint = target.point;
+      this.petBedCount = bedCount;
+    }
+
+    // 推进按**实际经过的时间**（与小人同一条纪律）：速度由剩余直线距离给，远处飞奔、近处收步。
+    // 视野外照常推进、只是不画：我 `hop` 到厅的另一头后它从原位置跑过去，一进视野就已经在跑
+    const speed = petSpeedFor(Math.hypot(target.point.x - move.x, target.point.y - move.y));
+    const { arrived } = advanceMover(move, this.game.loop.delta, speed);
+
+    const view = this.viewRect();
+    if (
+      move.x < view.x - CULL_MARGIN_PX ||
+      move.x > view.x + view.width + CULL_MARGIN_PX ||
+      move.y < view.y - CULL_MARGIN_PX ||
+      move.y > view.y + view.height + CULL_MARGIN_PX
+    ) {
+      hidePet(pet);
+      return;
+    }
+
+    // 到位：窝里睡（§3.2），脚前站着；没到位按速度切走与跑
+    const anim = arrived ? (petShouldSleep(target) ? 'cat-sleep' : 'cat-idle') : petAnimFor(speed);
+    placePet(pet, { x: move.x, y: move.y, depth: DEPTH.person + move.y, anim });
   }
 
   private syncPeople(state: ClientState, serverNow: number, selfPoint: Point | undefined): void {

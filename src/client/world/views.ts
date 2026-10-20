@@ -12,6 +12,7 @@ import {
   LABEL_PX,
 } from '../bubble-fit';
 import tokens from '../styles/tokens.json';
+import type { PetAnim } from './pet';
 import { MARKER_RADIUS, personAlpha, personFrame, truncateToLines } from './rules';
 import type { BedLook, BedMarker } from './rules';
 
@@ -518,4 +519,65 @@ export function hideCampfire(view: CampfireView): void {
   view.sprite.setVisible(false);
   view.sprite.anims.stop();
   view.lit = undefined;
+}
+
+/**
+ * 我床尾那只猫（`docs/design/70-reserve-decor.md` §3）：与篝火同一套边界——**只有我自己看得见**、
+ * 全场只有一只（绑「我」不绑床），所以不进对象池。位置与深度由调用方给（世界坐标就是它自己的坐标，
+ * 不套容器）：遮挡与小人同一条——画面上更靠下 = 更靠前（`DEPTH.person + y`，见 `world.ts`）。
+ */
+export interface PetView {
+  /** 必须是 `Sprite`：走 / 跑 / 睡都是帧循环，`Image` 播不了（`anims` 只在 Sprite 上） */
+  readonly sprite: Phaser.GameObjects.Sprite;
+  /** 上一次播的动画（`undefined` = 还没播过）：不变就跳过 `play`——每帧重播会把循环钉在第一帧 */
+  anim: PetAnim | undefined;
+}
+
+/** 四组循环动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps（§3.2、§3.3）。**全局只注册一次**。 */
+export function createPetAnims(scene: Phaser.Scene): void {
+  const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number }> = [
+    { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8 },
+    { key: 'cat-walk', prefix: 'cat-walk-', end: 4, frameRate: 6 },
+    { key: 'cat-run', prefix: 'cat-run-', end: 4, frameRate: 6 },
+    { key: 'cat-sleep', prefix: 'cat-sleep-', end: 4, frameRate: 6 },
+  ];
+  for (const group of groups) {
+    if (scene.anims.exists(group.key)) continue;
+    scene.anims.create({
+      key: group.key,
+      frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: group.prefix, start: 1, end: group.end }),
+      frameRate: group.frameRate,
+      repeat: -1,
+    });
+  }
+}
+
+export function createPetView(scene: Phaser.Scene): PetView {
+  // 初始贴图给 idle 的第一帧：动画由 `placePet` 按目标形态切，建出来时先不播
+  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, 'cat-idle-1').setScale(ART_SCALE).setVisible(false);
+  return { sprite, anim: undefined };
+}
+
+/** 一帧的摆放：**底边中心**的世界坐标（与小人、篝火同一个锚点）、深度、动画 key。 */
+export interface PetPaint {
+  x: number;
+  y: number;
+  depth: number;
+  anim: PetAnim;
+}
+
+/** 摆一帧（逐帧调用）：位置与深度每帧写，动画只在翻转时 `play`。 */
+export function placePet(view: PetView, paint: PetPaint): void {
+  view.sprite.setVisible(true).setPosition(paint.x, paint.y).setDepth(paint.depth);
+  if (view.anim === paint.anim) return;
+  view.anim = paint.anim;
+  view.sprite.play(paint.anim);
+}
+
+/** 不画（没有我 / 睡痕 / 不在视野）：藏起来并停掉动画，动画签名清空——下次出现时重新播。 */
+export function hidePet(view: PetView): void {
+  if (!view.sprite.visible) return;
+  view.sprite.setVisible(false);
+  view.sprite.anims.stop();
+  view.anim = undefined;
 }
