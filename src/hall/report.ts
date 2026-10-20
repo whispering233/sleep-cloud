@@ -48,7 +48,9 @@ interface RawReportRow {
 function toReport(row: RawReportRow): ReportRecord {
   let evidence: ReportEvidence[] = [];
   try {
-    evidence = JSON.parse(row.evidence) as ReportEvidence[];
+    // 解析成功也可能是 `null` / `{}` —— 非数组照样当没有，后台直接 `.map` 它
+    const parsed: unknown = JSON.parse(row.evidence);
+    evidence = Array.isArray(parsed) ? (parsed as ReportEvidence[]) : [];
   } catch {
     // 脏行宁可丢掉证据，也不要让整个后台请求 500（那会把所有举报一起藏起来）
     evidence = [];

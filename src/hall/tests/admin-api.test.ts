@@ -403,7 +403,7 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
 const reportsOf = async (hall: Hall, query = ''): Promise<ReportPage> =>
   (await (await adminGet(hall, `/admin/reports${query}`)).json()) as ReportPage;
 
-test('举报列表：字段齐全，昵称读时现补（台账里没有 / 没写过 → null）', async () => {
+test('举报列表：字段齐全，昵称读时现补（写了查不到昵称的那一行 → null）', async () => {
   const { hall, sql } = newHall();
   recordIdentity(sql, { userId: 'u_reporter' }, NOW);
   recordIdentity(sql, { userId: 'u_target', nickname: '夜猫子' }, NOW);
@@ -433,10 +433,12 @@ test('举报证据：空数组原样透传，脏 JSON 降级为 []', async () =>
   const { hall, sql } = newHall();
   recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_b', reason: '没人说话', evidence: [] }, NOW);
   recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_c', reason: '脏行', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_d', reason: '不是数组', evidence: [] }, NOW);
   sql.exec("UPDATE report SET evidence = 'not json' WHERE target_user_id = 'u_c'");
+  sql.exec("UPDATE report SET evidence = 'null' WHERE target_user_id = 'u_d'");
 
   const page = await reportsOf(hall);
-  expect(page.items.map((item) => item.evidence)).toEqual([[], []]);
+  expect(page.items.map((item) => item.evidence)).toEqual([[], [], []]);
 });
 
 test('举报分页：id 倒序，before 排他，两页合起来不重不漏', async () => {
