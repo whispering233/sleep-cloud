@@ -59,6 +59,17 @@ npm run dev                                               # 项目仍跑在 WSL 
 # 然后对 http://127.0.0.1:9222/json/list 里的 webSocketDebuggerUrl 发 Runtime.evaluate
 ```
 
+`forward` 的端口绑在**宿主 Windows 的 127.0.0.1** 上，WSL 里连不上（`curl 127.0.0.1:9222` refused）。所以驱动脚本跑在 Windows 侧（`/mnt/c/Program Files/nodejs/node.exe <脚本>`，Node ≥ 22 自带 `WebSocket`），或者用 `/mnt/c/Windows/System32/curl.exe` 读 `/json/list`。
+
+**用 `adb shell input tap` 点按钮前先换算坐标**：tap 吃的是**设备像素**，页内 `getBoundingClientRect()` 是**视口 CSS 像素**，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。
+
+```text
+deviceY = (cssY + (screen.height - innerHeight)) * devicePixelRatio
+deviceX = cssX * devicePixelRatio
+```
+
+漏掉外壳那一段的表现是「点某颗按钮却点到了它上方的画布或另一行按钮」——实测曾把「点了『睡了』人却站起来」误判成产品 bug（其实是点到了画布 → 发了 `walk`）。稳妥做法：先用 CDP 读出控件的 rect，再按上式换算。
+
 **AVD 要求**：系统镜像必须带 Play Store（`google_apis_playstore`），否则没有真 Chrome 与真 Gboard。要验软键盘还得确认 AVD 的 `hw.keyboard=no`——有物理键盘时部分输入框不弹软键盘。屏幕参数不必与基线一致（窄档就是窄档），可以用运行时覆盖对齐：
 
 ```text
@@ -96,10 +107,12 @@ npm run dev                                               # 项目仍跑在 WSL 
 
 1. **纯逻辑先有单测**。没有单测的行为改动，先问「这段能不能变成纯函数」。
 2. **界面壳层类改动（布局 / 键盘 / 焦点 / 指针）必跑 L2**：先 `npm run dev` 起站点，再跑 `npm run e2e`。它测的是不变式，不是像素——不通过就是设计被破坏，不许「下次再看」。
-3. **UI 类改动**：先在宿主 Android 模拟器里验收（布局、响应式、触摸、键盘全在同一个环境里过）→ 只有真机能得结论的（真手指手感、低端机帧率、低亮度观感、自研内核）留到真机。**模拟器不可用时**才降级到桌面手机视口，并在结论里明确写「降级验证、未过模拟器」。
-4. **UI 验证交 subAgent**，不要让大量截图占主会话上下文。派活时必须给**验证条目的数量上限**（实测不加限制会超时）；并明确允许它「工具不可用就如实写『未能验证』」，**不要为了凑结论硬撑**。
-5. **响应式与触摸类验收默认走宿主模拟器**（手机视口 + 真 Chrome + 真 IME + 合成分发触摸）；桌面浏览器缩窄窗口不算通过。
-6. **额度类结论只看平台用量面板**与实测数据。
+3. **`npm run dev` 不会重建前端**：它只启 `wrangler dev` 并服务 `dist/`，**没有 build、也没有 watch**。所以「改了源码 → 点开页面看」看到的一定是旧构建——实测就有人拿旧构建下了「改动无效」的结论。**UI 验收前先 `npm run build`**（改完源码再验，或验收中途改了源码都要补一次）。
+   **建完之后要对一下有没有生效**：`npm run dev` 基于 `dist/` 建过一次资产清单，重建后它可能仍然下发**旧的 `index.html`**（页面引用的哈希 ≠ `ls dist/assets/index-*.js`）。比对一行 `curl -s http://localhost:<端口>/ | grep -o 'assets/index-[^"]*'` 与 `ls dist/assets/index-*.js`，不一致就重启 dev server。**实测**：两个验证者都撞上过这个（一个拿到旧构建得出「改动无效」，一个在旧构建上截图）。嫌麻烦就用 `npm run dev:web` 直接跑源码（Vite 反代 `/api` 到本 worktree 的后端）。
+4. **UI 类改动**：先在宿主 Android 模拟器里验收（布局、响应式、触摸、键盘全在同一个环境里过）→ 只有真机能得结论的（真手指手感、低端机帧率、低亮度观感、自研内核）留到真机。**模拟器不可用时**才降级到桌面手机视口，并在结论里明确写「降级验证、未过模拟器」。
+5. **UI 验证交 subAgent**，不要让大量截图占主会话上下文。派活时必须给**验证条目的数量上限**（实测不加限制会超时）；并明确允许它「工具不可用就如实写『未能验证』」，**不要为了凑结论硬撑**。
+6. **响应式与触摸类验收默认走宿主模拟器**（手机视口 + 真 Chrome + 真 IME + 合成分发触摸）；桌面浏览器缩窄窗口不算通过。
+7. **额度类结论只看平台用量面板**与实测数据。
 
 ## 5. 派 subAgent 的硬约束
 

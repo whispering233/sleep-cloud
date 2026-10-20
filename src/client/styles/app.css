@@ -633,6 +633,22 @@
     border-radius: var(--radius-lg);
   }
 
+  /* 版本号与标题同一行、基线对齐（入场层是「进不去厅」时唯一看得见的界面） */
+  .entry-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-xs);
+  }
+
+  .entry-version {
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+    font-family: var(--font-label);
+    white-space: nowrap;
+    /* 排查用的信息，不是供人复制的文本：拖选标题时它不进选区（双击也一样） */
+    user-select: none;
+  }
+
   .entry-title {
     margin: 0;
     color: var(--color-neutral);

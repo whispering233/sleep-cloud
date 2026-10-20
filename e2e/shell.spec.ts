@@ -303,3 +303,41 @@ test('没有 Popover API 的内核能进厅，齿轮菜单靠手写开关走完�
   // 全程不抛错：降级路径不许裸调那三个方法
   expect(errors).toEqual([]);
 });
+
+/**
+ * 一次发送只产生**一条** `chat` 上行。
+ *
+ * 为什么值得守：服务端把 `chat` 广播给所有人（**含发送者本人**，客户端不做本地乐观回显，见
+ * `src/hall/hall.ts` 的 `case 'chat'`），所以浏览器 WS 帧列表里一次发送会看到两条 `chat`——
+ * 第二条是回投给我的**下行**，不是第二条上行。`__frames` 只包 `WebSocket.prototype.send`，
+ * 这里数的就是「本地上行恰好一条」：点「发送」（提交按钮）与回车（表单默认提交）走的是同一个
+ * `onSubmit`，任一条路多出帧都算破。桌面复现不出两条上行，真 IME 的复验到模拟器上做。
+ */
+test('一次发送只产生一条 chat 上行：点「发送」与按回车都是', async ({ page }) => {
+  await enterHall(page);
+
+  /** 本地上行里的 `chat` 帧（`__frames` 只记 `send`，所以这里没有下行）。 */
+  const chatUps = async (): Promise<string[]> =>
+    (await framesOf(page)).filter((frame) => frame.includes('"t":"chat"'));
+
+  /** 发一条并守「这一次恰好一条上行」：先等内容到，再等 300ms 看有没有第二条跟上来。 */
+  const expectOneChatUp = async (text: string, submit: () => Promise<void>): Promise<void> => {
+    await page.getByLabel('聊天输入框').fill(text);
+    await submit();
+    await expect.poll(chatUps).toHaveLength(1);
+    await page.waitForTimeout(300);
+    const ups = await chatUps();
+    expect(ups).toHaveLength(1);
+    expect(JSON.parse(ups[0])).toMatchObject({ t: 'chat', text });
+  };
+
+  // ① 点「发送」按钮
+  await clearFrames(page);
+  await expectOneChatUp('点发送只发一条', () =>
+    page.getByRole('button', { name: '发送', exact: true }).click(),
+  );
+
+  // ② 回车发第二条：清空后再数仍是 1 条（累计 1 + 1，不是 1 + 2）
+  await clearFrames(page);
+  await expectOneChatUp('回车也只发一条', () => page.getByLabel('聊天输入框').press('Enter'));
+});

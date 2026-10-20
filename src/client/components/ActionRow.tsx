@@ -145,14 +145,18 @@ export function ActionRow() {
       <div className="action-row">
         <div className="action-row-actions">
           {/* 还没有床就不显示床号：没有内容的一项不占位。方位字形只在床不在可用视口里时出现
-              （世界里的暖标记已经够了）；整条可点 = **小人回自己的床 + 相机跟着到位** */}
+              （世界里的暖标记已经够了）；整条可点 = **小人回自己的床 + 相机跟着到位**。
+              已经在床上时只对准相机：`hop` 的服务端语义是「在床上先起身」，躺着点一下就起身给人看见、
+              睡着点一下就被叫醒（`docs/design/00-master-design.md` 的「导航」）。快照还没到（`me` 为
+              `undefined`）按走动处理，照旧发 `hop` */}
           {view.bedNo !== undefined ? (
             <button
               type="button"
               className="hud-action"
               aria-label="回我的床"
               onClick={() => {
-                sendHop();
+                const me = getState().me;
+                if (me === undefined || me.state === 'roaming') sendHop();
                 focusMyBed();
               }}
             >

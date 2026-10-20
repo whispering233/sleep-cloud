@@ -380,9 +380,12 @@ export function alignTargetOf(input: {
   return input.reconnected ? (input.selfPoint ?? input.bedPoint) : (input.bedPoint ?? input.selfPoint);
 }
 
-/** 名字只出现在**有人的床上**，且自己一律不画（地上的自己更不画）。 */
+/**
+ * 名字是**唯一的身份线索**（「那是谁」只能靠它），所以别人的名字一律常显：床上、站着、走动用同一个样式，
+ * 不按状态分档（分档会暗示「床上那个人更真」）；自己一律不画（在地上的自己更不画）。
+ */
 export function shouldDrawName(person: Person, meId: string | undefined): boolean {
-  return person.state !== 'roaming' && person.id !== meId;
+  return person.id !== meId;
 }
 
 /** 睡痕的小人整体降不透明度：不能只改轮廓与名字，否则「睡痕」与「睡着」只差颜色。 */
