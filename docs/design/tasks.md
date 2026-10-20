@@ -15,30 +15,6 @@
 
 ---
 
-## 卡 2：带语义的 close + `5002` 提示
-
-**目标**：被封 / 被顶掉之后**不再自动重连**，且用户看得见；入场层能显示「还有多久」。
-
-**改动面**
-
-| 文件 | 做什么 |
-| :--- | :--- |
-| `src/client/conn-state.ts` 或 `ws.ts` | `close` 时读 `event.reason`：`blocked` / `replaced` → **停止重连**（新态，例如 `halted`）；`2003`（布局版本不一致）→ 停止重连 + 「请刷新页面」；其余按既有退避 |
-| `src/client/store.ts` | 存 `untilAt`（封禁到期）与 `haltedReason`（`blocked` / `replaced` / `stale`） |
-| `src/client/components/ConnectionBanner.tsx` | 三种常驻文案：`你暂时无法进入 · 还有 N 分钟`（永久则不带倒计时）/ `你已在别处打开` / `资源已更新，请刷新页面` |
-| `src/client/components/EntryOverlay.tsx` | `/api/me` 返回 `5002` 时显示同一条文案（不是 toast、不是浮层） |
-| `src/client/error-text.ts` | 加 `5002` 的用户面文案（带 `untilAt` 的分钟数换算） |
-
-**验收**
-
-- 单测：`reason='blocked'` 后**不再发起重连**；`reason='replaced'` 同理；无 `reason` 时按原退避。
-- 单测：`untilAt` → 文案（永久 / 还有 1 分钟 / 还有 8 分钟；小于一分钟的取整策略写清）。
-- `npm run typecheck` + `npm test` + `npm run e2e` 全绿。
-
-**注意**：倒计时文本**不需要**新定时器去刷新（那会养一个常驻循环）；在提示出现那一刻算一次即可，重连尝试时才更新。
-
----
-
 ## 卡 3：后台登录（`/admin.html` + `/api/admin/login`）
 
 **目标**：能用 `ADMIN_TOKEN` 进后台；未授权一律 401。
@@ -130,7 +106,6 @@
 ## 卡片顺序
 
 ```text
-卡 2（客户端分支，可与 3/5/6 并行）
 卡 3 ──► 卡 4
 卡 5（独立）
 卡 6（独立）
