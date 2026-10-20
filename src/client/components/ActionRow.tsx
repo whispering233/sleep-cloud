@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
+import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, setRain, setSwitching, showNotice } from '../store';
+import { getState, openAbout, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
-import { weatherLabel } from '../weather';
+import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -269,6 +270,23 @@ export function ActionRow() {
                       onClick={() => setRain(!view.rain)}
                     >
                       {weatherLabel(view.rain)}
+                    </button>
+                    {/* 雨声开关：与天气各自独立（无雨也能只听雨、雨天也能静音）。文案 = 当前状态。
+                        点它同样不关浮层；同样需要独立 `key` + `pointerdown` 拦默认行为 */}
+                    <button
+                      key="sound"
+                      type="button"
+                      className="hud-action hud-menu-action"
+                      aria-pressed={view.sound}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        // 解锁必须在 **click 同步路径** 里：store 的 effect 已在手势之外，那里建的
+                        // `AudioContext` 在 Safari 会永久停在 `suspended`（静音开关是后开的常态路径）
+                        if (!view.sound) unlockAudio();
+                        setSound(!view.sound);
+                      }}
+                    >
+                      {soundLabel(view.sound)}
                     </button>
                     {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
                         点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。

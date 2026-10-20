@@ -1,15 +1,15 @@
 import { RAIN_CROSSFADE_S, RAIN_INTRO_URL, RAIN_LOOP_URL } from '../shared/constants';
 
 /**
- * 雨天雨声（原生 WebAudio，**不走 Phaser 的 `this.sound`**：见 `docs/design/architecture.md` §3）。
+ * 雨声（原生 WebAudio，**不走 Phaser 的 `this.sound`**：见 `docs/design/architecture.md` §3）。
  *
  * 两个 `AudioBufferSourceNode`（8 s 早播小循环 → 30 s 主循环）各接一个 `GainNode`：小文件解码即出声，
- * 主文件就绪后 1 s 交叉淡化并停掉小 source。对外只有 `setRain(on)` 与 `unlock()`；
- * **不挂定时器、不进逐帧路径**——只在天气状态变化时驱动一次。
+ * 主文件就绪后 1 s 交叉淡化并停掉小 source。对外只有 `setSound(on)` 与 `unlock()`；
+ * **不挂定时器、不进逐帧路径**——只在雨声开关变化时驱动一次（与天气无关，见 `docs/design/config.md` §4）。
  */
 
 let context: AudioContext | undefined;
-let rain = false;
+let sound = false;
 /** 每次开 / 关递增：异步解码回来时若已经切走，就丢弃这次结果（关了不许再出声）。 */
 let generation = 0;
 let inFlight: AbortController | undefined;
@@ -31,7 +31,7 @@ function ensureContext(): AudioContext | undefined {
     // `suspended` 之外还有 WebKit 的 `interrupted`（锁屏 / 来电后）：一律「不在跑就试着拉起来」。
     // 无手势 `resume()` 只在此 context 已被首次手势解锁过的前提下成立（见 `unlock`），失败就静默
     if (
-      rain &&
+      sound &&
       document.visibilityState === 'visible' &&
       created.state !== 'running' &&
       created.state !== 'closed'
@@ -137,18 +137,18 @@ function stop(): void {
   if (context && context.state === 'running') void context.suspend().catch(() => {});
 }
 
-/** 天气开关驱动：开 = 早播小循环 → 主循环交叉淡化；关 = 停源 + 挂起 + 取消在途请求。 */
-export function setRain(on: boolean): void {
-  if (rain === on) return;
-  rain = on;
+/** 雨声开关驱动：开 = 早播小循环 → 主循环交叉淡化；关 = 停源 + 挂起 + 取消在途请求。 */
+export function setSound(on: boolean): void {
+  if (sound === on) return;
+  sound = on;
   if (on) start();
   else stop();
 }
 
 /**
- * 进厅手势里调一次（**只在雨天**）：浏览器只允许在用户手势之后出声，而雨天时的 `start()` 是由
- * store 订阅在 effect 里触发的——那已经在手势之外了。先在这里把 context 拉起来，effect 里的
- * `start()` 复用它。无雨时**根本不建 context**：手势内创建的 context 在 Chromium 里直接是 `running`，
+ * 必须在用户手势里同步调（进厅提交、或齿轮里点开雨声）：浏览器只允许在手势之后出声，而 `start()`
+ * 是由 store 订阅在 effect 里触发的——那已经在手势之外了。先在这里把 context 拉起来，effect 里的
+ * `start()` 复用它。静音时**根本不建 context**：手势内创建的 context 在 Chromium 里直接是 `running`，
  * 建了再挂回去既绕又不可靠。
  */
 export function unlock(): void {

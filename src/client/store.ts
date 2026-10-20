@@ -24,7 +24,15 @@ import type { Connection, HaltReason } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
-import { readAboutSeen, readWeatherRain, readZoomMode, writeWeatherRain, writeZoomMode } from './prefs';
+import {
+  readAboutSeen,
+  readSound,
+  readWeather,
+  readZoomMode,
+  writeSound,
+  writeWeather,
+  writeZoomMode,
+} from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
@@ -119,10 +127,15 @@ export interface ClientState {
    */
   zoomMode: ZoomMode;
   /**
-   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，同时驱动雨声与雨层画面。
-   * 缺键时按启动那天的日期奇偶初始化；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
+   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，**只驱动雨层画面**。
+   * 缺键时无雨；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
    */
   rain: boolean;
+  /**
+   * **雨声**（与 `rain` 各自独立的本地偏好，不进协议、不进快照）：`true` = 开。**只看它**决定出不出声，
+   * 所以「无雨 + 雨声」「雨天 + 静音」都是合法状态。缺键 = 静音。
+   */
+  sound: boolean;
   /**
    * **说明面板**（客户端本地状态，不进协议、不进快照）：`null` = 关着，否则是打开的原因。
    * **一个字段**同时表达「开没开、为什么开」：拆成两个布尔就会出现「开着却不知道为什么」的状态，
@@ -145,9 +158,11 @@ const emptyState = (): ClientState => ({
   bubbles: new Map(),
   switching: false,
   composer: 'idle',
-  // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
+  // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
+  // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
   zoomMode: readZoomMode(),
-  rain: readWeatherRain(),
+  rain: readWeather() === 'rain',
+  sound: readSound() === 'rain',
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
 });
 
@@ -262,11 +277,22 @@ export function setZoomMode(mode: ZoomMode): void {
 
 /**
  * 天气开关（见 `ClientState.rain`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ * **不联动雨声**：画面归画面、声音归声音（`docs/design/40-client-storage.md` §3）。
  */
 export function setRain(on: boolean): void {
   if (state.rain === on) return;
   setState({ rain: on });
-  writeWeatherRain(on);
+  writeWeather(on ? 'rain' : 'none');
+}
+
+/**
+ * 雨声开关（见 `ClientState.sound`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ * **不联动天气**：两颗胶囊各管一半，用户没点的那一个不该被改。
+ */
+export function setSound(on: boolean): void {
+  if (state.sound === on) return;
+  setState({ sound: on });
+  writeSound(on ? 'rain' : 'none');
 }
 
 /** 打开说明面板（见 `ClientState.aboutOpen`）：同值不写。 */
