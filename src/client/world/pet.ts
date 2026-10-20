@@ -62,7 +62,7 @@ export const PET_SPAWN_MIN_GAP = 40;
 /** 问候的时长（毫秒）：到点由渲染时比较时间戳决定，**不挂定时器**（§3.4）。 */
 export const PET_GREET_MS = 4_000;
 /** 问候说什么（§3.4）：只有这一句，没有轮换、不带名字。 */
-export const PET_GREET_TEXT = '欢迎进来';
+export const PET_GREET_TEXT = '欢迎回来';
 
 /** 摸猫那一下的时长：6 帧 @ 4fps = 1.5s（素材 fps 就是 4）。在此之前它不移动、不换动作。 */
 export const PET_AFFECTION_MS = 1_500;
