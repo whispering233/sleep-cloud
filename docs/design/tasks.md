@@ -3,37 +3,6 @@
 > 规则：按端到端垂直切片，一张卡必须能独立提交、独立验证、独立回滚；**完成后从本文件删除**（它不是历史记录）。
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 
-## 卡 4：举报的服务端闭环（表 + 发言缓冲 + 上行 + 回执 + 清理）
-
-设计口径以文档为准，不要自行改：`docs/db/schema.md` §4.4、`docs/api/20-api-ws.md` §4.9、`docs/api/error-code.md` 的 `5003`、`docs/design/10-hall-runtime.md` §10.1、`docs/design/config.md` §3 的四个 `REPORT_*` 常量。
-
-### 产物
-
-1. `src/shared/constants.ts`：`REPORT_REASON_MAX_LEN = 200`、`REPORT_EVIDENCE_MAX = 10`、`REPORT_DEDUP_MS = 24h`、`REPORT_TTL_MS = 90d`。
-2. `src/shared/protocol.ts`：`UPSTREAM_TYPES` 加 `'report'`，并给它一个带类型的上行结构 `{ t: 'report', toId: string, reason: string }`。
-3. `src/hall/schema.ts`：`REPORT_TABLE_SQL`（列与索引照 `docs/db/schema.md` §4.4）+ `REPORT_INDEX_SQL`；`initializeStorage()` 里建表（新表用 `CREATE TABLE IF NOT EXISTS` 就够，**不需要** `ALTER`）。
-4. 新模块 `src/hall/report.ts`：
-   - `recordReport(sql, input, now)`：先按 `(reporter_user_id, target_user_id)` + `last_at > now - REPORT_DEDUP_MS` 找一行；命中 → `UPDATE report SET count = count + 1, last_at = ? WHERE id = ?`（**不刷新事由与证据**）；未命中 → `INSERT`。返回 `'merged' | 'created'`。
-   - `listReports(sql, { limit, before })`：`id DESC` 分页（自增主键游标）。
-   - `purgeExpiredReports(sql, now)`：`DELETE FROM report WHERE last_at < ?`。
-5. `src/hall/hall.ts`：
-   - 实例上一个 `Map<string, { text: string; at: number }[]>` 当**发言缓冲**（每 userId 最多 `REPORT_EVIDENCE_MAX` 条，先进先出）。`chat` 与 `whisper` 成功发出后写入**打码后的那份文本**；**不许**写进 `ConnectionState` 附加数据（附件要跨休眠存活，放它上面等于持久化聊天内容）。
-   - 上游 `case 'report'`：`toId` 必须是非空字符串且不等于自己（否则 `4003` 静默）；`reason` trim 后为空 → `4003`，超过 `REPORT_REASON_MAX_LEN` → `4001`；然后取**目标**的缓冲当证据，落库，回 `{ t: 'error', code: '5003' }`。去重命中（`merged`）也回 `5003`。限流沿用既有 5 条/秒窗口（超额静默，不额外发码）。
-   - 每日唤醒：`purgeExpiredReports` + 清空发言缓冲（`clear()`），两条都别新开定时器。
-6. 单测 `src/hall/tests/report.test.ts`（复用 `freshSql()` 夹具）：首次落库、24 小时内重复只加计数且不换事由/证据、超过 24 小时另起一行、证据是目标的最近 10 条且**不含举报人自己的话**、`purgeExpiredReports` 只删过期行、`listReports` 分页。
-
-### 验收
-
-- `report` 上行端到端：`hello` 之后发 `report` → 收到 `5003`，库里一行，`evidence` 与目标最近的发言逐字一致。
-- 空事由 / 超长 / 举报自己都不落库：前两者分别回 `4003` / `4001`，后者 `4003`。
-- 24 小时内两次举报同一人：库里仍一行、`count = 2`。
-- 每日唤醒跑一次后，`last_at` 超 90 天的行消失。
-- `npm test` / `npm run typecheck` 绿；词表/内容过滤相关既有测试不得改动。
-
-### 不做
-
-客户端界面、后台页面、全量聊天日志、按举报自动封禁。
-
 ## 卡 5：客户端举报交互（点小人 → 举报 → 事由 → 回执）
 
 设计要求见 `docs/design/60-interaction-shell.md` §2（`composer` 三个值）、`docs/design/50-slot-panel.md` §4。

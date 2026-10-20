@@ -175,6 +175,18 @@ export const UA_HASH_HEX_LEN = 16;
 /** 全局聊天消息长度上限（按字符计）。 */
 export const CHAT_MAX_LEN = 200;
 
+/** 举报事由上限（**trim 后**按字符计）：空 → `4003`、超长 → `4001`。 */
+export const REPORT_REASON_MAX_LEN = 200;
+
+/** 每人的发言缓冲长度，**同时**是举报时拷进 `report.evidence` 的条数（不分「留多少 / 拷多少」）。 */
+export const REPORT_EVIDENCE_MAX = 10;
+
+/** 同一对 `(举报人, 被举报人)` 的合并窗口：期内重复举报只加 `count`，窗口按 `last_at` 滑动。 */
+export const REPORT_DEDUP_MS = 24 * 60 * 60 * 1000;
+
+/** 举报行（含证据）的留存期，并入每日唤醒同批删除。 */
+export const REPORT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
 /**
  * 世界渲染的对象池大小（**按床视图计**，每张床的贴片与贴图都在同一个视图容器里）。
  * 1× 时可见范围约一屏 10 床 + 邻接缓冲，64 足够覆盖两屏抖动；**拉远到 `ZOOM_MIN` 时同屏约 190 个床位**，

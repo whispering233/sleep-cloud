@@ -73,6 +73,28 @@ export const BLOCK_TABLE_SQL = `CREATE TABLE IF NOT EXISTS block (
   PRIMARY KEY (kind, value)
 )`;
 
+/**
+ * 举报（见 `docs/db/schema.md` §4.4）：**一条举报 = 一行**。同一对 `(举报人, 被举报人)` 在 24 小时内
+ * 重复举报不新增行，只把 `count` 加一并刷新 `last_at`（24 小时去重与 90 天清理都看它）。
+ * `evidence` 是 JSON 数组，`text` 是**已打码的那一份**（与广播出去的逐字一致）；`reason` 不过内容过滤。
+ */
+export const REPORT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS report (
+  id INTEGER PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  last_at INTEGER NOT NULL,
+  reporter_user_id TEXT NOT NULL,
+  target_user_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  count INTEGER NOT NULL
+)`;
+
+/** 索引：`last_at` 服务后台分页序与 90 天清理；三元组是去重判定的取行路径。 */
+export const REPORT_INDEX_SQL: readonly string[] = [
+  'CREATE INDEX IF NOT EXISTS report_last_at ON report (last_at)',
+  'CREATE INDEX IF NOT EXISTS report_pair ON report (reporter_user_id, target_user_id, last_at)',
+];
+
 /** 运维动作流水（只写不改）：首版只有 `block` / `unblock`，`actor` 恒为 `admin`（单令牌，没有账号表）。 */
 export const ADMIN_AUDIT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS admin_audit (
   id INTEGER PRIMARY KEY,
