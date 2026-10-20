@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { SessionView } from '../shared/http-api';
 import { loadSession } from './api';
-import { setRain as setRainAudio } from './audio';
+import { setSound as setSoundAudio } from './audio';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
@@ -69,11 +69,11 @@ export function App() {
   useEffect(() => {
     if (!entered) return undefined;
     let last = getState().sound;
-    setRainAudio(last);
+    setSoundAudio(last);
     return subscribe((state) => {
       if (state.sound === last) return;
       last = state.sound;
-      setRainAudio(state.sound);
+      setSoundAudio(state.sound);
     });
   }, [entered]);
 

@@ -4,8 +4,8 @@ import type { Page } from '@playwright/test';
 import { PREFS } from '../src/client/prefs';
 
 /**
- * 天气开关的 L2 契约：缺键（全新浏览器）→ 无雨；点胶囊 → `aria-pressed` 翻转 +
- * `localStorage` 写入 → 重载后保持；点浮层不把点击漏给画布（不产生 `walk`）。
+ * 天气 / 雨声两颗胶囊的 L2 契约：缺键（全新浏览器）→ 无雨 + 静音；点胶囊 → 文案翻转 +
+ * `localStorage` 写入 → 重载后保持；两颗互不联动；点浮层不把点击漏给画布（不产生 `walk`）。
  */
 
 /** 测试侧打点：出站帧（不是生产代码的一部分）。 */
