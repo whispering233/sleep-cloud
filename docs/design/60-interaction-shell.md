@@ -21,20 +21,23 @@
 ## 2. 输入会话状态机（composer）
 
 ```text
-idle ──focusin(可编辑控件)──▶ typing
-typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
+idle ──focusin(可编辑控件)───▶ typing
+idle ──点「举报」（已选中某人）──▶ report
+report ──focusin──▶ report（不降级：事由框换焦点不该把它换成快捷用语）
+report ──5003 回执 / 收起键 / 点面板空白 / 取消选中──▶ idle
+typing / report ──断线 / 焦点对账失败──▶ idle
 ```
 
-- **状态住 store**（`composer: 'idle' | 'typing'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
-- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 内** → `enterComposer()`。今天有两个源：聊天输入、`GO` 的床号输入（**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记）。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。
+- **状态住 store**（`composer: 'idle' | 'typing' | 'report'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
+- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有三个源：聊天输入、`GO` 的床号输入、举报事由（它在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。
 - **出口唯一**：`exitComposer()`。它必须满足三条：
   1. **幂等**（重复调用无副作用）；
   2. **不看 `activeElement` 是谁**（当前实现正是因为它只看输入框，才在输入框被卸载后彻底失效）；
   3. 自己显式 `blur` 焦点控件，再通知订阅者。
-- **焦点对账**：shell 级 `focusout` → **下一帧**（rAF）检查活跃元素是否仍落在 `.chat-panel` 的可编辑控件内；不在就 `exitComposer()`。这一条覆盖两类真实故障：
+- **焦点对账**：shell 级 `focusout` → **下一帧**（rAF）检查活跃元素是否仍落在 `.chat-panel` 或 `.slot-panel` 的可编辑控件内；不在就 `exitComposer()`。这一条覆盖两类真实故障：
   - 控件被卸载而**不发 `blur`**（表情行原地替换输入行就是这一种）；
   - 别的控件抢走焦点（`GO`、将来任何弹层）。
-- **typing 态必须有常驻可见出口**：动作行右端的齿轮临时换成 **44px「收起」胶囊**，点它 = `exitComposer()`。**不能**把「点面板空白」当唯一出口——隐性出口在出错时等于没有出口。
+- **`composer !== 'idle'` 必须有常驻可见出口**：动作行右端的齿轮临时换成 **44px「收起」胶囊**，点它 = `exitComposer()`（typing 与 report 都一样）。**不能**把「点面板空白」当唯一出口——隐性出口在出错时等于没有出口。
   两处实现细节是实测踩出来的：① 胶囊在 `pointerdown` 里 `preventDefault()`（否则它一聚焦就触发对账、面板当场换位）；② 胶囊与齿轮**必须是两个 DOM 节点**（各带 `key`）——React 会原地复用同一颗 `<button>`，而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑，于是按「收起」会顺手弹出设置浮层。
 - **断线**（连接态转 `offline`）也走 `exitComposer()`：那一刻没有可发的东西，界面必须先把世界还给人。
 
@@ -88,10 +91,10 @@ typing ──发送 / 收起键 / 断线 / 焦点对账失败──▶ idle
 | # | 不变式 |
 | :--- | :--- |
 | I1 | `composer` 只能由 store 改；界面不得从 DOM 事件推导停靠态 |
-| I2 | 从 `typing` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`——穷举长度 ≤ 4 的序列证明没有卡住的路 |
+| I2 | 从 `typing` / `report` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`——穷举长度 ≤ 4 的序列证明没有卡住的路 |
 | I3 | `exitComposer()` 幂等，且不依赖 `document.activeElement` 的具体类型 |
-| I4 | `typing` 态屏幕内始终存在一个可见的 44px 出口控件 |
-| I5 | 任何可编辑控件获得焦点 → `composer === 'typing'`（无例外，含 `GO` 床号） |
+| I4 | `composer !== 'idle'` 时屏幕内始终存在一个可见的 44px 出口控件 |
+| I5 | 任何可编辑控件获得焦点 → `composer` 为 `typing` 或 `report`（无例外，含 `GO` 床号与举报事由）；**`report` 不会被焦点事件降级成 `typing`** |
 | I6 | `typing` 期间与退场当帧画布像素尺寸都不变（`canvas.width/height` 与 `scale.resize` 调用次数都不变） |
 | I7 | 点插槽面板空白**不产生 `walk`**：空白处的 `pointerdown` 被取消（`defaultPrevented`），且整次手势期间手指底下的盒子不换手 |
 | I8 | 世界层只接受 `downElement === canvas` 的 tap |
