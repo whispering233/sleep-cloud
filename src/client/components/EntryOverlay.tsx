@@ -8,6 +8,7 @@ import { ERROR_FALLBACK_TEXT, blockedTextFor, errorTextFor } from '../error-text
 import { getState } from '../store';
 import { PrimaryAction } from './PrimaryAction';
 import { TextInput } from './TextInput';
+import { APP_VERSION } from '../version';
 import { useState } from 'react';
 
 /** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
@@ -93,7 +94,10 @@ export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
           void continueEntry();
         }}
       >
-        <h1 className="entry-title">失眠云</h1>
+        <div className="entry-head">
+          <h1 className="entry-title">失眠云</h1>
+          <span className="entry-version">v{APP_VERSION}</span>
+        </div>
 
         <div className="entry-field">
           <label className="field-label" htmlFor="entry-nickname">

@@ -3,32 +3,6 @@
 > 规则：按端到端垂直切片，一张卡必须能独立提交、独立验证、独立回滚；**完成后从本文件删除**（它不是历史记录）。
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 
-## 卡 2 — 入场层标题右侧显示版本号
-
-### 背景
-
-入场层是「进不去厅」时唯一看得见的界面；版本号现在只在齿轮浮层里（要进了厅才看得见），排查「进不去」时反而拿不到。
-
-### 目标行为
-
-标题「失眠云」同一行、右侧、基线对齐一个 `v{APP_VERSION}`（复用 `src/client/version.ts`，构建期注入，不新增请求），`caption` 档 12px、`neutral-muted`、纯文字**不可选**。
-
-### 改动
-
-- `src/client/components/EntryOverlay.tsx`：标题包一层 `.entry-head`（`div`），标题后加 `<span className="entry-version">v{APP_VERSION}</span>`。
-- `src/client/styles/app.css`：`.entry-head`（flex、`align-items: baseline`、`gap: var(--spacing-xs)`）+ `.entry-version`（`--text-caption`、`--color-neutral-muted`、`white-space: nowrap`）。
-- 设计文档已改：`docs/ui/DESIGN.md` 的 `entry-overlay` 行。
-- `CHANGELOG.md` 加一条 `### Added`。
-
-### 不做
-
-不加点击行为、不做 `user-select` 特例、不新起一行、不动齿轮浮层里那条。
-
-### 验收
-
-- `npm test` / `npm run typecheck` 全绿。
-- `ui-verifier`（宿主 Android 模拟器，393×852 竖屏）：版本号在标题右侧同一行、不换行、不溢出卡片；文案与齿轮浮层里那条一致；中文小字在暗底可读。条目上限 5 条。
-
 ## 卡 4 — 别人（含漫游者）的昵称常显
 
 ### 背景
