@@ -67,7 +67,7 @@ import { findPath } from '../shared/pathfinding';
 import { consumeUpstream } from './rate-limit';
 import { purgeExpiredReports, recordReport } from './report';
 import type { ReportEvidence } from './report';
-import { blockStateOf, forgetStaleSources, purgeExpiredAudit, purgeExpiredBlocks, recordIdentity } from './risk';
+import { blockStateOf, findIdentity, forgetStaleSources, purgeExpiredAudit, purgeExpiredBlocks, recordIdentity } from './risk';
 import type { EntrySource } from './risk';
 import {
   ADMIN_AUDIT_TABLE_SQL,
@@ -580,6 +580,12 @@ export class Hall extends DurableObject<Env> {
         // `toId` 只能来自当前选中：服务端验不了「选中」，只验它是个别人；**不要求在线**
         const toId = typeof message.toId === 'string' ? message.toId : '';
         if (!toId || toId === fresh.userId) {
+          this.sendError(ws, '4003');
+          return;
+        }
+        // 目标必须是**真实存在过的身份**（`identity` 有一行）：否则随便填个字符串就能无上限地刷行，
+        // 一次写入就是一次计费。不要求在线——刚说完就下线正是最该记下来的时候。
+        if (!findIdentity(this.ctx.storage.sql, toId)) {
           this.sendError(ws, '4003');
           return;
         }

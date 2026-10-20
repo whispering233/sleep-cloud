@@ -200,6 +200,16 @@ test('report 拒绝分支：空事由 4003、超长 4001、举报自己 4003，�
   expect(listReports(sql, { limit: 10 })).toEqual([]);
 });
 
+test('report 未知目标：没进过厅的 userId 回 4003，不落库', async () => {
+  const reporter = new FakeSocket(connection('u_reporter'));
+  const { hall, sql } = newHall([reporter]);
+  await hello(hall, reporter);
+
+  await send(hall, reporter, { t: 'report', toId: 'u_ghost', reason: '刷屏' });
+  expect(lastError(reporter)).toEqual({ t: 'error', code: '4003' });
+  expect(listReports(sql, { limit: 10 })).toEqual([]);
+});
+
 test('24 小时内两次举报同一人：库里仍一行，count=2', async () => {
   const target = new FakeSocket(connection('u_target'));
   const reporter = new FakeSocket(connection('u_reporter'));
