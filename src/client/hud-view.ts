@@ -29,8 +29,10 @@ export interface HudView {
   switching: boolean;
   /** 世界缩放档位：动作行那颗缩放胶囊的文案吃它（见 `src/client/zoom.ts`） */
   zoomMode: ZoomMode;
-  /** 天气（客户端本地偏好）：齿轮浮层里那颗胶囊的文案与 `aria-pressed` 吃它 */
+  /** 天气（客户端本地偏好）：齿轮浮层里那一颗胶囊的文案与 `aria-pressed` 吃它 */
   rain: boolean;
+  /** 雨声（与天气各自独立的本地偏好）：隔壁那颗胶囊吃它，**音频只看它** */
+  sound: boolean;
   /** 输入会话：`typing` 时动作行右端的齿轮换成「收起」胶囊（见 `docs/design/60-interaction-shell.md` §2） */
   composer: ComposerState;
 }
@@ -46,6 +48,7 @@ export function hudViewOf(state: ClientState): HudView {
     switching: state.switching,
     zoomMode: state.zoomMode,
     rain: state.rain,
+    sound: state.sound,
     composer: state.composer,
   };
 }
@@ -60,6 +63,7 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.rttMs === b.rttMs &&
     a.switching === b.switching &&
     a.rain === b.rain &&
+    a.sound === b.sound &&
     a.composer === b.composer &&
     sameZoomMode(a.zoomMode, b.zoomMode)
   );

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
-import { PREFS, readWeatherRain, readZoomMode, writeWeatherRain } from '../prefs';
+import {
+  PREFS,
+  readAudioRain,
+  readWeatherRain,
+  readZoomMode,
+  writeAudioRain,
+  writeWeatherRain,
+} from '../prefs';
 import type { PrefStorage } from '../prefs';
-import { getState, setRain, setZoomMode } from '../store';
+import { getState, setRain, setSound, setZoomMode } from '../store';
 
 /** 假 storage：单测跑在 Node（没有 `localStorage`），读写都走这张表。 */
 const fakeStorage = (): PrefStorage & { data: Map<string, string> } => {
@@ -127,6 +134,53 @@ describe('天气偏好（sc.weather.rain）', () => {
       storage.data.delete(PREFS.weatherRain);
       setRain(next);
       expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+    } finally {
+      delete (globalThis as { localStorage?: PrefStorage }).localStorage;
+    }
+  });
+});
+
+describe('雨声偏好（sc.audio.rain）', () => {
+  it('缺键 → 静音（默认值是常量），且不因此写入一条键', () => {
+    const storage = fakeStorage();
+    expect(readAudioRain(storage)).toBe(false);
+    expect(storage.data.has(PREFS.audioRain)).toBe(false);
+  });
+
+  it('读回写下的值；`false` 也照写（单写入路径，不做「静音就删键」）', () => {
+    const storage = fakeStorage();
+    writeAudioRain(true, storage);
+    expect(readAudioRain(storage)).toBe(true);
+    writeAudioRain(false, storage);
+    expect(JSON.parse(storage.data.get(PREFS.audioRain) ?? '')).toEqual({ v: 1, on: false });
+    expect(readAudioRain(storage)).toBe(false);
+  });
+
+  it('坏 JSON / 版本不符 / 非布尔 on → 静音，且该键已被删', () => {
+    const raws = ['{不是 JSON', JSON.stringify({ v: 2, on: true }), JSON.stringify({ v: 1, on: 'yes' })];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.audioRain, raw);
+      expect(readAudioRain(storage)).toBe(false);
+      expect(storage.data.has(PREFS.audioRain)).toBe(false);
+    }
+  });
+
+  it('setSound 只动声音：写 store 与自己的键，不碰天气；反之亦然', () => {
+    const storage = fakeStorage();
+    (globalThis as { localStorage?: PrefStorage }).localStorage = storage;
+    try {
+      const rainBefore = getState().rain;
+      const sound = !getState().sound;
+      setSound(sound);
+      expect(getState().sound).toBe(sound);
+      expect(getState().rain).toBe(rainBefore);
+      expect(JSON.parse(storage.data.get(PREFS.audioRain) ?? '')).toEqual({ v: 1, on: sound });
+      expect(storage.data.has(PREFS.weatherRain)).toBe(false);
+
+      setRain(!rainBefore);
+      expect(getState().sound).toBe(sound);
+      expect(storage.data.has(PREFS.audioRain)).toBe(true);
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }

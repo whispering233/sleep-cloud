@@ -7,3 +7,11 @@
 export function weatherLabel(rain: boolean): string {
   return rain ? '雨天' : '无雨';
 }
+
+/**
+ * 隔壁那颗雨声胶囊的文案 = 当前状态。**与天气无关**：文案不说"下雨"，因为无雨也能开雨声
+ * （`docs/design/40-client-storage.md` §3）。
+ */
+export function soundLabel(on: boolean): string {
+  return on ? '雨声' : '静音';
+}

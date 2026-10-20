@@ -65,15 +65,15 @@ export function App() {
     });
   }, []);
 
-  // 雨声跟着天气偏好走：只在状态变化时驱动一次（音频不进逐帧路径）
+  // 雨声跟着**声音开关**走（与天气无关）：只在状态变化时驱动一次（音频不进逐帧路径）
   useEffect(() => {
     if (!entered) return undefined;
-    let last = getState().rain;
+    let last = getState().sound;
     setRainAudio(last);
     return subscribe((state) => {
-      if (state.rain === last) return;
-      last = state.rain;
-      setRainAudio(state.rain);
+      if (state.sound === last) return;
+      last = state.sound;
+      setRainAudio(state.sound);
     });
   }, [entered]);
 

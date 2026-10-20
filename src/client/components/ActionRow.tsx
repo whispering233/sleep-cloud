@@ -4,9 +4,9 @@ import { parseJumpTarget } from '../bed-jump';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, setRain, setSwitching, showNotice } from '../store';
+import { getState, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
-import { weatherLabel } from '../weather';
+import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -269,6 +269,18 @@ export function ActionRow() {
                       onClick={() => setRain(!view.rain)}
                     >
                       {weatherLabel(view.rain)}
+                    </button>
+                    {/* 雨声开关：与天气各自独立（无雨也能只听雨、雨天也能静音）。文案 = 当前状态。
+                        点它同样不关浮层；同样需要独立 `key` + `pointerdown` 拦默认行为 */}
+                    <button
+                      key="sound"
+                      type="button"
+                      className="hud-action hud-menu-action"
+                      aria-pressed={view.sound}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => setSound(!view.sound)}
+                    >
+                      {soundLabel(view.sound)}
                     </button>
                   </div>
                   <div className="hud-menu-version">v{APP_VERSION}</div>

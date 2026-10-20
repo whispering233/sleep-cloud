@@ -23,7 +23,14 @@ import type { Connection, HaltReason } from './conn-state';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
-import { readWeatherRain, readZoomMode, writeWeatherRain, writeZoomMode } from './prefs';
+import {
+  readAudioRain,
+  readWeatherRain,
+  readZoomMode,
+  writeAudioRain,
+  writeWeatherRain,
+  writeZoomMode,
+} from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import type { BedDirection } from './world/rules';
@@ -112,10 +119,15 @@ export interface ClientState {
    */
   zoomMode: ZoomMode;
   /**
-   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，同时驱动雨声与雨层画面。
+   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，**只驱动雨层画面**。
    * 缺键时无雨；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
    */
   rain: boolean;
+  /**
+   * **雨声**（与 `rain` 各自独立的本地偏好，不进协议、不进快照）：`true` = 开。**只看它**决定出不出声，
+   * 所以「无雨 + 雨声」「雨天 + 静音」都是合法状态。缺键 = 静音。
+   */
+  sound: boolean;
   /**
    * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
@@ -135,6 +147,7 @@ const emptyState = (): ClientState => ({
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）
   zoomMode: readZoomMode(),
   rain: readWeatherRain(),
+  sound: readAudioRain(),
 });
 
 let state: ClientState = emptyState();
@@ -248,11 +261,22 @@ export function setZoomMode(mode: ZoomMode): void {
 
 /**
  * 天气开关（见 `ClientState.rain`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ * **不联动雨声**：画面归画面、声音归声音（`docs/design/40-client-storage.md` §3）。
  */
 export function setRain(on: boolean): void {
   if (state.rain === on) return;
   setState({ rain: on });
   writeWeatherRain(on);
+}
+
+/**
+ * 雨声开关（见 `ClientState.sound`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ * **不联动天气**：两颗胶囊各管一半，用户没点的那一个不该被改。
+ */
+export function setSound(on: boolean): void {
+  if (state.sound === on) return;
+  setState({ sound: on });
+  writeAudioRain(on);
 }
 
 /**

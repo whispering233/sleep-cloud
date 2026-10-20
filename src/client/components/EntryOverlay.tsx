@@ -64,8 +64,8 @@ export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
 
   const continueEntry = async () => {
     // 必须在**手势处理器内部同步**解锁音频：Safari 只认这一种，而 `onDone` 已经在几次请求之后了。
-    // 只在雨天做：无雨时连 `AudioContext` 都不建（见了 `audio.ts` 的 `unlock`）
-    if (getState().rain) unlock();
+    // 只在开着雨声时做：静音时连 `AudioContext` 都不建（见 `audio.ts` 的 `unlock`）
+    if (getState().sound) unlock();
     setError(null);
     setBusy(true);
     try {

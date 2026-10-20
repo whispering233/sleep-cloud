@@ -1,11 +1,11 @@
 import { RAIN_CROSSFADE_S, RAIN_INTRO_URL, RAIN_LOOP_URL } from '../shared/constants';
 
 /**
- * 雨天雨声（原生 WebAudio，**不走 Phaser 的 `this.sound`**：见 `docs/design/architecture.md` §3）。
+ * 雨声（原生 WebAudio，**不走 Phaser 的 `this.sound`**：见 `docs/design/architecture.md` §3）。
  *
  * 两个 `AudioBufferSourceNode`（8 s 早播小循环 → 30 s 主循环）各接一个 `GainNode`：小文件解码即出声，
  * 主文件就绪后 1 s 交叉淡化并停掉小 source。对外只有 `setRain(on)` 与 `unlock()`；
- * **不挂定时器、不进逐帧路径**——只在天气状态变化时驱动一次。
+ * **不挂定时器、不进逐帧路径**——只在雨声开关变化时驱动一次（与天气无关，见 `docs/design/config.md` §4）。
  */
 
 let context: AudioContext | undefined;
@@ -137,7 +137,7 @@ function stop(): void {
   if (context && context.state === 'running') void context.suspend().catch(() => {});
 }
 
-/** 天气开关驱动：开 = 早播小循环 → 主循环交叉淡化；关 = 停源 + 挂起 + 取消在途请求。 */
+/** 雨声开关驱动：开 = 早播小循环 → 主循环交叉淡化；关 = 停源 + 挂起 + 取消在途请求。 */
 export function setRain(on: boolean): void {
   if (rain === on) return;
   rain = on;

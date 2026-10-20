@@ -13,6 +13,7 @@ const PREFS_VERSION = 1;
 export const PREFS = {
   zoomMode: 'sc.zoom.mode',
   weatherRain: 'sc.weather.rain',
+  audioRain: 'sc.audio.rain',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
@@ -142,4 +143,25 @@ export function readWeatherRain(storage?: PrefStorage): boolean {
 /** 写 `sc.weather.rain`：切到「无雨」也照写（**写入路径只一条**，`false` 不是「删键」）。 */
 export function writeWeatherRain(rain: boolean, storage?: PrefStorage): void {
   writePref(PREFS.weatherRain, { v: PREFS_VERSION, rain }, storage);
+}
+
+/** `sc.audio.rain` 的值形状：`on` 必须是布尔。 */
+type StoredAudioRain = { v: number; on: boolean };
+
+function isStoredAudioRain(value: unknown): value is StoredAudioRain {
+  return typeof value === 'object' && value !== null && typeof (value as { on?: unknown }).on === 'boolean';
+}
+
+/**
+ * 读 `sc.audio.rain`：缺键（或读到的值判废）→ **静音**。与天气各自独立（`40-client-storage.md` §3）：
+ * 第一次打开不出声，外放场景的代价不该由默认值替用户承担。
+ */
+export function readAudioRain(storage?: PrefStorage): boolean {
+  const fallback: StoredAudioRain = { v: PREFS_VERSION, on: false };
+  return readPref(PREFS.audioRain, isStoredAudioRain, fallback, storage).on;
+}
+
+/** 写 `sc.audio.rain`：切到「静音」也照写（同天气，`false` 不是「删键」）。 */
+export function writeAudioRain(on: boolean, storage?: PrefStorage): void {
+  writePref(PREFS.audioRain, { v: PREFS_VERSION, on }, storage);
 }
