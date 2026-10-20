@@ -93,15 +93,12 @@
 
 37. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
-**天气与声音**
+**天气、声音与我的装饰**
 
 38. **天气是个人偏好，不进协议。** 只有**雨天 / 无雨**两态，一个开关同时驱动**雨层画面与雨声**；缺键时按本地日历日序号的奇偶初始化（只在启动算一次），用户切过之后永久生效。服务端不知道天气，所以同厅两个人可能一个下雨一个不下。**没有独立音量 / 静音**：静音 = 切「无雨」（理由见 `docs/design/backlog.md`）。
 39. **雨层是屏幕空间的并行 Scene。** 自带相机、原点左上、`zoom` = 画布 DPR（取 `1 / scale.zoom`，不要读 `window.devicePixelRatio`——画布才是事实源），因此不随世界缩放、可用视口、面板换位变化，也**不是第二层明暗**（覆盖率约 1.2%）。颗粒是运行时 `generateTexture` 的 2×14 细线，**不走 `npm run art`**。
 40. **音频用原生 WebAudio，不用 Phaser 的 SoundManager**（`audio: { noAudio: true }`，否则每页白建一个 `AudioContext`）。**无雨时连 context 都不建**；只在进场手势里解锁；音频字节走 HTTP 缓存（`public/_headers` 的 `immutable` + **文件名版本号**），不进本地存储。
-
-**我的装饰（客户端）**
-
-41. **自己的装饰只活在客户端，摆放靠纯函数。** 床头篝火与床尾的猫只在世界层画：不进 `people` / `state.bubbles` / `spots`，不发上行，服务端不知道它们存在。篝火亮灭 = **我的显示态**（`lying`/`asleep`），熄灭显示柴堆而不是消失。猫**跟在我身后 60px**（走道 56 宽放不下 48.5 + 46.5，只能沿同一条轴拉开；60 > 猫高 58.5 才不重叠），方向取我刚才来的那一侧、停下保持。**点猫走纯函数命中圆**（脚点上方 28、半径 26），不开 `setInteractive`（硬度 21）；摸猫 1.5 秒原地演完、不发上行。**同一动作的所有帧共用一个裁框**——逐帧裁 bbox 会让锚点随帧宽漂移，静止时看起来像抽动。见 `docs/design/80-reserve-decor.md`。
+41. **自己的装饰只活在客户端，摆放靠纯函数。** 床头篝火与床尾的猫只在世界层画：不进 `people` / `state.bubbles` / `spots`，不发上行，服务端不知道它们存在。篝火亮灭 = **我的显示态**；猫**跟在我身后 60px**（走道放不下并排），点猫走纯函数命中圆、不开 `setInteractive`（硬度 21）；1.5 秒原地演完、不发上行。**同一动作的所有帧共用一个裁框**——逐帧裁 bbox 会让锚点随帧宽漂移，静止时像抽动。见 `docs/design/80-reserve-decor.md`。
 
 **身份与风控**
 
@@ -134,7 +131,6 @@
 | 取景范围（`scrollRegionOf`） | 绘制范围、可滚范围 | 地板区 + 墙带 + 墙外一圈 `OUTSIDE_MARGIN`；**相机可滚范围**（所以手机上推到边缘也能看见墙外的底） |
 | 间 | 房间、宿舍 | 一间 = 一张床 + 一块预留位；**一格一间** |
 | 预留位 | 空地、装饰位 | 每间房留给装饰物的那块（`reserveOf`），**不可走** |
-| 预留块 | 三分区、装饰位分区 | 预留位沿床长方向等分的三块：床头装饰 / 床中占位 / 床尾宠物（`reserveBlockOf`）。**只是摆放锚点，不是包围盒**（素材可向上溢出）；画面上**不分块、不分色** |
 | 墙带 | 墙线 | `WALL_WIDTH = 3px`，画在地板区边界**之外** |
 | 床位 `state`（`empty`/`lying`/`asleep`/`trace`） | — | 主体是**一张床** |
 | 人物显示态（`roaming`/`lying`/`asleep`/`trace`） | — | 主体是**一个人**；`roaming` 不写进数据库 |
@@ -200,5 +196,4 @@ npm run tokens
 
 ## 版本与变更
 
-- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目。
-- 根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
+- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
