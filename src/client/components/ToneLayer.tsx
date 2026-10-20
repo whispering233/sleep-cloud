@@ -21,7 +21,7 @@ import type { Tone } from '../tone';
  */
 export function ToneLayer() {
   const [tone, setTone] = useState<Tone>(() => toneOf(getState()));
-  /** 减光层那一块：它的开 / 重排都靠 `popover` API */
+  /** 减光层那一块：有 Popover 时它的开 / 重排靠 `popover` API，没有时完全没有 API 调用 */
   const layer = useRef<HTMLDivElement>(null);
   /** 过渡开关：落档那一帧必须是 `transition: none`（同一帧里既改 `opacity` 又开过渡，浏览器会直接补出动画） */
   const [animate, setAnimate] = useState(false);
@@ -30,7 +30,7 @@ export function ToneLayer() {
   /** 已排上的开过渡帧（`0` = 没排）：走完两次 `requestAnimationFrame` 才能保证落档那一帧先画出去 */
   const frame = useRef(0);
 
-  // 常驻打开：`popover` 默认是 `display: none`，必须赶在**第一次绘制之前**打开，否则重连那一帧会露出
+  // 有 Popover 时常驻打开：`popover` 默认是 `display: none`，必须赶在**第一次绘制之前**打开，否则重连那一帧会露出
   // 没有减光的世界（`useLayoutEffect` 而不是 `useEffect`，后者在绘制之后）。重复调用是合法的空操作。
   useLayoutEffect(() => {
     if (!HAS_POPOVER) return;

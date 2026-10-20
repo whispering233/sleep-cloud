@@ -91,6 +91,12 @@
 
 37. **只存偏好，不存事实。** 本地持久化只允许「丢了回默认、功能完好」的东西，且只能出现在 `src/client/prefs.ts` 一个模块里（键名、版本、校验、写失败、以及「有没有 storage」的判定都在那儿；调用点不手写键名）。**身份与凭证、权威状态（我拥有哪些床、我的位置、占用、在线数）、素材字节一律不进本地存储**：前者是服务端签名的 HttpOnly cookie，中者由 `hello` / 快照重建，后者归浏览器 HTTP 缓存。判据、键协议与理由见 `docs/design/40-client-storage.md`。
 
+## 兼容基线（Chromium 100）
+
+1. **基线是真实内核，不是「尽量兼容」。** 夸克 / UC 的安卓内核停在 Chromium 100（`libwebviewuc.so` = `100.0.4896.58`，无 `showPopover`）。`build.target` 固定 `chrome100`，构建产物必须能被 Chromium 100 解析。
+2. **Chromium 114+ 的 API 必须带降级路径**（Popover、`:popover-open`、`@starting-style`、anchor positioning…），不许裸调；CSS 新特性只能用「`@supports` 包住后仍可用」或纯装饰的写法。
+3. **能力判断只放 `src/client/popover.ts`**（今天只有 `HAS_POPOVER`），组件里不各写一份探测；降级路径要有 e2e 用例（`e2e/shell.spec.ts` 里删三个 popover 方法模拟）。
+
 ## 术语
 
 | 用 | 不用 | 说明 |

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
- * L2 契约 spec（`docs/design/60-interaction-shell.md` §6 / §7 的 I4 / I6 / I7 / I8，判据见 §10）。
+ * L2 契约 spec（`docs/design/60-interaction-shell.md` §6 / §7 的 I4 / I6 / I7 / I8 / I11，判据见 §10）。
  *
  * 全部走真实页面：手机视口、进厅走入场层、不做任何 mock。站点要人先起（见 `playwright.config.ts`）。
  */

@@ -59,7 +59,7 @@ export function ActionRow() {
   const gearRef = useRef<HTMLButtonElement>(null);
 
   // 缩放选项开着时的 `Esc`：键盘用户不必靠再点那颗胶囊才能关
-  // （齿轮浮层的 `Esc` 归 `popover` 自己，这里不再管）
+  // （齿轮浮层的 `Esc` 有 Popover 时归平台，降级路径那条 effect 自己管）
   useEffect(() => {
     if (gate !== 'zoom') return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -232,8 +232,8 @@ export function ActionRow() {
                 </svg>
               </button>
 
-              {/* 菜单：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
-                  也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
+              {/* 菜单：有 Popover 时 `popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，
+                  所以没有遮罩、也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
                   两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
                   没有 Popover 时退回手写的开关：无 `popover` 属性，按 `menuOpen` 条件渲染 */}
