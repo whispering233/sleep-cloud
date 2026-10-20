@@ -46,6 +46,11 @@ const expectComposer = (page: Page, state: 'idle' | 'typing') =>
 /** 进厅：入场层每次都在（`EntryOverlay`），昵称 + 18 岁 + 提交。 */
 async function enterHall(page: Page): Promise<void> {
   await page.goto('/');
+  // 首访会被说明面板挡在入场层之前（`docs/design/90-about-panel.md` §1）：先点掉它。
+  // 两个页面态共用 `.entry-card`，先等它出现再判断——直接 `count()` 会与「面板还没渲染」赛跑
+  await page.locator('.entry-card').waitFor();
+  const about = page.getByRole('button', { name: '知道了' });
+  if ((await about.count()) > 0) await about.click();
   await page.getByLabel('你的名字').fill(`e2e-${Date.now().toString(36)}`);
   await page.getByLabel('我已满 18 岁').check();
   await page.getByRole('button', { name: /进入大厅|继续/ }).click();
@@ -217,6 +222,8 @@ test('只有从画布起手的 tap 才产生 walk', async ({ page }) => {
 
 test('隐私说明两处入口都指向静态页，入场层仍是三项', async ({ page }) => {
   await page.goto('/');
+  // 首访会先看到说明面板（否则入场层根本不存在）
+  await page.getByRole('button', { name: '知道了' }).click();
   const link = page.locator('.entry-privacy');
   await expect(link).toBeVisible();
   // 12px 一行：折成两行就把入场层挤出屏（393×852 是基线）
