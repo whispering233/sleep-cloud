@@ -73,6 +73,10 @@ npm run dev                                               # 项目仍跑在 WSL 
 3. **渲染进程会崩溃循环**，表现为整页空白：`logcat` 里是 `chromium: Child process died (type=6)` 反复出现，`Runtime.evaluate` 全部超时、而 `Page.captureScreenshot` 仍能出图。`am force-stop` 与 `pm clear` 都**救不回来**，只能 `"$ADB" emu kill` 重启模拟器。
 4. **可视证据要走 `screenrecord`**。`Page.captureScreenshot` 与 `Page.startScreencast` 在合成器层会对同帧去重（实测连拍 10 张 md5 全同、screencast 收到 0 帧），抓不到「面板已撤、画布已清」那一瞬间。改用设备侧录屏再逐帧解：`"$ADB" shell screenrecord --bit-rate 16000000 /sdcard/r.mp4` → `ffmpeg -i r.mp4 -vf fps=60 f%03d.jpg`。
 
+**并行：一个 worktree 一台 AVD。** 同名 AVD 不能并行起第二个实例（`userdata-qemu.img` 被锁），而「借别人的模拟器看」会让本地存储、Chrome 登录态、`adb reverse` 串在一起 —— 那样的结论不算数。自己起一台：把 `~/.android/avd/<旧名字>.avd/config.ini` 复制到新目录（**只复制 config.ini**，几个 GB 的 userdata 由首次启动自己生成），再写一份 `<新名字>.ini`，然后 `-avd <新名字> -port 5556 -no-snapshot-load`。`adb reverse` / `forward` 是**按设备**的，每条命令都带 `-s emulator-<端口>`；CDP 的 forward 端口也各用各的（如 9333），否则两台模拟器的调试口互相顶掉。新 AVD 第一次打开 Chrome 会有首运屏（「Stay signed out」→「No thanks」），点完后才到页面。
+
+**它到底在不在响（音频）**：`"$ADB" -s emulator-5556 shell dumpsys audio`，找 `package:com.android.chrome` 的 `AudioPlaybackConfiguration`：`state:started` + `usage=USAGE_MEDIA` 就证明 WebAudio 真的在播（早播循环与主循环会各出现一条，与 `docs/design/config.md` §4 的双 source 设计对得上）。好不好听仍只能人耳（§3）。
+
 ## 3. 环境能做到什么、做不到什么
 
 | 结论类型 | 模拟器（宿主，**默认**） | 桌面视口（降级） | 真机 |
