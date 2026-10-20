@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { exitComposer } from '../focus';
+import { HAS_POPOVER } from '../popover';
 import { getState, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -25,7 +26,8 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个 `popover`：**更换床位** + 版本号），
+ * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开是一个 `popover`：**更换床位** + 版本号；
+ * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
  * 分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
@@ -49,8 +51,12 @@ export function ActionRow() {
    */
   const [gate, setGate] = useState<'none' | 'jump' | 'zoom'>('none');
   const [draft, setDraft] = useState('');
-  /** 浮层本体：它的开关归平台（再点齿轮 / 点外面 / `Esc`），只有「换床」那一项要手关一次 */
+  /** 降级路径（无 Popover，见 `../popover.ts`）的菜单开关：有 Popover 时不用它，开关归平台 */
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** 菜单本体 */
   const menuRef = useRef<HTMLDivElement>(null);
+  /** 齿轮：降级路径打开时它要交班焦点给菜单首项，关闭时接回来 */
+  const gearRef = useRef<HTMLButtonElement>(null);
 
   // 缩放选项开着时的 `Esc`：键盘用户不必靠再点那颗胶囊才能关
   // （齿轮浮层的 `Esc` 归 `popover` 自己，这里不再管）
@@ -68,6 +74,47 @@ export function ActionRow() {
     setDraft('');
   };
 
+  /** 收菜单：有 Popover 时交给平台（其余开关路径也全归它）；降级路径自己关，并把焦点送回齿轮
+      ——菜单节点随后被卸载，不接回来焦点就落到 `body` 上 */
+  const closeMenu = (): void => {
+    if (HAS_POPOVER) {
+      menuRef.current?.hidePopover();
+      return;
+    }
+    setMenuOpen(false);
+    gearRef.current?.focus();
+  };
+
+  // 降级路径（Chromium 100 没有 Popover）里菜单的开关、点外关闭、`Esc`、焦点全得自己来
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (HAS_POPOVER || !menuOpen || !menu) return undefined;
+    // 开时焦点进菜单首项：键盘用户不必先 Tab 过整条动作行
+    menu.querySelector('button')?.focus();
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      // 点齿轮（开关自己）或菜单里（菜单项）都不算点外面
+      if (menu.contains(target) || gearRef.current?.contains(target)) return;
+      closeMenu();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    // 捕获阶段：面板里别处的 `pointerdown` 常被 `preventDefault` / 不再冒泡，冒泡阶段会漏
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  // 打字态右端被「收起」占位（齿轮与菜单一起卸载）：菜单跟着收，否则退场后它会开着回来
+  useEffect(() => {
+    if (view.composer === 'typing') setMenuOpen(false);
+  }, [view.composer]);
+
   const jump = (): void => {
     const bedCount = getState().hall?.bedCount;
     if (bedCount === undefined) return; // 快照还没到：没有可校验的范围，厅也还没画出来
@@ -80,6 +127,12 @@ export function ActionRow() {
     focusBed(target.bedNo);
     closeGate();
   };
+
+  /** 齿轮就是菜单的触发源：有 Popover 时 `popoverTarget` = 平台开关（开 / 关 / 点外面 / `Esc` 全归它，
+      `aria-expanded` 由浏览器自己往无障碍树上映射）；降级路径自己写这两样 */
+  const gearMenuProps = HAS_POPOVER
+    ? { popoverTarget: 'hud-menu' }
+    : { 'aria-expanded': menuOpen, onClick: () => (menuOpen ? closeMenu() : setMenuOpen(true)) };
 
   return (
     <>
@@ -152,9 +205,15 @@ export function ActionRow() {
             </button>
           ) : (
             <>
-              {/* 齿轮就是浮层的触发源：`popoverTarget` = 平台开关（开 / 关 / 点外面 / `Esc` 全归它），
-                  `aria-expanded` 由浏览器自己往无障碍树上映射，不再手写 */}
-              <button key="gear" type="button" className="hud-settings-button" aria-label="设置" popoverTarget="hud-menu">
+              {/* 齿轮：菜单的开关（两条路径的差别全写在 `gearMenuProps` 里） */}
+              <button
+                key="gear"
+                type="button"
+                className="hud-settings-button"
+                aria-label="设置"
+                ref={gearRef}
+                {...gearMenuProps}
+              >
                 {/* 内联 SVG 而不是 `⚙` 字形：Android / Windows 常把字形回落成彩色 emoji，
                     与单色夜调不是一回事（`docs/ui/DESIGN.md` 的 `hud-action` 行） */}
                 <svg
@@ -172,26 +231,29 @@ export function ActionRow() {
                 </svg>
               </button>
 
-              {/* 浮层：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
+              {/* 菜单：`popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，所以没有遮罩、
                   也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
                   两项：**更换床位**（可点，胶囊外观）在上、版本号（纯文字）在下。模式期间文案变「取消换床」
-                  ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里 */}
-              <div className="hud-menu" id="hud-menu" popover="auto" ref={menuRef}>
-                <button
-                  type="button"
-                  className="hud-action hud-menu-action"
-                  aria-pressed={view.switching}
-                  onClick={() => {
-                    setSwitching(!view.switching);
-                    // 选择即完成：浮层自己收起（其余路径全由平台管）
-                    menuRef.current?.hidePopover();
-                    closeGate();
-                  }}
-                >
-                  {view.switching ? '取消换床' : '更换床位'}
-                </button>
-                <div className="hud-menu-version">v{APP_VERSION}</div>
-              </div>
+                  ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
+                  没有 Popover 时退回手写的开关：无 `popover` 属性，按 `menuOpen` 条件渲染 */}
+              {HAS_POPOVER || menuOpen ? (
+                <div className="hud-menu" id="hud-menu" ref={menuRef} popover={HAS_POPOVER ? 'auto' : undefined}>
+                  <button
+                    type="button"
+                    className="hud-action hud-menu-action"
+                    aria-pressed={view.switching}
+                    onClick={() => {
+                      setSwitching(!view.switching);
+                      // 选择即完成：菜单自己收起
+                      closeMenu();
+                      closeGate();
+                    }}
+                  >
+                    {view.switching ? '取消换床' : '更换床位'}
+                  </button>
+                  <div className="hud-menu-version">v{APP_VERSION}</div>
+                </div>
+              ) : null}
             </>
           )}
         </div>
