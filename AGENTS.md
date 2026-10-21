@@ -107,6 +107,8 @@
 
 44. **举报的证据只在举报那一刻落库。** 服务端不存聊天历史：厅实例内存里每人只留**自己发出的最近 10 条**（打码后那份），举报时整份拷进 `report` 行（90 天，全库唯一含聊天文本的地方；缓冲随空闲驱逐即丢、每日唤醒清空）。事由**不过内容过滤**（只有运维看得到）；同一对 `(举报人, 被举报人)` 24 小时内只占一行、重复只加计数。回执 `5003` 是**唯一「成功用 `error` 报文回」的例外**——静默成功会被当成没发出去而连点。
 
+45. **日志只有一个出口，且永不影响业务行为。** 所有事件经 `src/shared/log.ts`（字段白名单、永不抛、`reject`/`censor`/`drop`/`err` 四类闸门 30 条/分 + `suppressed`、静默点带 `n` 聚合）；禁止直接 `console.log` 拼字符串，禁止写聊天文本 / 昵称 / IP（`uid` 是唯一允许的身份字段）。**`invocation_logs` 必须关着**——WebSocket 每帧一次 invocation，开着会打满 20 万/天且要看的字段它一个都没有。**不许为统计新增存储**：运营数据走平台 Query Builder，跨保留期才考虑 `100-log.md` §8；高频点必须聚合，逐条写会在故障时先把额度打穿。见 `docs/design/100-log.md`。
+
 ## 兼容基线（Chromium 100）
 
 1. **基线是真实内核，不是「尽量兼容」。** 夸克 / UC 的安卓内核停在 Chromium 100（`libwebviewuc.so` = `100.0.4896.58`，无 `showPopover`）。`build.target` 固定 `chrome100`，构建产物必须能被 Chromium 100 解析。
@@ -182,8 +184,7 @@ npm run dev:web
 npm test
 npm run typecheck
 
-# 位置同步观测：?debug=1 → 控制台每 10s 一行 leadMs / regressPx / posAge / tickSpan（p50/p95/max；
-#   出现倒退整行前置 !!）；判据与口径见 docs/design/30-movement-sync.md §6.2
+# 位置同步观测：?debug=1 → 每 10s 一行 leadMs / regressPx / posAge / tickSpan（倒退整行前置 !!）；见 30-movement-sync.md §6.2
 
 # 部署（需要平台账号凭据，见 docs/design/build.md §4）
 npm run deploy

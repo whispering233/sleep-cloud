@@ -88,6 +88,10 @@
 | [`docs/design/40-client-storage.md`](docs/design/40-client-storage.md) | 客户端本地持久化：准入判据（什么能存 / 什么禁止）、键协议、键登记表 |
 | [`docs/design/50-slot-panel.md`](docs/design/50-slot-panel.md) | 插槽面板：内容契约、快捷用语、已知代价 |
 | [`docs/design/60-interaction-shell.md`](docs/design/60-interaction-shell.md) | 交互外壳：所有权表、输入会话状态机、Grid 两态布局、退场时序、画布冻结 |
+| [`docs/design/70-privacy-risk.md`](docs/design/70-privacy-risk.md) | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 |
+| [`docs/design/80-reserve-decor.md`](docs/design/80-reserve-decor.md) | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 |
+| [`docs/design/90-about-panel.md`](docs/design/90-about-panel.md) | 说明面板：两个入口、已读语义、公告版本、层级 |
+| [`docs/design/100-log.md`](docs/design/100-log.md) | 日志与可观测性：事件契约、字段白名单、额度预算、Query Builder 配方 |
 | [`docs/design/config.md`](docs/design/config.md) | 配置：时间常量、限制、密钥、内容过滤数据、前端可见配置 |
 | [`docs/design/build.md`](docs/design/build.md) | 运行、构建、部署、额度监控 |
 | [`docs/design/test.md`](docs/design/test.md) | 测试环境与流程：哪类测试该在哪个环境做，以及各环境的局限 |
