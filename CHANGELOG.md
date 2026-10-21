@@ -27,7 +27,7 @@
 
 ### Fixed
 
-- **整屏页盖住世界时世界不再空转**（`docs/design/60-interaction-shell.md` §5.2）：入场层与说明面板都是不透明的整屏页，此前它们盖住的 2.7 Mpx 画布照旧每帧重绘，宿主 Android 模拟器（SwiftShader）上实测覆盖期间 rAF 停顿 1.8 ~ 3.7 s、一次 tap 排队最长 270 ms——真机 Via 上表现为「点『知道了』没反应、1-2 秒后大厅直接出现」。现在 `covered = !entered || aboutOpen` 期间世界层 `loop.sleep()` 整帧停（连渲染），揭幕时 `resetDelta()` + `wake()` 重锚，避免陈旧 `lastTime` 算出一个「暂停了多久」的 delta 让画面跳一屏。代价：醒来那一帧直接对齐当下（与 `hop` 同型），不补播这期间的动作
+- **整屏页盖住世界时世界不再空转**（`docs/design/60-interaction-shell.md` §5.2）：入场层与说明面板都是不透明的整屏页，此前它们盖住的 2.7 Mpx 画布照旧每帧重绘，宿主 Android 模拟器（SwiftShader）上实测覆盖期间 rAF 停顿 1.8 ~ 3.7 s、一次 tap 排队最长 270 ms——真机 Via 上表现为「点『知道了』没反应、1-2 秒后大厅直接出现」。现在 `covered = session !== null && (!entered || aboutOpen !== null)` 期间世界层 `loop.sleep()` 整帧停（连渲染），揭幕时 `resetDelta()` + `wake()` 重锚，避免陈旧 `lastTime` 算出一个「暂停了多久」的 delta 让画面跳一屏。代价：醒来那一帧直接对齐当下（与 `hop` 同型），不补播这期间的动作
 
 ### Note
 
