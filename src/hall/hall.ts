@@ -280,8 +280,9 @@ export class Hall extends DurableObject<Env> {
             this.reject(ws, '2002', 'hello'); // 触顶且无空床：不入场
             return;
           }
-          // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」
-          recordIdentity(
+          // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」。
+          // 返回值是「这次是不是新身份」——`enter{fresh}` 就取它，不为判定再读一次台账
+          const fresh = recordIdentity(
             this.ctx.storage.sql,
             {
               userId: connection.userId,
@@ -304,7 +305,17 @@ export class Hall extends DurableObject<Env> {
           // 行已恢复（或压根没在床上）；在床上的人重新排上「自动睡着」
           this.due.remove('grace', ready.userId);
           this.armAutoSleep(ready);
-          this.send(ws, JSON.stringify(await this.snapshotFor(ws, ready)));
+          log.ev('enter', { uid: ready.userId, fresh, online: this.onlineCount() });
+          // 快照只序列化这一次：同一个字符串既发出去、也拿它自己的长度记 `snapshot{bytes}`
+          // （大厅的快照很大，为取长度再 `JSON.stringify` 一遍等于白写一次整个报文）
+          const snapshot = await this.snapshotFor(ws, ready);
+          const payload = JSON.stringify(snapshot);
+          log.ev('snapshot', {
+            bytes: payload.length,
+            people: snapshot.people.length,
+            beds: snapshot.hall.bedCount,
+          });
+          this.send(ws, payload);
           // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）。
           // 此刻新连接已经 ready，所以人数算上他自己
           this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready), online: this.onlineCount() });
@@ -735,6 +746,12 @@ export class Hall extends DurableObject<Env> {
     };
     this.writeConnection(ws, lying);
     this.armAutoSleep(lying);
+    // `from`：从别的床换过来（释放了旧归属）还是首次躺下（`100-log.md` §3）
+    log.ev('lie', {
+      uid: connection.userId,
+      bed: bedNo,
+      from: verdict.releasingBedNo === undefined ? 'empty' : 'swap',
+    });
 
     // 顺序有讲究（`api/20-api-ws.md` §4.5）：先释放旧床、再认领新床，否则客户端会瞬时持有两张有主床；
     // 归属两条都在占用（`state`）之前，否则会短暂渲染出「床有人、但不在归属表里」
@@ -748,7 +765,14 @@ export class Hall extends DurableObject<Env> {
     if (connection.state === 'roaming') return connection;
 
     const now = Date.now();
-    if (connection.bedNo !== undefined) clearBed(this.ctx.storage.sql, connection.bedNo, now);
+    if (connection.bedNo !== undefined) {
+      // `dwellMs` 的来源就是这一次清掉的 `sleep_started_at`（见 `bed-store.clearBed`）
+      const startedAt = clearBed(this.ctx.storage.sql, connection.bedNo, now);
+      // 算不出时长就不写这一条（行里没有起点），不编一个 0
+      if (startedAt !== undefined) {
+        log.ev('wake', { uid: connection.userId, bed: connection.bedNo, dwellMs: now - startedAt });
+      }
+    }
     const roaming: ConnectionState = { ...connection, state: 'roaming', bedNo: undefined, lastInputAt: now };
     this.writeConnection(ws, roaming);
     this.armAutoSleep(roaming);
@@ -759,7 +783,10 @@ export class Hall extends DurableObject<Env> {
   /** 手动睡着。 */
   private fallAsleep(ws: WebSocket, connection: ConnectionState): void {
     const now = Date.now();
-    if (connection.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'asleep', now);
+    if (connection.bedNo !== undefined) {
+      setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'asleep', now);
+      log.ev('sleep', { uid: connection.userId, bed: connection.bedNo, auto: false });
+    }
     const asleep: ConnectionState = { ...connection, state: 'asleep', lastInputAt: now };
     this.writeConnection(ws, asleep);
     this.armAutoSleep(asleep);
@@ -805,6 +832,8 @@ export class Hall extends DurableObject<Env> {
       if (derived === 'asleep') this.due.remove('autosleep', connection.userId);
       if (next.bedNo !== undefined) {
         setBedOccupancy(this.ctx.storage.sql, next.bedNo, derived === 'asleep' ? 'asleep' : 'lying', now);
+        // 自动睡着（没有手动点「睡着」）：与 `fallAsleep` 同一种事实，只有 `auto` 不同
+        if (derived === 'asleep') log.ev('sleep', { uid: connection.userId, bed: next.bedNo, auto: true });
       }
       this.broadcastState(next);
       changed = true;
@@ -1248,9 +1277,12 @@ export class Hall extends DurableObject<Env> {
     // 归属释放：先取出主体（要逐床广播 bed），再一条 UPDATE 清掉
     const released = listExpiredOwnerships(sql, now);
     releaseExpiredOwnerships(sql, now);
-    for (const bedNo of released) this.broadcast({ t: 'bed', bedNo, owned: false });
+    for (const { bedNo } of released) this.broadcast({ t: 'bed', bedNo, owned: false });
 
+    // 结算前后的级容量：`from` 在缩级之前读（读一次就进缓存，缩级那条路径不会再多读一次）
+    const bedCountFrom = this.bedCount();
     this.shrinkIfOuterRingEmpty(now);
+    const bedCountTo = this.bedCount();
 
     forgetStaleSources(sql, now);
     purgeExpiredBlocks(sql, now);
@@ -1261,6 +1293,15 @@ export class Hall extends DurableObject<Env> {
 
     writeDailyWakeAt(sql, previousDailyWakeAt(now));
     this.armDailyWake();
+
+    // 结算一条：`wakes` / `traces` 都从这一轮已取到的 `released` 里数（不为它再读一遍表）
+    log.ev('settle', {
+      wakes: released.length,
+      traces: released.filter((bed) => bed.state === 'trace').length,
+      from: bedCountFrom,
+      to: bedCountTo,
+      ms: Date.now() - now,
+    });
   }
 
   /**
