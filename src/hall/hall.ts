@@ -10,15 +10,18 @@ import {
   TICK_MS,
   UPSTREAM_RATE_PER_SEC,
 } from '../shared/constants';
+import type { MaskHits } from '../shared/content-filter';
 import type { ErrorCode } from '../shared/error-code';
 import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount } from '../shared/layout';
 import type { Point } from '../shared/layout';
+import * as log from '../shared/log';
 import type {
   DownstreamMessage,
   ErrorMessage,
   PongMessage,
   SnapshotMessage,
   UpstreamMessage,
+  UpstreamType,
   WhisperMessage,
 } from '../shared/protocol';
 import type { Env } from '../worker/env';
@@ -88,6 +91,12 @@ import type { OfflineOccupantRow } from './snapshot';
 type PositionUpdate = [string, number, number];
 
 /**
+ * `tick` 的拍子（`100-log.md` §3：每 5 分钟一条）：**与位置节拍的 `TICK_MS` 不是一个量**，
+ * 所以是另一条独立的内存循环，只在厅里有连接时存在。
+ */
+const TICK_LOG_MS = 5 * 60_000;
+
+/**
  * 大厅房间服务：**一个厅一个实例**（`idFromName(HALL_ID)`），自带一份私有 SQLite。
  * **厅的边界就是数据库的边界**，所有权威状态在同址，读写都是本地操作。
  *
@@ -107,6 +116,12 @@ export class Hall extends DurableObject<Env> {
   private readonly moverStartedAt = new Map<string, number>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private lastTickAt = 0;
+
+  /**
+   * `tick` 事件的内存循环（与位置节拍那条**分开**）：`hello` 成功时起、最后一条连接关闭时清除。
+   * 有循环对象就无法休眠，所以「没有连接时必须不存在」是硬要求（`AGENTS.md` 硬纪律 6）。
+   */
+  private tickLogTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
   /**
@@ -193,113 +208,141 @@ export class Hall extends DurableObject<Env> {
 
   /** WebSocket 升级由 Worker 转发进来（前置校验已在 Worker 完成）。 */
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    // 后台数据接口：只有 Worker 会带这个内部头。没有它的 `/admin/*` 一律 404——
-    // 客户端本来就到不了厅对象，这里是显式拒绝而不是默认放行。
-    //
-    // **第二道闸的强度全在路径前缀上**（头值 `'1'` 是公开常量）：真正的边界是「只有已鉴权的转发
-    // 才会把 `/api/admin/*` 改写成 `/admin/*` 并注入这个头」。因此**任何将来的新转发路由都必须
-    // 先过 Worker 鉴权再改写路径**，否则这道闸等于全开（见 `docs/api/30-api-admin.md` §1）。
-    if (url.pathname.startsWith('/admin/')) {
-      if (request.headers.get(ADMIN_HEADER) !== '1') return new Response('没有这个入口', { status: 404 });
-      return handleAdminRequest(request, url, { sql: this.ctx.storage.sql, live: this.liveConnections() });
+    try {
+      const url = new URL(request.url);
+      // 后台数据接口：只有 Worker 会带这个内部头。没有它的 `/admin/*` 一律 404——
+      // 客户端本来就到不了厅对象，这里是显式拒绝而不是默认放行。
+      //
+      // **第二道闸的强度全在路径前缀上**（头值 `'1'` 是公开常量）：真正的边界是「只有已鉴权的转发
+      // 才会把 `/api/admin/*` 改写成 `/admin/*` 并注入这个头」。因此**任何将来的新转发路由都必须
+      // 先过 Worker 鉴权再改写路径**，否则这道闸等于全开（见 `docs/api/30-api-admin.md` §1）。
+      if (url.pathname.startsWith('/admin/')) {
+        if (request.headers.get(ADMIN_HEADER) !== '1') return new Response('没有这个入口', { status: 404 });
+        return handleAdminRequest(request, url, { sql: this.ctx.storage.sql, live: this.liveConnections() });
+      }
+
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+        return new Response('这个入口只接受 WebSocket 升级', { status: 426 });
+      }
+
+      const userId = request.headers.get(IDENTITY_HEADERS.userId);
+      const name = decodeName(request.headers.get(IDENTITY_HEADERS.name));
+      if (!userId || !name) return new Response('缺少连接身份', { status: 400 });
+      const appearance = appearanceFromHeader(request.headers.get(IDENTITY_HEADERS.appearance), userId);
+      // 来源三项由 Worker 依据平台信息写入，客户端伪造的同名头在 Worker 那边已被覆盖或删除
+      const ip = request.headers.get(IDENTITY_HEADERS.ip) ?? undefined;
+      const country = request.headers.get(IDENTITY_HEADERS.country) ?? undefined;
+      const uaHash = request.headers.get(IDENTITY_HEADERS.uaHash) ?? undefined;
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+      this.ctx.acceptWebSocket(server);
+      server.serializeAttachment({
+        userId,
+        name,
+        appearance,
+        ip,
+        country,
+        uaHash,
+        // 位置在握手时定（出生点 / 宽限恢复 / 从睡痕醒来都要查库），这里先给一个合法的占位点
+        x: frontPointOf(0)?.x ?? 0,
+        y: frontPointOf(0)?.y ?? 0,
+        state: 'roaming',
+        lastInputAt: Date.now(),
+        ready: false,
+      } satisfies ConnectionState);
+
+      return new Response(null, { status: 101, webSocket: client });
+    } catch (error) {
+      // 只多一条 `err`，然后**照旧抛**：失败形态由 Worker 的 `onError` 决定（那里会回 9001 的 JSON），
+      // 换成在这里回一个自己的 500，客户端拿到的就从 JSON 变成 text/plain（见 `src/worker/app.ts`）。
+      log.err({ where: 'do-fetch', code: '9001' });
+      throw error;
     }
-
-    if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-      return new Response('这个入口只接受 WebSocket 升级', { status: 426 });
-    }
-
-    const userId = request.headers.get(IDENTITY_HEADERS.userId);
-    const name = decodeName(request.headers.get(IDENTITY_HEADERS.name));
-    if (!userId || !name) return new Response('缺少连接身份', { status: 400 });
-    const appearance = appearanceFromHeader(request.headers.get(IDENTITY_HEADERS.appearance), userId);
-    // 来源三项由 Worker 依据平台信息写入，客户端伪造的同名头在 Worker 那边已被覆盖或删除
-    const ip = request.headers.get(IDENTITY_HEADERS.ip) ?? undefined;
-    const country = request.headers.get(IDENTITY_HEADERS.country) ?? undefined;
-    const uaHash = request.headers.get(IDENTITY_HEADERS.uaHash) ?? undefined;
-
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({
-      userId,
-      name,
-      appearance,
-      ip,
-      country,
-      uaHash,
-      // 位置在握手时定（出生点 / 宽限恢复 / 从睡痕醒来都要查库），这里先给一个合法的占位点
-      x: frontPointOf(0)?.x ?? 0,
-      y: frontPointOf(0)?.y ?? 0,
-      state: 'roaming',
-      lastInputAt: Date.now(),
-      ready: false,
-    } satisfies ConnectionState);
-
-    return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    const connection = readConnection(ws);
-    if (!connection || typeof raw !== 'string') return;
-    this.ensureSchedule();
+    try {
+      const connection = readConnection(ws);
+      if (!connection || typeof raw !== 'string') return;
+      this.ensureSchedule();
 
-    const verdict = guardIncoming(connection, raw, LAYOUT_VERSION);
-    switch (verdict.kind) {
-      case 'ignore':
-        return;
-      case 'business':
-        this.handleIntent(ws, connection, verdict.message);
-        return;
-      case 'reject':
-        this.reject(ws, verdict.code);
-        return;
-      case 'hello': {
-        // **封禁判定排在最前**：先拒，再谈升级与宽限恢复——否则被封的人会因为一次握手让厅多长一级、
-        // 或多写几行床位状态（见 `docs/api/20-api-ws.md` §2）。
-        const now = Date.now();
-        const blocked = blockStateOf(this.ctx.storage.sql, connection, now);
-        if (blocked) {
-          this.reject(ws, '5002', blocked.untilAt);
+      const verdict = guardIncoming(connection, raw, LAYOUT_VERSION);
+      switch (verdict.kind) {
+        case 'ignore':
+          return;
+        case 'business':
+          this.handleIntent(ws, connection, verdict.message);
+          return;
+        case 'reject':
+          this.reject(ws, verdict.code, 'hello');
+          return;
+        case 'hello': {
+          // **封禁判定排在最前**：先拒，再谈升级与宽限恢复——否则被封的人会因为一次握手让厅多长一级、
+          // 或多写几行床位状态（见 `docs/api/20-api-ws.md` §2）。
+          const now = Date.now();
+          const blocked = blockStateOf(this.ctx.storage.sql, connection, now);
+          if (blocked) {
+            // 封禁命中有「某个人」做主语，所以挂 `uid`（`100-log.md` §3；连接里读得到就挂）；永久封禁的到期时刻写 0
+            log.ev('block', { uid: connection.userId, until: blocked.untilAt ?? 0, by: 'auto' });
+            this.reject(ws, '5002', 'hello', blocked.untilAt);
+            return;
+          }
+          // 入场前判定升级：已用率到阈值就先长一档，新来的人有床可躺（`10-hall-runtime.md` §8）
+          this.growIfNeeded();
+          const resumed = this.resumeSession(connection);
+          if (!resumed) {
+            this.reject(ws, '2002', 'hello'); // 触顶且无空床：不入场
+            return;
+          }
+          // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」。
+          // 返回值是「这次是不是新身份」——`enter{fresh}` 就取它，不为判定再读一次台账
+          const fresh = recordIdentity(
+            this.ctx.storage.sql,
+            {
+              userId: connection.userId,
+              // 走到这里昵称已经过入场层校验：台账里的那一份是运维认人的快照（见 `docs/db/schema.md` §4.1）
+              nickname: connection.name,
+              ip: connection.ip,
+              country: connection.country,
+              uaHash: connection.uaHash,
+            },
+            now,
+          );
+
+          const ready: ConnectionState = { ...resumed, ready: true };
+          // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
+          this.replaceOlderConnections(ws, ready.userId);
+          ws.serializeAttachment(ready satisfies ConnectionState);
+          this.touchLastSeen(ready.userId);
+          // 唤醒后可能有别人在途（这条循环不只为我自己起）
+          this.startTicking();
+          // 厅里有人了 → `tick` 那条循环开始跑（最后一条连接关闭时清除，见 `stopTickLogging`）
+          this.startTickLogging();
+          // 行已恢复（或压根没在床上）；在床上的人重新排上「自动睡着」
+          this.due.remove('grace', ready.userId);
+          this.armAutoSleep(ready);
+          log.ev('enter', { uid: ready.userId, fresh, online: this.onlineCount() });
+          // 快照只序列化这一次：同一个字符串既发出去、也拿它自己的长度记 `snapshot{bytes}`
+          // （大厅的快照很大，为取长度再 `JSON.stringify` 一遍等于白写一次整个报文）
+          const snapshot = await this.snapshotFor(ws, ready);
+          const payload = JSON.stringify(snapshot);
+          log.ev('snapshot', {
+            bytes: payload.length,
+            people: snapshot.people.length,
+            beds: snapshot.hall.bedCount,
+          });
+          this.send(ws, payload);
+          // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）。
+          // 此刻新连接已经 ready，所以人数算上他自己
+          this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready), online: this.onlineCount() });
           return;
         }
-        // 入场前判定升级：已用率到阈值就先长一档，新来的人有床可躺（`10-hall-runtime.md` §8）
-        this.growIfNeeded();
-        const resumed = this.resumeSession(connection);
-        if (!resumed) {
-          this.reject(ws, '2002'); // 触顶且无空床：不入场
-          return;
-        }
-        // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」
-        recordIdentity(
-          this.ctx.storage.sql,
-          {
-            userId: connection.userId,
-            // 走到这里昵称已经过入场层校验：台账里的那一份是运维认人的快照（见 `docs/db/schema.md` §4.1）
-            nickname: connection.name,
-            ip: connection.ip,
-            country: connection.country,
-            uaHash: connection.uaHash,
-          },
-          now,
-        );
-
-        const ready: ConnectionState = { ...resumed, ready: true };
-        // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
-        this.replaceOlderConnections(ws, ready.userId);
-        ws.serializeAttachment(ready satisfies ConnectionState);
-        this.touchLastSeen(ready.userId);
-        // 唤醒后可能有别人在途（这条循环不只为我自己起）
-        this.startTicking();
-        // 行已恢复（或压根没在床上）；在床上的人重新排上「自动睡着」
-        this.due.remove('grace', ready.userId);
-        this.armAutoSleep(ready);
-        this.send(ws, JSON.stringify(await this.snapshotFor(ws, ready)));
-        // 入厅广播：只发给**别人**（自己在自己的快照里，people 里不放自己）。
-        // 此刻新连接已经 ready，所以人数算上他自己
-        this.broadcastExcept(ws, { t: 'join', ...personFromConnection(ready), online: this.onlineCount() });
-        return;
       }
+    } catch {
+      // 这一条消息里抛了：只留一条 `err`，不向平台抛（原来也是平台吞掉的）。
+      // 连接不主动断：静默丢弃这一条意图，比主动断线更接近原行为。
+      log.err({ where: 'ws-message', code: '9001' });
     }
   }
 
@@ -396,15 +439,18 @@ export class Hall extends DurableObject<Env> {
    * 标记某种拒绝：回错误码再断开（`2003` / `2004` / `2002` / `5002`）。
    * 封禁必须用**带语义的 close**（`1008` + `blocked`）：客户端据此停止重连，否则被封的人会
    * 每 15 秒撞一次入场判定（见 `docs/design/70-privacy-risk.md` §5.3）。其余保持 `1000` + 码。
+   * `intent` 只进日志（`reject{code,intent}`）：下行报文一个字节都不变。
    */
-  private reject(ws: WebSocket, code: ErrorCode, untilAt?: number | null): void {
+  private reject(ws: WebSocket, code: ErrorCode, intent: UpstreamType, untilAt?: number | null): void {
+    log.ev('reject', { code, intent });
     this.send(ws, JSON.stringify({ t: 'error', code, untilAt } satisfies ErrorMessage));
     if (code === '5002') ws.close(1008, 'blocked');
     else ws.close(1000, code);
   }
 
   /** 静默类错误：只回错误码，不断开，也不提示（客户端点了墙面属于正常误触）。 */
-  private sendError(ws: WebSocket, code: ErrorCode): void {
+  private sendError(ws: WebSocket, code: ErrorCode, intent: UpstreamType): void {
+    log.ev('reject', { code, intent });
     this.send(ws, JSON.stringify({ t: 'error', code } satisfies ErrorMessage));
   }
 
@@ -412,12 +458,17 @@ export class Hall extends DurableObject<Env> {
   private handleIntent(ws: WebSocket, connection: ConnectionState, message: UpstreamMessage): void {
     const now = Date.now();
     const gate = consumeUpstream({ window: connection.rate, now, limit: UPSTREAM_RATE_PER_SEC });
+    // 被拒意图的统一出口：`code` 进下行报文，`intent` 只进日志（`reject{code,intent}`，见 `100-log.md` §3）
+    const fail = (code: ErrorCode): void => this.sendError(ws, code, message.t);
 
     // `ping` **不是输入**：只吃限流窗口，不刷新 `lastInputAt`（否则躺在床上的人切一次屏就把
     // 自动睡着推后 5 分钟），也不写任何业务状态。被限流时**静默丢弃**（不回 `4002`：
     // 探活失败不该变成用户可见的错误）。见 `docs/api/20-api-ws.md` §3 / §7。
     if (message.t === 'ping') {
-      if (!gate.allowed) return;
+      if (!gate.allowed) {
+        log.drop({ kind: 'limit' });
+        return;
+      }
       this.writeConnection(ws, { ...connection, rate: gate.window });
       this.send(ws, JSON.stringify({ t: 'pong', ts: now } satisfies PongMessage));
       return;
@@ -426,7 +477,8 @@ export class Hall extends DurableObject<Env> {
     if (!gate.allowed) {
       // 被限流：不写附件（省一次写入），也不刷新任何状态。`report` 超额**静默丢弃**
       // （`docs/api/20-api-ws.md` §4.9）：客户端已经本地置灰防连点，回一个 `4002` 只会多一次可见噪音。
-      if (message.t !== 'report') this.sendError(ws, '4002');
+      log.drop({ kind: 'limit' });
+      if (message.t !== 'report') fail('4002');
       return;
     }
     const fresh: ConnectionState = { ...connection, lastInputAt: now, rate: gate.window };
@@ -439,7 +491,7 @@ export class Hall extends DurableObject<Env> {
         const target = { x: Number(message.x), y: Number(message.y) };
         if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !isWalkable(target.x, target.y, this.bedCount())) {
           // 目标点不在街网上 → 静默丢弃，**不吸附**（吸附会让「点床躺下」与「点地面走动」的判定出现意外）
-          this.sendError(ws, '3006');
+          fail('3006');
           return;
         }
         // 在床上点地面 = 起身 + 走过去（一条命令完成，少点一次）
@@ -457,7 +509,7 @@ export class Hall extends DurableObject<Env> {
         if (bedNo === undefined) return;
         // 床号越界：静默类错误（客户端已按 `bedCount` 先拦一道并给可见提示，这条只是兜底）
         if (!Number.isInteger(bedNo) || bedNo < 0 || bedNo >= this.bedCount()) {
-          this.sendError(ws, '3001');
+          fail('3001');
           return;
         }
         const spot = frontPointOf(bedNo);
@@ -487,7 +539,7 @@ export class Hall extends DurableObject<Env> {
         });
         if (!verdict.ok) {
           // 判定不通过时**绝不站起来**：不为一个会失败的动作产生副作用
-          this.sendError(ws, verdict.code);
+          fail(verdict.code);
           return;
         }
         // 在床上点别的床 = 起身 + 走过去 + 躺下（同「点地面」那条，一条命令完成三件事）
@@ -496,12 +548,12 @@ export class Hall extends DurableObject<Env> {
         return;
       }
       case 'rise':
-        if (fresh.state === 'roaming') this.sendError(ws, '3005');
+        if (fresh.state === 'roaming') fail('3005');
         else this.standUp(ws, fresh);
         return;
       case 'sleep':
         if (fresh.state !== 'lying') {
-          this.sendError(ws, fresh.state === 'roaming' ? '3005' : '3004');
+          fail(fresh.state === 'roaming' ? '3005' : '3004');
           return;
         }
         this.fallAsleep(ws, fresh);
@@ -511,13 +563,14 @@ export class Hall extends DurableObject<Env> {
         if (fresh.state === 'asleep') this.wakeUp(ws, fresh);
         const verdict = chatVerdictFor(message.text, CHAT_MAX_LEN);
         if (!verdict.ok) {
-          this.sendError(ws, verdict.code);
+          fail(verdict.code);
           return;
         }
         // 发给所有人（**含发送者本人**）：客户端靠这一条显示自己的消息，不做本地乐观回显
         const ts = Date.now();
         this.rememberSpeech(fresh.userId, verdict.text, ts);
         this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts });
+        this.logChat(fresh.userId, verdict.text, verdict.hits, false);
         return;
       }
       case 'whisper': {
@@ -526,14 +579,14 @@ export class Hall extends DurableObject<Env> {
         // 文本规则与全局聊天完全相同，区别只在投递范围
         const verdict = chatVerdictFor(message.text, CHAT_MAX_LEN);
         if (!verdict.ok) {
-          this.sendError(ws, verdict.code);
+          fail(verdict.code);
           return;
         }
         const toId = String(message.toId);
         const target = this.socketOf(toId);
         if (!target) {
           // 对方不在厅：静默类错误，发送者拿不到任何反馈（见 `docs/api/20-api-ws.md` §4.8）
-          this.sendError(ws, '2005');
+          fail('2005');
           return;
         }
         // 发送者与接收者收到**同一条 payload**；第三人一条都收不到，所以不走 broadcast
@@ -549,32 +602,33 @@ export class Hall extends DurableObject<Env> {
         if (target !== ws) this.send(target, payload);
         // 只说**送达成功**的那句：对方不在厅的私聊没发出去，那话也就没进过任何人的屏幕
         this.rememberSpeech(fresh.userId, verdict.text, ts);
+        this.logChat(fresh.userId, verdict.text, verdict.hits, true);
         return;
       }
       case 'report': {
         // 校验顺序照 `docs/api/20-api-ws.md` §4.9：先事由（空 → `4003`、超长 → `4001`），再看对象
         const reason = typeof message.reason === 'string' ? message.reason.trim() : '';
         if (!reason) {
-          this.sendError(ws, '4003');
+          fail('4003');
           return;
         }
         if ([...reason].length > REPORT_REASON_MAX_LEN) {
-          this.sendError(ws, '4001');
+          fail('4001');
           return;
         }
         // `toId` 只能来自当前选中：服务端验不了「选中」，只验它是个别人；**不要求在线**
         const toId = typeof message.toId === 'string' ? message.toId : '';
         if (!toId || toId === fresh.userId) {
-          this.sendError(ws, '4003');
+          fail('4003');
           return;
         }
         // 目标必须是**真实存在过的身份**（`identity` 有一行）：否则随便填个字符串就能无上限地刷行，
         // 一次写入就是一次计费。不要求在线——刚说完就下线正是最该记下来的时候。
         if (!findIdentity(this.ctx.storage.sql, toId)) {
-          this.sendError(ws, '4003');
+          fail('4003');
           return;
         }
-        recordReport(
+        const result = recordReport(
           this.ctx.storage.sql,
           {
             reporterUserId: fresh.userId,
@@ -585,8 +639,11 @@ export class Hall extends DurableObject<Env> {
           },
           now,
         );
-        // `5003` 是唯一「成功用 error 报文回」的例外（否则用户会被骗「已收到」）
-        this.sendError(ws, '5003');
+        // `dup` = 这一条是 24 小时内重复举报（并进了已存在的那一行），直接取落库的返回值，不为判定再查一次
+        log.ev('report', { uid: fresh.userId, target: toId, dup: result === 'merged' });
+        // `5003` 是唯一「成功用 error 报文回」的例外（否则用户会被骗「已收到」）。它**不是拒绝**，
+        // 所以不走 `sendError`——那样会在 `reject` 里记一条假拒绝（`100-log.md` §3）。
+        this.send(ws, JSON.stringify({ t: 'error', code: '5003' } satisfies ErrorMessage));
         return;
       }
       default:
@@ -600,6 +657,17 @@ export class Hall extends DurableObject<Env> {
     recent.push({ text, at });
     if (recent.length > REPORT_EVIDENCE_MAX) recent.splice(0, recent.length - REPORT_EVIDENCE_MAX);
     this.speech.set(userId, recent);
+  }
+
+  /**
+   * 发出成功的聊天（`100-log.md` §3）：`chat{len,dm}` 一条——`len` 是**实际下发的那份打码后文本**的字符数
+   * （UTF-16 码元会按代理对拆开，所以用 `[...text].length`），**文本本身不进日志**；
+   * 打码命中的类目各一条 `censor{kind,n}`（两类都命中就是两条，`n` 是各类目自己的字符数，同一趟打码里数出来的）。
+   */
+  private logChat(userId: string, text: string, hits: MaskHits, dm: boolean): void {
+    log.ev('chat', { uid: userId, len: [...text].length, dm });
+    if (hits.word > 0) log.ev('censor', { uid: userId, kind: 'word', n: hits.word });
+    if (hits.contact > 0) log.ev('censor', { uid: userId, kind: 'contact', n: hits.contact });
   }
 
   /**
@@ -645,7 +713,7 @@ export class Hall extends DurableObject<Env> {
   private approachBed(ws: WebSocket, connection: ConnectionState, bedNo: number): void {
     const spot = frontPointOf(bedNo);
     if (!spot) {
-      this.sendError(ws, '3001'); // 床号没有几何：布局版本对不上或床号越界
+      this.sendError(ws, '3001', 'lie'); // 床号没有几何：布局版本对不上或床号越界
       return;
     }
 
@@ -656,7 +724,7 @@ export class Hall extends DurableObject<Env> {
 
     const path = findPath({ x: connection.x, y: connection.y }, spot, this.bedCount());
     if (!path || path.length === 0) {
-      this.sendError(ws, '3006');
+      this.sendError(ws, '3006', 'lie');
       return;
     }
 
@@ -683,7 +751,7 @@ export class Hall extends DurableObject<Env> {
       now,
     });
     if (!verdict.ok) {
-      this.sendError(ws, verdict.code);
+      this.sendError(ws, verdict.code, 'lie');
       return;
     }
 
@@ -710,6 +778,12 @@ export class Hall extends DurableObject<Env> {
     };
     this.writeConnection(ws, lying);
     this.armAutoSleep(lying);
+    // `from`：从别的床换过来（释放了旧归属）还是首次躺下（`100-log.md` §3）
+    log.ev('lie', {
+      uid: connection.userId,
+      bed: bedNo,
+      from: verdict.releasingBedNo === undefined ? 'empty' : 'swap',
+    });
 
     // 顺序有讲究（`api/20-api-ws.md` §4.5）：先释放旧床、再认领新床，否则客户端会瞬时持有两张有主床；
     // 归属两条都在占用（`state`）之前，否则会短暂渲染出「床有人、但不在归属表里」
@@ -723,7 +797,14 @@ export class Hall extends DurableObject<Env> {
     if (connection.state === 'roaming') return connection;
 
     const now = Date.now();
-    if (connection.bedNo !== undefined) clearBed(this.ctx.storage.sql, connection.bedNo, now);
+    if (connection.bedNo !== undefined) {
+      // `dwellMs` 的来源就是这一次清掉的 `sleep_started_at`（见 `bed-store.clearBed`）
+      const startedAt = clearBed(this.ctx.storage.sql, connection.bedNo, now);
+      // 算不出时长就不写这一条（行里没有起点），不编一个 0
+      if (startedAt !== undefined) {
+        log.ev('wake', { uid: connection.userId, bed: connection.bedNo, dwellMs: now - startedAt });
+      }
+    }
     const roaming: ConnectionState = { ...connection, state: 'roaming', bedNo: undefined, lastInputAt: now };
     this.writeConnection(ws, roaming);
     this.armAutoSleep(roaming);
@@ -734,7 +815,10 @@ export class Hall extends DurableObject<Env> {
   /** 手动睡着。 */
   private fallAsleep(ws: WebSocket, connection: ConnectionState): void {
     const now = Date.now();
-    if (connection.bedNo !== undefined) setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'asleep', now);
+    if (connection.bedNo !== undefined) {
+      setBedOccupancy(this.ctx.storage.sql, connection.bedNo, 'asleep', now);
+      log.ev('sleep', { uid: connection.userId, bed: connection.bedNo, auto: false });
+    }
     const asleep: ConnectionState = { ...connection, state: 'asleep', lastInputAt: now };
     this.writeConnection(ws, asleep);
     this.armAutoSleep(asleep);
@@ -780,6 +864,8 @@ export class Hall extends DurableObject<Env> {
       if (derived === 'asleep') this.due.remove('autosleep', connection.userId);
       if (next.bedNo !== undefined) {
         setBedOccupancy(this.ctx.storage.sql, next.bedNo, derived === 'asleep' ? 'asleep' : 'lying', now);
+        // 自动睡着（没有手动点「睡着」）：与 `fallAsleep` 同一种事实，只有 `auto` 不同
+        if (derived === 'asleep') log.ev('sleep', { uid: connection.userId, bed: next.bedNo, auto: true });
       }
       this.broadcastState(next);
       changed = true;
@@ -794,7 +880,7 @@ export class Hall extends DurableObject<Env> {
     const from = { x: connection.x, y: connection.y };
     const path = findPath(from, target, this.bedCount());
     if (!path) {
-      this.sendError(ws, '3006');
+      this.sendError(ws, '3006', 'walk');
       return;
     }
 
@@ -857,6 +943,40 @@ export class Hall extends DurableObject<Env> {
     if (this.tickTimer === null) return;
     clearInterval(this.tickTimer);
     this.tickTimer = null;
+  }
+
+  /**
+   * `tick` 事件的内存循环（`100-log.md` §3）：**只在这个厅有连接时存在**。
+   * 它与位置节拍是两回事（拍子 `TICK_LOG_MS` 而不是 `TICK_MS`），所以是独立的一条——
+   * 但「没有连接就不该有循环」是同一条硬纪律（`AGENTS.md` 硬纪律 6：忘记清除会让对象整夜不休眠）。
+   */
+  private startTickLogging(): void {
+    if (this.tickLogTimer !== null) return;
+    this.tickLogTimer = setInterval(() => this.logTick(), TICK_LOG_MS);
+  }
+
+  private stopTickLogging(): void {
+    if (this.tickLogTimer === null) return;
+    clearInterval(this.tickLogTimer);
+    this.tickLogTimer = null;
+  }
+
+  /**
+   * 一条 `tick`：四个数都取**已经用到的量**，不为日志多读一次（`100-log.md` §5：288 条/天，
+   * 唯一的新增读是这一次 `COUNT`）。`level` 从同一个 `bedCount` 推，不另读 `meta`。
+   */
+  private logTick(): void {
+    try {
+      const beds = this.bedCount();
+      log.ev('tick', {
+        online: this.onlineCount(),
+        used: this.usedBeds(Date.now()),
+        beds,
+        level: levelIndexOfBedCount(beds),
+      });
+    } catch {
+      // 埋点永不打断内存循环（§1）：丢这一条日志可以，让定时器回调抛出去不行
+    }
   }
 
   /** 对象被驱逐后重建工作集：附加数据里还有目标的，重新算一次路径（街网寻路是确定性的）。 */
@@ -947,11 +1067,16 @@ export class Hall extends DurableObject<Env> {
    * 这时 `send()` 会抛。任其冒出就是「一个死连接打断整次广播」——排在他后面的连接一条都收不到。
    */
   private send(ws: WebSocket, payload: string): void {
-    if (ws.readyState !== 1 /* OPEN */) return;
+    if (ws.readyState !== 1 /* OPEN */) {
+      // 已经关掉的连接不算「发送失败」，按 `skip` 单独攒（见 `docs/design/100-log.md` §3）
+      log.drop({ kind: 'skip' });
+      return;
+    }
     try {
       ws.send(payload);
     } catch {
       // 刚好在检查与发送之间关掉：忽略。广播的语义是「能发的照发」，不是「发不出去就整条失败」。
+      log.drop({ kind: 'send' });
     }
   }
 
@@ -1006,27 +1131,36 @@ export class Hall extends DurableObject<Env> {
    * 所以「延后消失」这件事根本兑现不了。在床上的人相反：不发 `leave`，宽限到期由床位行推导转成睡痕。
    */
   async webSocketClose(ws: WebSocket): Promise<void> {
-    const connection = readConnection(ws);
-    if (!connection?.ready) return;
-    this.ensureSchedule();
-    // 被新连接顶掉的旧连接：状态已经归新会话了，这里再动就会把新会话的路径删掉
-    if (this.socketOf(connection.userId, ws)) return;
+    try {
+      const connection = readConnection(ws);
+      if (!connection?.ready) return;
+      // 最后一条连接也走了 → `tick` 那条循环必须当场消失（硬纪律 6：有循环对象就无法休眠）。
+      // 放在**所有会抛的调用之前**：下面任何一行抛了（catch 只留一条 `err`）都不会把它漏下。
+      // 被顶掉的旧连接由下面那一行返回、不走到这里，那时新连接还活着，循环该留着。
+      if (!this.hasOtherLiveConnection(ws)) this.stopTickLogging();
+      this.ensureSchedule();
+      // 被新连接顶掉的旧连接：状态已经归新会话了，这里再动就会把新会话的路径删掉
+      if (this.socketOf(connection.userId, ws)) return;
 
-    const now = Date.now();
-    this.stopWalking(connection.userId);
-    this.due.remove('autosleep', connection.userId); // 人已经不在线，「该不该睡着」不再适用于他
-    if (connection.bedNo === undefined) {
-      // 走路被断线打断：先把端点补发给别人，再说他走了（顺序反了的话，那条位置会落在一个已经删掉的人身上）
-      this.sendPositions([[connection.userId, connection.x, connection.y]]);
-      // 要排除**正在关闭的这一条**：平台在关闭事件里仍会把它列在 `getWebSockets()` 里，
-      // 不排除就会把自己也算成在线
-      this.broadcast({ t: 'leave', id: connection.userId, online: this.onlineCount(ws) });
-    } else {
-      // 在床上：不发 leave，等宽限到期后由床位行推导转成睡痕
-      this.due.upsert({ kind: 'grace', userId: connection.userId, at: now + GRACE_MS });
+      const now = Date.now();
+      this.stopWalking(connection.userId);
+      this.due.remove('autosleep', connection.userId); // 人已经不在线，「该不该睡着」不再适用于他
+      if (connection.bedNo === undefined) {
+        // 走路被断线打断：先把端点补发给别人，再说他走了（顺序反了的话，那条位置会落在一个已经删掉的人身上）
+        this.sendPositions([[connection.userId, connection.x, connection.y]]);
+        // 要排除**正在关闭的这一条**：平台在关闭事件里仍会把它列在 `getWebSockets()` 里，
+        // 不排除就会把自己也算成在线
+        this.broadcast({ t: 'leave', id: connection.userId, online: this.onlineCount(ws) });
+      } else {
+        // 在床上：不发 leave，等宽限到期后由床位行推导转成睡痕
+        this.due.upsert({ kind: 'grace', userId: connection.userId, at: now + GRACE_MS });
+      }
+      this.touchLastSeen(connection.userId, now); // 与事件时刻同源：推导算出来的到期时刻与堆里的一致
+      this.syncAlarm();
+    } catch {
+      // 关连接的收尾抛了：只留一条 `err`，不向平台抛（原来也是平台吞掉的）。
+      log.err({ where: 'ws-close', code: '9001' });
     }
-    this.touchLastSeen(connection.userId, now); // 与事件时刻同源：推导算出来的到期时刻与堆里的一致
-    this.syncAlarm();
   }
 
   /**
@@ -1076,6 +1210,16 @@ export class Hall extends DurableObject<Env> {
     setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
     // 床上的人断线不广播任何东西，人数降下来就发生在这一条上（宽限到期转睡痕）
     this.broadcast({ t: 'state', id: userId, state: 'trace', bedNo, online: this.onlineCount() });
+  }
+
+  /**
+   * 除了这一条（正在关闭的）之外，还有没有已握手的连接：`tick` 循环的存在条件。
+   * 关闭事件里平台仍会把这一条列在 `getWebSockets()` 里，不排除它就会把循环留住。
+   */
+  private hasOtherLiveConnection(closing: WebSocket): boolean {
+    return this.ctx
+      .getWebSockets()
+      .some((ws) => ws !== closing && readConnection(ws)?.ready === true);
   }
 
   /**
@@ -1213,9 +1357,12 @@ export class Hall extends DurableObject<Env> {
     // 归属释放：先取出主体（要逐床广播 bed），再一条 UPDATE 清掉
     const released = listExpiredOwnerships(sql, now);
     releaseExpiredOwnerships(sql, now);
-    for (const bedNo of released) this.broadcast({ t: 'bed', bedNo, owned: false });
+    for (const { bedNo } of released) this.broadcast({ t: 'bed', bedNo, owned: false });
 
+    // 结算前后的级容量：`from` 在缩级之前读（读一次就进缓存，缩级那条路径不会再多读一次）
+    const bedCountFrom = this.bedCount();
     this.shrinkIfOuterRingEmpty(now);
+    const bedCountTo = this.bedCount();
 
     forgetStaleSources(sql, now);
     purgeExpiredBlocks(sql, now);
@@ -1226,6 +1373,15 @@ export class Hall extends DurableObject<Env> {
 
     writeDailyWakeAt(sql, previousDailyWakeAt(now));
     this.armDailyWake();
+
+    // 结算一条：`wakes` / `traces` 都从这一轮已取到的 `released` 里数（不为它再读一遍表）
+    log.ev('settle', {
+      wakes: released.length,
+      traces: released.filter((bed) => bed.state === 'trace').length,
+      from: bedCountFrom,
+      to: bedCountTo,
+      ms: Date.now() - now,
+    });
   }
 
   /**
@@ -1274,9 +1430,16 @@ export class Hall extends DurableObject<Env> {
    * 处理器内不残留任何内存定时器（位置节拍只在有移动者时存在，见 §4.5）。
    */
   async alarm(): Promise<void> {
-    this.ensureSchedule(); // 唤醒后重建事件堆（重建出来的过期事件当场执行）
-    this.runDueEvents(); // 兜住刚跨过阈值的那几个（重建与本行之间可能刚好到点）
-    await this.armAlarm();
+    try {
+      this.ensureSchedule(); // 唤醒后重建事件堆（重建出来的过期事件当场执行）
+      this.runDueEvents(); // 兜住刚跨过阈值的那几个（重建与本行之间可能刚好到点）
+      await this.armAlarm();
+    } catch (error) {
+      // **照旧抛**：平台的「至少一次执行」靠异常退避重试（起始 2 秒、最多 6 次），吞掉就把唤醒降成「最多一次」
+      // （见 `docs/design/10-hall-runtime.md` §4.4）。日志只负责留证据，不替平台重试。
+      log.err({ where: 'alarm', code: '9001' });
+      throw error;
+    }
   }
 
   /** 全量快照：在线连接来自内存，**睡痕与宽限中的床上离线者只能查库**（人已离线，内存里没有他）。 */

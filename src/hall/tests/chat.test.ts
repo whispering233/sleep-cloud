@@ -17,12 +17,20 @@ describe('聊天文本判定', () => {
   });
 
   it('长度按字符计：正好等于上限放行，超过一个字符 → 4001', () => {
-    expect(chatVerdictFor('好'.repeat(MAX), MAX)).toEqual({ ok: true, text: '好'.repeat(MAX) });
+    expect(chatVerdictFor('好'.repeat(MAX), MAX)).toEqual({
+      ok: true,
+      text: '好'.repeat(MAX),
+      hits: { word: 0, contact: 0 },
+    });
     expect(chatVerdictFor('好'.repeat(MAX + 1), MAX)).toEqual({ ok: false, code: '4001' });
   });
 
   it('正常文本原样返回，首尾空白被 trim', () => {
-    expect(chatVerdictFor('  睡不着的人  ', MAX)).toEqual({ ok: true, text: '睡不着的人' });
+    expect(chatVerdictFor('  睡不着的人  ', MAX)).toEqual({
+      ok: true,
+      text: '睡不着的人',
+      hits: { word: 0, contact: 0 },
+    });
   });
 
   it('命中敏感词：打码为等长 `*` 后照常放行（不拦截）', () => {
@@ -32,6 +40,17 @@ describe('聊天文本判定', () => {
     if (!verdict.ok) return;
     expect(verdict.text).not.toContain('傻');
     expect(verdict.text).toContain('*');
+    expect(verdict.text).toHaveLength(raw.length);
+  });
+
+  it('hits：命中与计数是同一趟打码算出来的，两类各数自己被替换的字符数', () => {
+    const raw = '傻 逼 www.example.com';
+    const verdict = chatVerdictFor(raw, MAX);
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    // 词表命中的是「傻 逼」三个字符（夹在中间的空白也被替换）加上 `www` 三个字符（这个词本身就在词表里），
+    // 联系方式是整段 15 个字符；跨类目重叠的那些字符两边各算各的
+    expect(verdict.hits).toEqual({ word: 6, contact: 15 });
     expect(verdict.text).toHaveLength(raw.length);
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BED_OWNERSHIP_TTL_MS } from '../../shared/constants';
 import { HALL_LEVELS } from '../../shared/layout';
 import {
+  clearBed,
   effectivelyOwned,
   findOwnedBed,
   listExpiredOwnerships,
@@ -198,7 +199,7 @@ describe('睡痕：没有 TTL，跟归属同寿（30 天释放才消失）', () 
     const tracedAt = NOW - BED_OWNERSHIP_TTL_MS - 1;
     insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: tracedAt, updatedAt: tracedAt });
 
-    expect(listExpiredOwnerships(sql, NOW)).toEqual([4]);
+    expect(listExpiredOwnerships(sql, NOW)).toEqual([{ bedNo: 4, state: 'trace' }]);
     releaseExpiredOwnerships(sql, NOW);
     expect(rawRow(sql, 4)).toMatchObject({ state: 'empty', owner_user_id: null });
     expect(listTraceBeds(sql)).toEqual([]);
@@ -241,7 +242,7 @@ describe('归属：过期同样是读取时推导', () => {
     insertBed(sql, 2, { state: 'empty', ownerUserId: 'u_gone', lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS - 1, updatedAt: NOW });
     insertBed(sql, 3, { state: 'empty', ownerUserId: 'u_recent', lastSeenAt: NOW - 1000, updatedAt: NOW });
 
-    expect(listExpiredOwnerships(sql, NOW)).toEqual([2]);
+    expect(listExpiredOwnerships(sql, NOW)).toEqual([{ bedNo: 2, state: 'empty' }]);
     expect(listOwnedBeds(sql, NOW)).toEqual([1, 3]);
     expect(findOwnedBed(sql, 'u_gone', NOW)).toBeUndefined();
     expect(readBed(sql, 2, NOW)?.ownerUserId).toBeNull(); // 过期 → 视为无主（可认领）
@@ -263,6 +264,35 @@ describe('归属：过期同样是读取时推导', () => {
     const sql = freshSql();
     insertBed(sql, 1, { state: 'asleep', ownerUserId: 'u_here', lastSeenAt: NOW - 500, updatedAt: NOW });
     expect(listExpiredOwnerships(sql, NOW)).toEqual([]);
+  });
+
+  it('起身只清占用与 `sleep_started_at`，归属保留，并交回清掉的那一份起点（`wake{dwellMs}` 用）', () => {
+    const sql = freshSql();
+    const startedAt = NOW - 90_000;
+    insertBed(sql, 5, {
+      state: 'asleep',
+      ownerUserId: 'u_a',
+      claimedAt: NOW - 60_000,
+      lastSeenAt: NOW,
+      sleepStartedAt: startedAt,
+      updatedAt: NOW,
+    });
+
+    expect(clearBed(sql, 5, NOW)).toBe(startedAt);
+    expect(rawRow(sql, 5)).toMatchObject({
+      state: 'empty',
+      owner_user_id: 'u_a', // 归属保留：起身不会把床让给别人
+      sleep_started_at: null,
+      updated_at: NOW,
+    });
+  });
+
+  it('没有起点（行里 `sleep_started_at` 为空 / 行不存在）就交回 `undefined`，不编一个 0', () => {
+    const sql = freshSql();
+    insertBed(sql, 5, { state: 'empty', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW });
+
+    expect(clearBed(sql, 5, NOW)).toBeUndefined();
+    expect(clearBed(sql, 6, NOW)).toBeUndefined(); // 惰性行：没有行也不算错
   });
 
   it('释放只动超期那几行，未到期的行原样留着', () => {

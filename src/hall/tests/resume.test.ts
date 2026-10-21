@@ -153,8 +153,8 @@ test('宽限已过重连（睡痕行）：回来是睡着，且推一次 state �
   expect({ x: resumed.x, y: resumed.y }).toEqual(point(frontPointOf(7)));
   expect(rawRow(sql, 7)).toMatchObject({
     state: 'asleep', // 睡痕恢复 = 睡着的还原（`docs/db/schema.md` §7）
-    owner_user_id: 'u_me', // 归属与睡眠起点不被这次恢复改写
-    sleep_started_at: null, // 这行从没有过睡眠起点，恢复也不补
+    owner_user_id: 'u_me', // 归属不动
+    sleep_started_at: now, // 睡眠起点从「回来这一刻」重算（否则 dwellMs 会含离线那段）
   });
   expect(watcher.received).toHaveLength(1);
   const message = JSON.parse(watcher.received[0] as string) as DownstreamMessage;

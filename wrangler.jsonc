@@ -15,7 +15,7 @@
   "routes": [{ "pattern": "__ENTRY_HOST__/*", "zone_name": "__ENTRY_ZONE__" }],
 
   // 打开后能在平台面板里看 Worker 日志（排查生产问题就靠它）
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 
   // 前端与接口同源：静态资源由平台托管（免费、不计请求额度），/api/* 交给 Worker（与房间服务）。
   "assets": {

@@ -68,7 +68,7 @@
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
 | `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。**入库的 `wrangler.jsonc` 里那两个值是占位符**（`__ENTRY_HOST__` / `__ENTRY_ZONE__`），CI 部署前用 Environment secret 替换（§4.4）；未入库的 `wrangler.local.jsonc` 存真实值，只给本机应急部署用（`--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
-| `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
+| `observability` | `enabled: true` + `logs.invocation_logs: false` | 自定义事件进平台日志（契约见 `100-log.md` §3）。**invocation log 关掉**：WebSocket 每帧都是一次 invocation，开着会把 20 万/天额度打满，而我们要看的字段它一个都没有。`wrangler tail` 仍能实时看 |
 
 **典型症状：`wrangler` 报 `fetch failed`（或「Not logged in … the Cloudflare auth server could not be reached」）**
 凭据没问题，是**每次连接都被 250 ms 的尝试超时杀掉**，三层原因叠在一起：
@@ -208,7 +208,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 ## 5. 免费额度监控（第一版必看）
 
-免费计划**任一维度超额会让该类操作直接失败**，因此上线后必须盯住四项：
+免费计划**任一维度超额会让该类操作直接失败**，因此上线后必须盯住五项：
 
 | 维度 | 每日额度 | 观察方式 |
 | :--- | :--- | :--- |
@@ -217,6 +217,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 | SQLite 行读取 | 5,000,000 / 天 | 平台用量面板。**最容易被放大的一项**（唤醒时整表加载是典型泄漏） |
 | SQLite 行写入 | 100,000 / 天 | 平台用量面板 |
 | 外层 Worker 请求 | 100,000 / 天 | 静态资源请求不计入，实际压力很小 |
+| 日志事件 | 200,000 / 天 | 平台 Observability → Events。预算与打满的先兆见 `100-log.md` §5 |
 
 **判断泄漏的三个信号**：
 
@@ -230,5 +231,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 | :--- | :--- |
 | 免费额度长期打满 | 升级到付费计划（最低 $5/月），额度提升到百万级请求/月 |
 | 单厅经常接近容量上限 | 在厅注册表加新厅（手动），不是自动扩容 |
-| 需要跨厅统计/看板 | 引入 D1，用**读写分离**方式：厅仍是权威，D1 只接收异步投影（见 `architecture.md`） |
+| 运营数据（人数 / 共处时长 / 拒绝分布 / 快照体积） | **不引新存储**：所有事件经单一出口写进平台日志，用 Observability 的 Query Builder 聚合，配方见 `100-log.md` §6 |
+| 需要跨保留期的长期趋势（月报、次留） | 厅内 SQLite 加一张按日聚合表（`100-log.md` §8）；仍不需要 D1 |
+| 需要跨部署/换机器的历史 | 才引入 D1，用**读写分离**方式：厅仍是权威，D1 只接收异步投影（见 `architecture.md`） |
 

@@ -168,15 +168,18 @@ export function listTraceBeds(sql: SqlStorage): TraceBedRow[] {
     }));
 }
 
-/** 超期归属的床号（`last_seen_at` 为空或距今超过 30 天）。谓词与 `ownershipAlive` 是同一条边。 */
-export function listExpiredOwnerships(sql: SqlStorage, now: number): number[] {
+/**
+ * 超期归属的床（`last_seen_at` 为空或距今超过 30 天）。谓词与 `ownershipAlive` 是同一条边。
+ * `state` 顺带取出（同一次查询多一列）：结算要知道这一批里几条原本是睡痕（`settle{traces}`）。
+ */
+export function listExpiredOwnerships(sql: SqlStorage, now: number): { bedNo: number; state: BedState }[] {
   return sql
-    .exec<{ bed_no: number }>(
-      `SELECT bed_no FROM bed WHERE owner_user_id IS NOT NULL AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+    .exec<{ bed_no: number; state: string }>(
+      `SELECT bed_no, state FROM bed WHERE owner_user_id IS NOT NULL AND (last_seen_at IS NULL OR last_seen_at < ?)`,
       now - BED_OWNERSHIP_TTL_MS,
     )
     .toArray()
-    .map((row) => row.bed_no);
+    .map((row) => ({ bedNo: row.bed_no, state: row.state as BedState }));
 }
 
 /**
@@ -348,24 +351,38 @@ export interface RestoreBedInput {
 }
 
 /**
- * 从睡痕恢复：**睡着的还原**（`state = 'asleep'`）。**不是新的一次上床**——归属与 `sleep_started_at`
- * 都不动，只刷新名字快照（见 `docs/db/schema.md` §7「宽限已过后重连」）。
+ * 从睡痕恢复：**睡着的还原**（`state = 'asleep'`）。归属不动，只刷新名字快照（见 `docs/db/schema.md` §7「宽限已过后重连」）。
+ *
+ * `sleep_started_at` **重新从这一刻起算**：不清的话，`wake.dwellMs` 会把「人不在线的那段」也算进去，
+ * 手机后台被杀的常态会话会变成几小时的假样本、隔几天回来一次就是几万小时（`100-log.md` §3）。
  */
 export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): void {
   sql.exec(
-    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?
+    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?,
+      sleep_started_at = ?
      WHERE bed_no = ?`,
     input.name,
     input.appearance,
+    input.now,
     input.now,
     input.now,
     input.bedNo,
   );
 }
 
-/** 起身：床变空，**归属保留**（`sleep_started_at` 清空）。 */
-export function clearBed(sql: SqlStorage, bedNo: number, now: number): void {
+/**
+ * 起身：床变空，**归属保留**（`sleep_started_at` 清空），并返回清空前的 `sleep_started_at`
+ * （这次在床上睡了多久由它算，见 `wake{dwellMs}`）。
+ *
+ * shortcut: 多一次行读, `UPDATE … RETURNING` 给的是**更新后**的行（`sleep_started_at` 那时已经是 NULL）,
+ * 旧值只能先单独读一下；这一次行读已经在 `docs/design/100-log.md` §7 的额度里（起身几百/天）。
+ */
+export function clearBed(sql: SqlStorage, bedNo: number, now: number): number | undefined {
+  const startedAt = sql
+    .exec<{ sleep_started_at: number | null }>('SELECT sleep_started_at FROM bed WHERE bed_no = ?', bedNo)
+    .toArray()[0]?.sleep_started_at;
   sql.exec("UPDATE bed SET state = 'empty', sleep_started_at = NULL, updated_at = ? WHERE bed_no = ?", now, bedNo);
+  return startedAt ?? undefined;
 }
 
 /**

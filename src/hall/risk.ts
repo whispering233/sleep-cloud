@@ -80,27 +80,33 @@ export function blockStateOf(sql: SqlStorage, source: EntrySource, now: number):
 
 /**
  * 入场台账：`first_seen_at` 只在第一次写，其余各项每次刷新。
+ * 返回值 = 这次是不是**新身份 / 首次入场**（`enter{fresh}`）：`RETURNING` 给的是冲突处理之后的那一行 ——
+ * 新插入时 `first_seen_at` 就是这次写的 `now`，命中旧行时它仍是第一次的那个时刻。
  * 来源缺失时写 `null`——与「90 天留存期被清空」是同一种空值语义（见 `docs/db/schema.md` §4.1）。
  * 昵称缺失时**保留旧值**：不该因为这一次没带名字，就抹掉上次认得出来的那个人。
  */
-export function recordIdentity(sql: SqlStorage, source: EntrySource, now: number): void {
-  sql.exec(
-    `INSERT INTO identity (user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash)
+export function recordIdentity(sql: SqlStorage, source: EntrySource, now: number): boolean {
+  const row = sql
+    .exec<{ first_seen_at: number }>(
+      `INSERT INTO identity (user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
        nickname = COALESCE(excluded.nickname, identity.nickname),
        last_seen_at = excluded.last_seen_at,
        last_ip = excluded.last_ip,
        last_country = excluded.last_country,
-       ua_hash = excluded.ua_hash`,
-    source.userId,
-    source.nickname ?? null,
-    now,
-    now,
-    source.ip ?? null,
-    source.country ?? null,
-    source.uaHash ?? null,
-  );
+       ua_hash = excluded.ua_hash
+     RETURNING first_seen_at`,
+      source.userId,
+      source.nickname ?? null,
+      now,
+      now,
+      source.ip ?? null,
+      source.country ?? null,
+      source.uaHash ?? null,
+    )
+    .one();
+  return row.first_seen_at === now;
 }
 
 /** 黑名单的一行（`untilAt` 为 `null` = 永久）。 */

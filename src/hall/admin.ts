@@ -1,4 +1,5 @@
 import { displayBedNoOf } from '../shared/layout';
+import * as log from '../shared/log';
 import { findOwnedBed } from './bed-store';
 import { listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
@@ -181,12 +182,16 @@ async function createBlock(request: Request, ctx: AdminContext): Promise<Respons
   // **先写库再踢**：踢成功但没落库 = 一次重连就回来
   upsertBlock(ctx.sql, { kind, value, untilAt, reason }, now);
   writeAudit(ctx.sql, { action: 'block', kind, value, untilAt, reason }, now);
+  // 后台动作也留一条（`100-log.md` §3：`by='admin'`，永久写 0）。**不挂任何身份字段**：
+  // 这里的主语是一个值（`value` 可能是 IP，L3 永不下发 / 不进日志），不是某个人。
+  log.ev('block', { until: untilAt ?? 0, by: 'admin' });
   for (const live of matched) {
     // 一条死连接抛一次就会打断后面所有人（`AGENTS.md` 硬纪律 15）
     try {
       live.close(untilAt);
     } catch (error) {
       console.error('关闭被封连接失败：', error);
+      log.err({ where: 'admin-close', code: '9001' });
     }
   }
 
@@ -268,6 +273,7 @@ export async function handleAdminRequest(
     return routeAdminRequest(request, url, ctx);
   } catch (error) {
     console.error('后台接口处理失败：', error);
+    log.err({ where: 'admin-request', code: '9001' });
     return new Response(null, { status: 500 });
   }
 }
