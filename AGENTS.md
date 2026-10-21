@@ -23,6 +23,7 @@
 | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 | `docs/design/70-privacy-risk.md` |
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
+| 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
 | 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、发版顺序、额度监控；测试环境与流程（哪类测试用哪个环境） | `docs/design/build.md`、`docs/design/test.md` |
 | 数据模型 | `docs/db/schema.md` |
