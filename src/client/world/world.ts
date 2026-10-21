@@ -93,7 +93,7 @@ export interface WorldHandle {
   focusMyBed(): void;
   /** 相机跳到指定床（动作行的 `GO`）。 */
   focusBed(bedNo: number): void;
-  /** 设世界缩放档位（动作行那颗胶囊；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
+  /** 设世界缩放档位（齿轮浮层的「缩放」二级选出来的；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
 }
 
