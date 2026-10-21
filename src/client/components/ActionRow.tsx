@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -215,6 +215,18 @@ export function ActionRow() {
             </button>
           ) : (
             <>
+              {/* 「!」= 阅读入口（`docs/design/50-slot-panel.md` §附）：齿轮左侧、组内 8px。
+                  只在空闲态出现——非空闲态那格被「收起」占住，两者天然互斥 */}
+              <button
+                key="read"
+                type="button"
+                className="hud-action hud-read"
+                aria-label="随机阅读"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => setComposer({ kind: 'read' })}
+              >
+                !
+              </button>
               {/* 齿轮：菜单的开关（两条路径的差别全写在 `gearMenuProps` 里） */}
               <button
                 key="gear"

@@ -13,7 +13,7 @@ import type {
   StateMessage,
   WhisperMessage,
 } from '../shared/protocol';
-import { CHAT_BUBBLE_MS, PREDICTION_STALE_MS, WALK_SPEED_PX_PER_S } from '../shared/constants';
+import { CHAT_BUBBLE_MS, PREDICTION_STALE_MS, TYPE_TEXTS_PER_CATEGORY, WALK_SPEED_PX_PER_S } from '../shared/constants';
 import { frontPointOf } from '../shared/layout';
 import type { Point } from '../shared/layout';
 import { decodeOwnedBeds } from '../shared/protocol';
@@ -26,15 +26,20 @@ import { nextMotion } from './motion';
 import type { Motion } from './motion';
 import {
   readAboutSeen,
+  readProgress as loadReadProgress,
   readSound,
   readWeather,
   readZoomMode,
+  writeProgress as saveReadProgress,
   writeSound,
   writeWeather,
   writeZoomMode,
 } from './prefs';
+import type { ReadProgress } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
+import { drawNext } from './type-texts';
+import type { TypeTextItem } from './type-texts';
 import type { BedDirection } from './world/rules';
 import { sameZoomMode } from './zoom';
 import type { ZoomMode } from './zoom';
@@ -148,6 +153,12 @@ export interface ClientState {
    */
   composer: ComposerState;
   /**
+   * **类型文本的阅读进度**（客户端本地状态，不进协议、不进快照）：`seen` = 每个分类抽到过的条目 id，
+   * `current` = 每个分类的当前条 id。**回 idle 不清**——没读完的那条收起、刷新回来还要在
+   * （`docs/design/50-slot-panel.md` §附）。启动读一次本地键，之后只在抽签 / 再看一遍时**一次写落**。
+   */
+  readProgress: ReadProgress;
+  /**
    * 正在举报谁（客户端本地状态，不进协议、不进快照）：点「举报」时记下。
    * `5003` 回执只有码、没有目标 id，本地必须记着这一单打给谁才知该置灰哪颗按钮。
    */
@@ -170,6 +181,7 @@ const emptyState = (): ClientState => ({
   bubbles: new Map(),
   switching: false,
   composer: 'idle',
+  readProgress: loadReadProgress(),
   reportedIds: new Set(),
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
   // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
@@ -303,6 +315,50 @@ export function setComposer(event: ComposerEvent): void {
   if (next === state.composer) return;
   // 进新会话 = 「下一次操作」：上一单的举报回执那行话让位；退场（回 idle）时保留它
   setState({ composer: next, ...(next === 'idle' ? {} : { chatHint: undefined }) });
+}
+
+/**
+ * 记一条阅读进度（`seen` 追加 + `current` 覆盖）：**一次写落**，不出现「当前条写了、seen 没写」的中间态
+ * （`docs/design/40-client-storage.md` §3）。`seen` 超每类上限时丢最老的——数据换代留下的脏 id
+ * 也不会把整条值在下次读时拖到被判废。
+ */
+function commitRead(categoryId: string, seen: string[], current: string | undefined): void {
+  const next: ReadProgress = {
+    seen: { ...state.readProgress.seen, [categoryId]: seen.slice(-TYPE_TEXTS_PER_CATEGORY) },
+    // `current` 缺席时保留原值：空分类一条抽不出来，不该因此写一个空 id 把整条值弄脏（下次读就判废）
+    current: current === undefined ? state.readProgress.current : { ...state.readProgress.current, [categoryId]: current },
+  };
+  setState({ readProgress: next });
+  saveReadProgress(next);
+}
+
+/**
+ * 抽一条并记下（池空返回 `null`，面板据此换成「再看一遍」）：
+ * 池 = 这个分类里**不在 `seen`** 的条目，且池里还有别的时**排除当前条**
+ * （否则 1/N 的概率抽回正在看的那条，用户会以为按钮坏了）。
+ */
+export function drawReadItem(categoryId: string, items: readonly TypeTextItem[]): TypeTextItem | null {
+  const seen = state.readProgress.seen[categoryId] ?? [];
+  const drawn = drawNext({ items, seen, current: state.readProgress.current[categoryId] });
+  if (!drawn) return null;
+  commitRead(categoryId, seen.includes(drawn.id) ? seen : [...seen, drawn.id], drawn.id);
+  return drawn;
+}
+
+/** 「再看一遍」：清空该分类的 `seen` 再抽一条（抽签已排除当前条，所以不会原地不动）。 */
+export function replayRead(categoryId: string, items: readonly TypeTextItem[]): TypeTextItem | null {
+  commitRead(categoryId, [], state.readProgress.current[categoryId]);
+  return drawReadItem(categoryId, items);
+}
+
+/**
+ * 打开面板时确保有一个当前条：**有效的当前条原样返回**（退出 / 刷新回来还是它），
+ * 没有才抽一条——「抽一条」的正常入口是那颗「随机」，隐式抽签只在没有当前条时发生。
+ */
+export function ensureReadItem(categoryId: string, items: readonly TypeTextItem[]): TypeTextItem | null {
+  const id = state.readProgress.current[categoryId];
+  const found = id === undefined ? undefined : items.find((item) => item.id === id);
+  return found ?? drawReadItem(categoryId, items);
 }
 
 /**

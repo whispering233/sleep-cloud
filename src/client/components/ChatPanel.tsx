@@ -15,6 +15,7 @@ import { QuickPhrases } from './QuickPhrases';
 import { ReportForm } from './ReportForm';
 import { SlotPanel } from './SlotPanel';
 import { TextInput } from './TextInput';
+import { TypeTextPanel } from './TypeTextPanel';
 
 /**
  * 底部常驻的面板 = **底部控制台**（见 `docs/ui/DESIGN.md` 的 `chat-panel` 行）：连接提示条 →
@@ -42,6 +43,8 @@ interface PanelView {
   reported: boolean;
   /** 面板上那行常驻弱提示（`5003` 回执）：盖过草稿长度提示，常驻到下一次操作 */
   chatHint?: string;
+  /** 类型文本的阅读进度（`reading` 态才有用；抽签改的就是它） */
+  readProgress: ClientState['readProgress'];
 }
 
 /** 面板只吃这几个字段：位置节拍每秒通知十次，用不上的变化不该渲染。 */
@@ -54,6 +57,7 @@ function viewOf(state: ClientState): PanelView {
     reportTo: state.pendingReportTo,
     reported: state.selectedId !== undefined && state.reportedIds.has(state.selectedId),
     chatHint: state.chatHint,
+    readProgress: state.readProgress,
   };
 }
 
@@ -64,7 +68,9 @@ const sameView = (a: PanelView, b: PanelView): boolean =>
   a.composer === b.composer &&
   a.reportTo === b.reportTo &&
   a.reported === b.reported &&
-  a.chatHint === b.chatHint;
+  a.chatHint === b.chatHint &&
+  // 阅读进度是**整体替换**的对象：只有抽签 / 再看一遍才换身份，所以比引用就够
+  a.readProgress === b.readProgress;
 
 export function ChatPanel() {
   const panelRef = useRef<HTMLElement>(null);
@@ -219,10 +225,16 @@ export function ChatPanel() {
         </form>
       </section>
 
-      {/* 插槽面板在网格第 3 行（打字态铺满到屏底）；首版内容 = 快捷用语（`docs/design/50-slot-panel.md` §附），
-          点一条只改草稿、不发送、不退场 */}
+      {/* 插槽面板在网格第 3 行（打字态铺满到屏底）。三个内容互斥：举报表单 > 类型文本 > 快捷用语
+          （前者们都没有可编辑控件，退场只能靠那颗「收起」，`docs/design/50-slot-panel.md` §4） */}
       <SlotPanel active={view.composer !== 'idle'} onBlank={exitComposer}>
-        {view.composer === 'report' ? <ReportForm toId={view.reportTo} /> : <QuickPhrases onFill={setDraft} />}
+        {view.composer === 'report' ? (
+          <ReportForm toId={view.reportTo} />
+        ) : view.composer === 'reading' ? (
+          <TypeTextPanel progress={view.readProgress} />
+        ) : (
+          <QuickPhrases onFill={setDraft} />
+        )}
       </SlotPanel>
     </>
   );
