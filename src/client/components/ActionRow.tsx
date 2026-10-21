@@ -11,7 +11,7 @@ import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
-import { sameZoomMode, zoomModeLabel, zoomOptions } from '../zoom';
+import { sameZoomMode, zoomOptions, zoomShortLabel } from '../zoom';
 import { useHudView } from './Hud';
 import { TextInput } from './TextInput';
 
@@ -29,49 +29,40 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开的浮层是五项：**更换床位** / **天气** /
- * **关于失眠云** / 版本号 / 隐私说明；
+ * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
- * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那把齿轮换成「收起」胶囊——
+ * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那一组换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
  * 分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
  *
  * `GO` 点开后在门控行展开输入床号（`hop`）：输入的是**显示床号**（1 起），由 `parseJumpTarget`
  * 按当前 `bedCount` 先拦一道——非法就给可见提示且**不发送**（可点击的界面不静默失败）。
- * 缩放胶囊点开后在同一个行位置展开档位选项（`zoom-picker`）：**它既是世界缩放的单指入口**
- * （WCAG 2.5.1：多指手势必须有单指替代，而且捏合没有可发现性），也是档位状态的**常驻显示**
- * ——忘了自己锁在 `0.5×` 的人会以为捏合坏了。
+ * **缩放**住在齿轮浮层的二级（`zoom-picker`）：浮层根上那一项写「缩放 · 当前档位」，进去是五个档位 + 一行返回。
+ * 它既是世界缩放的单指入口（WCAG 2.5.1：多指手势必须有单指替代，而且捏合没有可发现性），
+ * 也是档位状态的一处显示；**常驻的那一处显示在顶部 HUD**（`缩放 0.75×`）——两个跳能各归一外，
+ * 动作行才腾得下一行排五颗图标（`zoom-picker` 行）。点一档不关浮层：可以连续比。
  *
- * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO` 与缩放胶囊**
- * （两者都是「看一眼」的，换床是「搬过去」，摆在一起必混），门控行换成换床提示（互斥）。
+ * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO`**
+ * （它是「看一眼」的，换床是「搬过去」，摆在一起必混），门控行换成换床提示（互斥）。
  * 模式的可见状态必须**常驻**：它跨聊天、跨起身活着，忘了自己在模式里的人点一张空床，代价与误点一样。
  */
 export function ActionRow() {
   const view = useHudView();
   /**
-   * 门控行的唯一占用者（`GO` 的输入 / 缩放选项）：提交、取消、选中一项、`Esc` 都收起
-   * （不留一个空行占着面板版面）。第三个占用者「换床提示」不占这里——它由 `view.switching` 驱动，
-   * 优先级最高（模式是常驻事实，展开项是临时动作）。
+   * 门控行的唯一占用者（`GO` 的输入）：提交、取消、`Esc` 都收起（不留一个空行占着面板版面）。
+   * 另一个占用者「换床提示」不占这里——它由 `view.switching` 驱动，优先级最高（模式是常驻事实，
+   * 展开项是临时动作）。缩放档位选项已搬进齿轮浮层，不在门控行里。
    */
-  const [gate, setGate] = useState<'none' | 'jump' | 'zoom'>('none');
+  const [gate, setGate] = useState<'none' | 'jump'>('none');
   const [draft, setDraft] = useState('');
   /** 降级路径（无 Popover，见 `../popover.ts`）的菜单开关：有 Popover 时不用它，开关归平台 */
   const [menuOpen, setMenuOpen] = useState(false);
+  /** 浮层当前显示哪一级：`root` = 设置列表，`zoom` = 缩放档位二级（`zoom-picker`）。关掉浮层就回 `root` */
+  const [menuView, setMenuView] = useState<'root' | 'zoom'>('root');
   /** 菜单本体 */
   const menuRef = useRef<HTMLDivElement>(null);
   /** 齿轮：降级路径打开时它要交班焦点给菜单首项，关闭时接回来 */
   const gearRef = useRef<HTMLButtonElement>(null);
-
-  // 缩放选项开着时的 `Esc`：键盘用户不必靠再点那颗胶囊才能关
-  // （齿轮浮层的 `Esc` 有 Popover 时归平台，降级路径那条 effect 自己管）
-  useEffect(() => {
-    if (gate !== 'zoom') return undefined;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setGate('none');
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [gate]);
 
   const closeGate = (): void => {
     setGate('none');
@@ -87,6 +78,8 @@ export function ActionRow() {
       return;
     }
     setMenuOpen(false);
+    // 浮层重新打开时从根开始（二级视图是「先看档位」的那一眼，不该黏住）
+    setMenuView('root');
     if (restoreFocus) gearRef.current?.focus();
   };
 
@@ -117,7 +110,10 @@ export function ActionRow() {
 
   // 非空闲态右端被「收起」占位（齿轮与菜单一起卸载）：菜单跟着收，否则退场后它会开着回来
   useEffect(() => {
-    if (view.composer !== 'idle') setMenuOpen(false);
+    if (view.composer !== 'idle') {
+      setMenuOpen(false);
+      setMenuView('root');
+    }
   }, [view.composer]);
 
   const jump = (): void => {
@@ -134,10 +130,18 @@ export function ActionRow() {
   };
 
   /** 齿轮就是菜单的触发源：有 Popover 时 `popoverTarget` = 平台开关（开 / 关 / 点外面 / `Esc` 全归它，
-      `aria-expanded` 由浏览器自己往无障碍树上映射）；降级路径自己写这两样 */
+      `aria-expanded` 由浏览器自己往无障碍树上映射）；降级路径自己写这两样。
+      两条路径都在这里把视图重置回 `root`——浮层关掉就算「重新进店」，二级视图不跨次次活着 */
   const gearMenuProps = HAS_POPOVER
-    ? { popoverTarget: 'hud-menu' }
-    : { 'aria-expanded': menuOpen, onClick: () => (menuOpen ? closeMenu() : setMenuOpen(true)) };
+    ? { popoverTarget: 'hud-menu', onClick: () => setMenuView('root') }
+    : {
+        'aria-expanded': menuOpen,
+        onClick: () => {
+          if (menuOpen) return closeMenu();
+          setMenuView('root');
+          setMenuOpen(true);
+        },
+      };
 
   return (
     <>
@@ -179,19 +183,8 @@ export function ActionRow() {
               GO
             </button>
           )}
-          {/* 缩放胶囊：文案 = **当前档位**（它是档位状态的常驻显示），点开在门控行展开选项。
-              换床模式里不显示（与 `GO` 一致：模式期间门控行归换床提示） */}
-          {view.switching ? null : (
-            <button
-              type="button"
-              className="hud-action"
-              aria-label="画布缩放"
-              aria-expanded={gate === 'zoom'}
-              onClick={() => setGate(gate === 'zoom' ? 'none' : 'zoom')}
-            >
-              {zoomModeLabel(view.zoomMode)}
-            </button>
-          )}
+          {/* 缩放不在这两行里：单指入口与档位选择都搬进了齿轮浮层的二级（`zoom-picker`），
+              档位状态常驻显示在顶部 HUD——两个职能各归一处，这一行才排得下五颗图标 */}
         </div>
 
         {/* 右端：非空闲态换成 **44px「收起」胶囊**（唯一的可见出口，`docs/design/60-interaction-shell.md` §2），
@@ -270,82 +263,128 @@ export function ActionRow() {
 
               {/* 菜单：有 Popover 时 `popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，
                   所以没有遮罩、也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
-                  **五项**：**更换床位**（可点，胶囊外观）、**天气开关**（文案 = 当前天气）与
-                  **关于失眠云**在上，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
+                  **根视图六项**：**更换床位**（可点，胶囊外观）、**缩放**（进二级）、**天气开关**（文案 = 当前天气）、
+                  **雨声开关**与**关于失眠云**，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
+                  **二级视图**（`zoom-picker`）只换框里的内容：五个档位 + 一行返回。
                   没有 Popover 时退回手写的开关：无 `popover` 属性，按 `menuOpen` 条件渲染 */}
               {HAS_POPOVER || menuOpen ? (
                 <div className="hud-menu" id="hud-menu" ref={menuRef} popover={HAS_POPOVER ? 'auto' : undefined}>
-                  <div className="hud-menu-group">
-                    <button
-                      type="button"
-                      className="hud-action hud-menu-action"
-                      aria-pressed={view.switching}
-                      onClick={() => {
-                        setSwitching(!view.switching);
-                        // 选择即完成：菜单自己收起
-                        closeMenu();
-                        closeGate();
-                      }}
-                    >
-                      {view.switching ? '取消换床' : '更换床位'}
-                    </button>
-                    {/* 天气开关：文案 = 当前天气，`aria-pressed` 表达开 / 关。点它**不关浮层**
-                        ——天气是可连续切换的设置（不像「更换床位」那样是模式入口）。
-                        独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理，免得被原地复用 / 聚焦换位 */}
-                    <button
-                      key="weather"
-                      type="button"
-                      className="hud-action hud-menu-action"
-                      aria-pressed={view.rain}
-                      onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => setRain(!view.rain)}
-                    >
-                      {weatherLabel(view.rain)}
-                    </button>
-                    {/* 雨声开关：与天气各自独立（无雨也能只听雨、雨天也能静音）。文案 = 当前状态。
-                        点它同样不关浮层；同样需要独立 `key` + `pointerdown` 拦默认行为 */}
-                    <button
-                      key="sound"
-                      type="button"
-                      className="hud-action hud-menu-action"
-                      aria-pressed={view.sound}
-                      onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        // 解锁必须在 **click 同步路径** 里：store 的 effect 已在手势之外，那里建的
-                        // `AudioContext` 在 Safari 会永久停在 `suspended`（静音开关是后开的常态路径）
-                        if (!view.sound) unlockAudio();
-                        setSound(!view.sound);
-                      }}
-                    >
-                      {soundLabel(view.sound)}
-                    </button>
-                    {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
-                        点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。
-                        独立 `key` + `pointerdown` 拦默认行为：与天气那颗同理 */}
-                    <button
-                      key="about"
-                      type="button"
-                      className="hud-action hud-menu-action"
-                      onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        closeMenu();
-                        openAbout('manual');
-                      }}
-                    >
-                      关于失眠云
-                    </button>
-                  </div>
-                  <div className="hud-menu-version">v{APP_VERSION}</div>
-                  {/* 隐私告知与入场层那一行同源（`70-privacy-risk.md` §8.1）：
-                      静态页、零接口；新标签打开、被拦退回同标签（理由见 `../privacy-link.ts`） */}
-                  <a
-                    className="hud-menu-link"
-                    href={PRIVACY_PAGE_HREF}
-                    onClick={(event) => openPrivacyPage(event, (url, target) => window.open(url, target))}
-                  >
-                    使用须知与隐私说明
-                  </a>
+                  {menuView === 'zoom' ? (
+                    // 点一档立即生效、**不关浮层**（可以连续比）；「返回」回根。选中项仍是实心 + ✓
+                    <div className="hud-menu-group">
+                      {zoomOptions().map((option) => (
+                        <button
+                          key={zoomShortLabel(option)}
+                          type="button"
+                          className={
+                            sameZoomMode(option, view.zoomMode)
+                              ? 'hud-action hud-menu-action zoom-option-selected'
+                              : 'hud-action hud-menu-action'
+                          }
+                          aria-pressed={sameZoomMode(option, view.zoomMode)}
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => setZoomMode(option)}
+                        >
+                          {sameZoomMode(option, view.zoomMode) ? '✓ ' : ''}
+                          {zoomShortLabel(option)}
+                        </button>
+                      ))}
+                      {/* 返回根：与上面五个档位同一套外观（都是 44px 胶囊），不另造一种「次级按钮」 */}
+                      <button
+                        type="button"
+                        className="hud-action hud-menu-action"
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => setMenuView('root')}
+                      >
+                        返回
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hud-menu-group">
+                        <button
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          aria-pressed={view.switching}
+                          onClick={() => {
+                            setSwitching(!view.switching);
+                            // 选择即完成：菜单自己收起
+                            closeMenu();
+                            closeGate();
+                          }}
+                        >
+                          {view.switching ? '取消换床' : '更换床位'}
+                        </button>
+                        {/* 缩放：进二级（`docs/ui/DESIGN.md` 的 `zoom-picker` 行）。文案带当前档位——
+                            它是动作行那颗胶囊搬走之后，这一页里唯一说「现在锁在哪一档」的地方 */}
+                        <button
+                          key="zoom"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => setMenuView('zoom')}
+                        >
+                          缩放 · {zoomShortLabel(view.zoomMode)}
+                        </button>
+                        {/* 天气开关：文案 = 当前天气，`aria-pressed` 表达开 / 关。点它**不关浮层**
+                            ——天气是可连续切换的设置（不像「更换床位」那样是模式入口）。
+                            独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理，免得被原地复用 / 聚焦换位 */}
+                        <button
+                          key="weather"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          aria-pressed={view.rain}
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => setRain(!view.rain)}
+                        >
+                          {weatherLabel(view.rain)}
+                        </button>
+                        {/* 雨声开关：与天气各自独立（无雨也能只听雨、雨天也能静音）。文案 = 当前状态。
+                            点它同样不关浮层；同样需要独立 `key` + `pointerdown` 拦默认行为 */}
+                        <button
+                          key="sound"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          aria-pressed={view.sound}
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            // 解锁必须在 **click 同步路径** 里：store 的 effect 已在手势之外，那里建的
+                            // `AudioContext` 在 Safari 会永久停在 `suspended`（静音开关是后开的常态路径）
+                            if (!view.sound) unlockAudio();
+                            setSound(!view.sound);
+                          }}
+                        >
+                          {soundLabel(view.sound)}
+                        </button>
+                        {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
+                            点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。
+                            独立 `key` + `pointerdown` 拦默认行为：与天气那颗同理 */}
+                        <button
+                          key="about"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            closeMenu();
+                            openAbout('manual');
+                          }}
+                        >
+                          关于失眠云
+                        </button>
+                      </div>
+                      <div className="hud-menu-version">v{APP_VERSION}</div>
+                      {/* 隐私告知与入场层那一行同源（`70-privacy-risk.md` §8.1）：
+                          静态页、零接口；新标签打开、被拦退回同标签（理由见 `../privacy-link.ts`） */}
+                      <a
+                        className="hud-menu-link"
+                        href={PRIVACY_PAGE_HREF}
+                        onClick={(event) => openPrivacyPage(event, (url, target) => window.open(url, target))}
+                      >
+                        使用须知与隐私说明
+                      </a>
+                    </>
+                  )}
                 </div>
               ) : null}
             </>
@@ -394,28 +433,6 @@ export function ActionRow() {
             取消
           </button>
         </form>
-      ) : null}
-
-      {/* 缩放档位选项（`zoom-picker`，与 `GO` 的输入 / 换床提示同一个行位置）：点一项立即生效 + 收起，
-          纯本地状态、无上行。选中项加实心 + ✓（`aria-pressed` 已表达选中） */}
-      {gate === 'zoom' && !view.switching ? (
-        <div className="gate-row zoom-row">
-          {zoomOptions().map((option) => (
-            <button
-              key={zoomModeLabel(option)}
-              type="button"
-              className={sameZoomMode(option, view.zoomMode) ? 'hud-action zoom-option-selected' : 'hud-action'}
-              aria-pressed={sameZoomMode(option, view.zoomMode)}
-              onClick={() => {
-                setZoomMode(option);
-                setGate('none');
-              }}
-            >
-              {sameZoomMode(option, view.zoomMode) ? '✓ ' : ''}
-              {zoomModeLabel(option)}
-            </button>
-          ))}
-        </div>
       ) : null}
     </>
   );

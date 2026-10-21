@@ -119,7 +119,7 @@
     gap: var(--spacing-sm);
   }
 
-  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 齿轮，
+  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 阅读入口与齿轮，
      中间由齿轮那一格的 `margin-inline-start: auto` 拉开；不换行、高 44px */
   .action-row {
     display: flex;
@@ -293,19 +293,15 @@
     text-decoration: underline;
   }
 
-  /* 门控行（`GO` 的床号输入 / 换床提示 / 缩放档位选项）：面板里的普通一行，不再需要负外边距与自绘底色 */
+  /* 门控行（`GO` 的床号输入 / 换床提示，两者互斥）：面板里的普通一行，不再需要负外边距与自绘底色。
+     缩放档位选项已搬进齿轮浮层（`zoom-picker`），不占这一行 */
   .gate-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
   }
 
-  /* 缩放档位选项（`zoom-picker`）：五个胶囊一字排开，更窄就换行——**不缩触摸目标**（每个仍是 `.hud-action` 的 44px） */
-  .zoom-row {
-    flex-wrap: wrap;
-  }
-
-  /* 选中那一档 = **实心 + 墨线**（与入场层形象选中同一套规矩，见 `.appearance-option-selected`）：
+  /* 浮层二级里选中那一档 = **实心 + 墨线**（与入场层形象选中同一套规矩，见 `.appearance-option-selected`）：
      实心底用 `primary`（与 `.appearance-option` 同源），多出来的 1px 墨线用内阴影凑，不动 1px 边框 */
   .zoom-option-selected {
     color: var(--color-neutral);
