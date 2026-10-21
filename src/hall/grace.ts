@@ -1,17 +1,13 @@
 import { GRACE_MS } from '../shared/constants';
-import type { ConnectionState } from './connection';
 
 /**
  * 断线宽限与睡痕的判定（见 `docs/design/10-hall-runtime.md` §6）。
  *
- * 关连接那一刻，位置与目标还在连接附加数据上，连接一销毁就读不到了 → **同一步整份抄进宽限记录**。
- * 记录只放内存：宽限内的位置丢失是可接受的降级（硬纪律第 9 条），而**床上的人**在记录丢失后
- * 仍能从床位行推导出来（`state` + `last_seen_at` + 无活连接），所以睡痕不会漏。
+ * 宽限只有一根时间轴：**床位行的 `last_seen_at` + 有没有活连接**。曾经另存一份内存宽限记录（位置与目标
+ * 从连接附加数据整份抄一份），现在没有了：对象空闲约 10 秒就会休眠，被驱逐时连 `close` 事件都不给，
+ * 那份记录何时生效无法预测。代价是地上的人断网重连落在床边（或出生点）而不是原地
+ * ——即硬纪律第 10 条的可接受降级。
  */
-export interface GraceSession {
-  connection: ConnectionState;
-  expiresAt: number;
-}
 
 /** 床位行上的占用者：宽限推导与快照补录共用同一份查询结果。 */
 export interface OccupiedBedRow {

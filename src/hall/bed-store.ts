@@ -98,11 +98,28 @@ export function findOwnedBed(sql: SqlStorage, userId: string, now: number): Owne
   return row ? { bedNo: row.bed_no, claimedAt: row.claimed_at } : undefined;
 }
 
-/** 我的床是否正留着睡痕（宽限已过、人已离线）。走唯一索引取一行。 */
-export function findTraceBed(sql: SqlStorage, userId: string): number | undefined {
-  return sql
-    .exec<{ bed_no: number }>(`SELECT bed_no FROM bed WHERE owner_user_id = ? AND state = 'trace'`, userId)
-    .toArray()[0]?.bed_no;
+/** 我名下正占着的床位行（`trace` 也在内）：重连恢复的**唯一判据**。 */
+export interface OwnedOccupiedBed {
+  bedNo: number;
+  state: 'lying' | 'asleep' | 'trace';
+}
+
+/**
+ * 我名下**正占着**的那张床（含睡痕）。走 `owner_user_id` 唯一索引取一行；没有 = 我没在床上
+ * （可能还有归属，但床是空的）。行上的 `state` 就是重连回来的状态（`10-hall-runtime.md` §6）。
+ * **归属过期就不算数**（与 `findOwnedBed` 同一条边）：过期后按新人处理，落在出生点。
+ */
+export function findOccupiedBedByOwner(sql: SqlStorage, userId: string, now: number): OwnedOccupiedBed | undefined {
+  const row = sql
+    .exec<{ bed_no: number; state: OwnedOccupiedBed['state'] }>(
+      `SELECT bed_no, state FROM bed WHERE owner_user_id = ?
+        AND state IN ('lying', 'asleep', 'trace')
+        AND last_seen_at IS NOT NULL AND last_seen_at >= ?`,
+      userId,
+      now - BED_OWNERSHIP_TTL_MS,
+    )
+    .toArray()[0];
+  return row ? { bedNo: row.bed_no, state: row.state } : undefined;
 }
 
 /**
@@ -331,12 +348,12 @@ export interface RestoreBedInput {
 }
 
 /**
- * 从睡痕恢复：床重新被占用（清醒）。**不是新的一次上床**——归属与 `sleep_started_at` 都不动，
- * 只刷新名字快照（见 `docs/db/schema.md` §6）。
+ * 从睡痕恢复：**睡着的还原**（`state = 'asleep'`）。**不是新的一次上床**——归属与 `sleep_started_at`
+ * 都不动，只刷新名字快照（见 `docs/db/schema.md` §7「宽限已过后重连」）。
  */
 export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): void {
   sql.exec(
-    `UPDATE bed SET state = 'lying', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?
+    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?
      WHERE bed_no = ?`,
     input.name,
     input.appearance,

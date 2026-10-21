@@ -12,20 +12,42 @@ vi.mock('cloudflare:workers', () => ({
 import { BED_OWNERSHIP_TTL_MS, HALL_ID } from '../../shared/constants';
 import { frontPointOf } from '../../shared/layout';
 import type { Point } from '../../shared/layout';
+import type { DownstreamMessage } from '../../shared/protocol';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
 import { freshSql, insertBed, rawRow } from './sqlite';
 
+/** 别人那条连接：只实现广播需要的那三件事（与 `broadcast.test.ts` 同一个形状）。 */
+class FakeSocket {
+  readonly received: string[] = [];
+  private attachment: unknown = { ready: true, userId: 'u_other', name: '旁观者', appearance: 'boy' };
+
+  constructor(readonly readyState = 1) {}
+
+  deserializeAttachment(): unknown {
+    return this.attachment;
+  }
+
+  send(payload: string): void {
+    this.received.push(payload);
+  }
+
+  /** 广播只读附加数据，不写；留着只为形状完整 */
+  serializeAttachment(value: unknown): void {
+    this.attachment = value;
+  }
+}
+
 /**
- * 出生点（`10-hall-runtime.md` §9）：已有归属的人落在**自己床脚前**，
- * 已有睡痕的人回床上躺着，都没有的人才落到最小可认领床。
+ * 重连恢复（`10-hall-runtime.md` §6、§13）：**床位行是唯一权威**——行上的状态原样还原，
+ * 行本是睡痕的还原成睡着并广播一次。没行的人才按归属站床脚、或落到最小可认领床。
  */
-function newHall(): { hall: Hall; sql: SqlStorage } {
+function newHall(sockets: FakeSocket[] = []): { hall: Hall; sql: SqlStorage } {
   const sql = freshSql();
   const ctx = {
     id: { name: HALL_ID },
     storage: { sql },
-    getWebSockets: () => [],
+    getWebSockets: () => sockets,
   };
   return { hall: new Hall(ctx as never, {} as never), sql };
 }
@@ -80,15 +102,61 @@ test('我的床归属已过期：落到最小可认领床，不是过期那张',
   expect(resumed.state).toBe('roaming');
 });
 
-test('我有睡痕：仍回床上躺着（既有分支的回归）', () => {
+test('宽限内重连（床上睁眼躺着）：状态原样是 lying', () => {
   const { hall, sql } = newHall();
   const now = Date.now();
-  insertBed(sql, 7, { state: 'trace', ownerUserId: 'u_me', lastSeenAt: now, updatedAt: now });
+  insertBed(sql, 2, { state: 'lying', ownerUserId: 'u_me', lastSeenAt: now - 1000, updatedAt: now - 1000 });
 
   const resumed = resume(hall, connection()) as ConnectionState;
 
   expect(resumed.state).toBe('lying');
+  expect(resumed.bedNo).toBe(2);
+});
+
+test('归属已过期但行仍占着：按新人处理，落到出生点（不拿过期行续命）', () => {
+  const { hall, sql } = newHall();
+  const now = Date.now();
+  insertBed(sql, 5, { state: 'asleep', ownerUserId: 'u_me', lastSeenAt: now - BED_OWNERSHIP_TTL_MS - 1, updatedAt: now });
+
+  const resumed = resume(hall, connection()) as ConnectionState;
+
+  expect(resumed.state).toBe('roaming');
+  expect(resumed.bedNo).toBeUndefined();
+  expect(rawRow(sql, 5)?.state).toBe('asleep'); // 行不动：清理由每日唤醒做
+});
+
+test('宽限内重连（床上睡着）：状态原样是 asleep，不退成 lying，也不广播', () => {
+  const watcher = new FakeSocket();
+  const { hall, sql } = newHall([watcher]);
+  const now = Date.now();
+  insertBed(sql, 3, { state: 'asleep', ownerUserId: 'u_me', lastSeenAt: now - 1000, updatedAt: now - 1000 });
+
+  const resumed = resume(hall, connection()) as ConnectionState;
+
+  expect(resumed.state).toBe('asleep');
+  expect(resumed.bedNo).toBe(3);
+  expect({ x: resumed.x, y: resumed.y }).toEqual(point(frontPointOf(3)));
+  expect(rawRow(sql, 3)?.state).toBe('asleep'); // 行不变色：睡眠不因一次重连丢掉
+  expect(watcher.received).toEqual([]); // 别人的画面上本来就是睡着的他：没有可播的变化
+});
+
+test('宽限已过重连（睡痕行）：回来是睡着，且推一次 state 广播', () => {
+  const watcher = new FakeSocket();
+  const { hall, sql } = newHall([watcher]);
+  const now = Date.now();
+  insertBed(sql, 7, { state: 'trace', ownerUserId: 'u_me', lastSeenAt: now - 120_000, updatedAt: now - 60_000 });
+
+  const resumed = resume(hall, connection()) as ConnectionState;
+
+  expect(resumed.state).toBe('asleep');
   expect(resumed.bedNo).toBe(7);
   expect({ x: resumed.x, y: resumed.y }).toEqual(point(frontPointOf(7)));
-  expect(rawRow(sql, 7)?.state).toBe('lying'); // 睡痕恢复照样落库
+  expect(rawRow(sql, 7)).toMatchObject({
+    state: 'asleep', // 睡痕恢复 = 睡着的还原（`docs/db/schema.md` §7）
+    owner_user_id: 'u_me', // 归属与睡眠起点不被这次恢复改写
+    sleep_started_at: null, // 这行从没有过睡眠起点，恢复也不补
+  });
+  expect(watcher.received).toHaveLength(1);
+  const message = JSON.parse(watcher.received[0] as string) as DownstreamMessage;
+  expect(message).toMatchObject({ t: 'state', id: 'u_me', state: 'asleep', bedNo: 7 }); // 别人那边本是暗的
 });

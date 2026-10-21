@@ -18,8 +18,8 @@ import type { LiveConnection } from './admin';
 import { checkLie } from './bed-rules';
 import {
   clearBed,
+  findOccupiedBedByOwner,
   findOwnedBed,
-  findTraceBed,
   listExpiredOwnerships,
   listOccupiedBeds,
   listOwnedBeds,
@@ -51,7 +51,6 @@ import type { ConnectionState } from './connection';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from './daily';
 import { graceVerdict } from './grace';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from './level-rules';
-import type { GraceSession } from './grace';
 import { advanceMover } from '../shared/movement';
 import type { MoverState } from '../shared/movement';
 import { findPath } from '../shared/pathfinding';
@@ -95,13 +94,6 @@ export class Hall extends DurableObject<Env> {
   private readonly moverStartedAt = new Map<string, number>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private lastTickAt = 0;
-
-  /**
-   * 宽限中的会话（只放内存）：关连接那一刻把位置与目标整份抄下来，期内重连用它恢复。
-   * 记录丢了只影响「重连时位置还在」这条尽力而为的优化——床上的人由床位行推导兜底
-   * （`state` + `last_seen_at` + 无活连接），所以睡痕不会漏。
-   */
-  private readonly grace = new Map<string, GraceSession>();
 
   /**
    * 到期事件堆（内存最小堆，见 `docs/design/10-hall-runtime.md` §4.4）。
@@ -256,9 +248,9 @@ export class Hall extends DurableObject<Env> {
         this.replaceOlderConnections(ws, ready.userId);
         ws.serializeAttachment(ready satisfies ConnectionState);
         this.touchLastSeen(ready.userId);
-        // 宽限恢复可能带回没走完的路径（没有移动者时不会起循环）
+        // 唤醒后可能有别人在途（这条循环不只为我自己起）
         this.startTicking();
-        // 宽限记录用掉了（或压根没在宽限里）；在床上的人重新排上「自动睡着」
+        // 行已恢复（或压根没在床上）；在床上的人重新排上「自动睡着」
         this.due.remove('grace', ready.userId);
         this.armAutoSleep(ready);
         this.send(ws, JSON.stringify(await this.snapshotFor(ws, ready)));
@@ -287,46 +279,38 @@ export class Hall extends DurableObject<Env> {
     }
   }
 
-  /** 取走宽限记录（有则删掉并返回）：宽限期内重连用它恢复原位置与原状态。 */
-  private takeGrace(userId: string): GraceSession | undefined {
-    const record = this.grace.get(userId);
-    if (record) this.grace.delete(userId);
-    // 过期的记录不能用：对象可能很久没有活动，没谁来触发清理
-    return record && record.expiresAt > Date.now() ? record : undefined;
-  }
-
   /**
    * 握手时的状态恢复与出生点（见 `docs/design/10-hall-runtime.md` §9、§13）：
-   * 宽限期内 → 原位置、原路径、原床位（对外表现为无变化，因此不广播）；
-   * 我的床还留着睡痕（宽限已过、人已离线）→ 回到床上（清醒）；
+   * 床位行还占着（**行是唯一权威**，不论隔了多久）→ 行上的状态原样还原、位置退回床边；
+   * 行本来是睡痕（别人画的是暗的）→ 先恢复占用，再推一条「我醒了」（其余情况不广播：别人画面本来没变）；
    * 已有**未过期归属**的床 → 站在自己床脚前的横走道（跨厅走不动，人先落在自己的位置，见 §9 步 0）；
    * 否则出现在「编号最小的可认领床」前方走道。整厅没有可认领的床（且已触顶）→ 不入场。
    */
   private resumeSession(connection: ConnectionState): ConnectionState | undefined {
-    const graced = this.takeGrace(connection.userId);
-    if (graced) return graced.connection;
-
     const now = Date.now();
-    const bedNo = findTraceBed(this.ctx.storage.sql, connection.userId);
-    if (bedNo !== undefined) {
-      restoreBedOccupancy(this.ctx.storage.sql, {
-        bedNo,
-        name: connection.name,
-        appearance: connection.appearance,
-        now,
-      });
-      const position = frontPointOf(bedNo) ?? { x: connection.x, y: connection.y };
-      const lying: ConnectionState = {
+    const occupied = findOccupiedBedByOwner(this.ctx.storage.sql, connection.userId, now);
+    if (occupied !== undefined) {
+      const position = frontPointOf(occupied.bedNo) ?? { x: connection.x, y: connection.y };
+      if (occupied.state === 'trace') {
+        // 睡痕 = 人已离线超宽限：清洗为睡着的还原，归属与 `sleep_started_at` 不动（`docs/db/schema.md` §7）
+        restoreBedOccupancy(this.ctx.storage.sql, {
+          bedNo: occupied.bedNo,
+          name: connection.name,
+          appearance: connection.appearance,
+          now,
+        });
+      }
+      const resumed: ConnectionState = {
         ...connection,
-        state: 'lying',
-        bedNo,
+        state: occupied.state === 'trace' ? 'asleep' : occupied.state,
+        bedNo: occupied.bedNo,
         x: position.x,
         y: position.y,
         lastInputAt: now,
       };
-      // 自己这条连接还没握手完成（收不到广播），但别人得知道睡痕醒了
-      this.broadcastState(lying);
-      return lying;
+      // 睡痕行要推一条「我醒了」（别人那边本来画的是暗的）；`lying` / `asleep` 行对外无变化，不广播
+      if (occupied.state === 'trace') this.broadcastState(resumed);
+      return resumed;
     }
 
     // 步 0：已有归属的人直接落在自己床边（不占床、不碰睡痕、不写床位行——只是站位）
@@ -923,11 +907,10 @@ export class Hall extends DurableObject<Env> {
 
   /**
    * 断线：**同一步**完成四件事——移出移动者集合、（在地上则）立刻广播 `leave`、
-   * 把位置与移动目标搬进宽限记录、起宽限计时（见 `docs/design/10-hall-runtime.md` §6）。
+   * 写 `last_seen_at`、起宽限计时（见 `docs/design/10-hall-runtime.md` §6）。
    *
-   * **在地上的人不等宽限**：他没有床位行这种持久真相，而宽限记录在对象休眠时就没了，
-   * 所以「延后消失」这件事根本兑现不了；宽限对他只买「期内重连、位置还在」这个尽力而为的优化。
-   * 在床上的人相反：不发 `leave`，等宽限到期后由床位行推导转成睡痕。
+   * **在地上的人不等宽限**：他没有床位行这种持久真相，而内存里也不存任何关于他的东西，
+   * 所以「延后消失」这件事根本兑现不了。在床上的人相反：不发 `leave`，宽限到期由床位行推导转成睡痕。
    */
   async webSocketClose(ws: WebSocket): Promise<void> {
     const connection = readConnection(ws);
@@ -949,14 +932,13 @@ export class Hall extends DurableObject<Env> {
       // 在床上：不发 leave，等宽限到期后由床位行推导转成睡痕
       this.due.upsert({ kind: 'grace', userId: connection.userId, at: now + GRACE_MS });
     }
-    this.grace.set(connection.userId, { connection, expiresAt: now + GRACE_MS });
     this.touchLastSeen(connection.userId, now); // 与事件时刻同源：推导算出来的到期时刻与堆里的一致
     this.syncAlarm();
   }
 
   /**
-   * 宽限到期处理，**两条来源**（见 `docs/design/10-hall-runtime.md` §4.3）：
-   * 内存记录（丢了只影响重连时的位置恢复）与床位行推导（丢了就会漏掉睡痕，因此它是权威）。
+   * 宽限到期处理（见 `docs/design/10-hall-runtime.md` §4.3）：判据只有床位行推导
+   * （`state` + `last_seen_at` + 有没有活连接）——它丢了就会漏掉睡痕，因此它是权威。
    *
    * 返回仍在宽限期内、人已离线的床上占用者——他们还得留在别人的 `people` 里（睡痕还没到）。
    */
@@ -986,12 +968,6 @@ export class Hall extends DurableObject<Env> {
       // 兜底用 `now`——写成 `now + 宽限期` 会让那一行记下一件还没发生的事
       const tracedAt = row.lastSeenAt === null ? now : row.lastSeenAt + GRACE_MS;
       this.markTrace(row.bedNo, row.ownerUserId, tracedAt); // 在床上 → 睡痕，**不发 leave**
-    }
-
-    // 宽限记录只买「重连时位置还在」：到期的**不需要广播任何东西**——在地上的人一断线就发过 `leave` 了，
-    // 在床上的人由上面的床位行推导处理。这里只负责把它丢掉。
-    for (const [userId, record] of [...this.grace]) {
-      if (live.has(userId) || record.expiresAt <= now) this.grace.delete(userId);
     }
 
     return waiting;

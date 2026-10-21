@@ -5,7 +5,6 @@ import { HALL_LEVELS } from '../../shared/layout';
 import {
   effectivelyOwned,
   findOwnedBed,
-  findTraceBed,
   listExpiredOwnerships,
   listOccupiedBeds,
   listOwnedBeds,
@@ -180,7 +179,6 @@ describe('睡痕：没有 TTL，跟归属同寿（30 天释放才消失）', () 
 
     expect(readBed(sql, 4, NOW)?.state).toBe('trace');
     expect(listTraceBeds(sql)).toEqual([{ bedNo: 4, userId: 'u_a', name: '夜猫', appearance: 'boy' }]);
-    expect(findTraceBed(sql, 'u_a')).toBe(4);
   });
 
   it('睡痕远超 12 小时仍是占用（没有 TTL，唯一的时间轴是 30 天归属释放）', () => {
