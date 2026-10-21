@@ -4,26 +4,6 @@
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 > 契约与预算的唯一权威是 `100-log.md`：卡片里出现的字段名、阈值、闸门都必须与它逐字一致，不一致就改代码不改文档。
 
-## 卡 2 — 入口异常与静默降级
-
-**目标**：让今天被吞掉的错误变成 `err`，让高频降级变成带 `n` 的 `drop`。
-
-**改动范围（`src/hall/`）**
-- 无保护的入口各包一层 `try/catch` → `log.err({ where, code })`，**catch 之后行为不变**（原来吞的继续吞、原来断的继续断）：`hall.ts` 的 `webSocketMessage`、`webSocketClose`、alarm 周期执行那一处（`armAlarm` 的 catch 已在，补 `err`）。
-- `hall.ts` 的 `send`（`readyState` 非 OPEN 直接返回的那条路径）与 `broadcast`/`broadcastExcept` 的跳过路径 → `log.drop({ kind: 'send' | 'skip', n })`。
-- `guardIncoming` 返回 `ignore` 的解析失败路径 → `log.drop({ kind: 'parse', n })`；上行限流丢弃 → `log.drop({ kind: 'limit', n })`。
-- 意图被拒的 `reject()` → `log.reject({ code, intent })`（逐条，受卡 1 的闸门）。
-- `admin.ts:189`、`admin.ts:270` 的 `console.error` 保留，另补 `log.err`。
-
-**不做**：不改任何协议语义、不改 `reject` 的错误码、不动 `send` 的返回值。
-
-**验证**
-- 单测：`send` 到已关闭连接后累计到阈值产出一条 `drop{n}`；`reject` 超过闸门后不再逐条。
-- 手工：断开一个连接（关标签页）→ 日志里能看到 `drop{kind:'send'|'skip'}` 的 `n` 累加，而不是刷屏。
-- 基线三条零失败。
-
-**回滚**：`Hall` 内的调用点全部是新增行，按文件 `revert` 即回到「静默」。
-
 ## 卡 3 — 生命周期事件（enter / lie / sleep / wake / settle / snapshot）
 
 **目标**：把「厅里发生了什么」变成可聚合的数值事件，其中 `wake` 的 `dwellMs` 是 backlog 里「一起睡了多久」的数据来源。

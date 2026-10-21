@@ -1,4 +1,5 @@
 import { displayBedNoOf } from '../shared/layout';
+import * as log from '../shared/log';
 import { findOwnedBed } from './bed-store';
 import { listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
@@ -187,6 +188,7 @@ async function createBlock(request: Request, ctx: AdminContext): Promise<Respons
       live.close(untilAt);
     } catch (error) {
       console.error('关闭被封连接失败：', error);
+      log.err({ where: 'admin-close', code: '9001' });
     }
   }
 
@@ -268,6 +270,7 @@ export async function handleAdminRequest(
     return routeAdminRequest(request, url, ctx);
   } catch (error) {
     console.error('后台接口处理失败：', error);
+    log.err({ where: 'admin-request', code: '9001' });
     return new Response(null, { status: 500 });
   }
 }

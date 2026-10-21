@@ -4,6 +4,7 @@ import type { Appearance, Person, UpstreamMessage, UpstreamType } from '../share
 import type { ErrorCode } from '../shared/error-code';
 import { isWalkable, nearestStreetPoint } from '../shared/layout';
 import type { Point } from '../shared/layout';
+import * as log from '../shared/log';
 import type { RateWindow } from './rate-limit';
 
 /**
@@ -157,7 +158,12 @@ export function parseUpstream(raw: string): UpstreamMessage | null {
  */
 export function guardIncoming(connection: ConnectionState, raw: string, layoutVersion: string): IncomingVerdict {
   const message = parseUpstream(raw);
-  if (!message) return { kind: 'ignore' };
+  if (!message) {
+    // 解析失败是静默丢弃（不回错误码、不断开）：逐条写会在故障时把额度打穿，
+    // 交给出口按 `kind` 聚合（见 `docs/design/100-log.md` §4.4）。
+    log.drop({ kind: 'parse' });
+    return { kind: 'ignore' };
+  }
 
   if (message.t === 'hello') {
     if (connection.ready) return { kind: 'ignore' };
