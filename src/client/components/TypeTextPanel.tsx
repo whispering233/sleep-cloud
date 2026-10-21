@@ -46,8 +46,10 @@ export function TypeTextPanel({ progress }: { progress: ReadProgress }) {
   }, [attempt]);
 
   const category = pack?.[0];
-  // 抽干 = 池里一条不剩（`poolSize` 在池里还有别的时已排除当前条，所以「只剩当前条」也算抽干）
-  const canDraw = category !== undefined && poolSize(category.items, progress.seen[category.id] ?? []) > 0;
+  const currentId = category === undefined ? undefined : progress.current[category.id];
+  // 抽干 = 池里一条不剩（当前条多数时候已在 `seen` 里，池自然不含它）
+  const canDraw =
+    category !== undefined && poolSize(category.items, progress.seen[category.id] ?? [], currentId) > 0;
   const draw = (): void => {
     if (!category) return;
     const next = canDraw ? drawReadItem(category.id, category.items) : replayRead(category.id, category.items);
@@ -60,7 +62,7 @@ export function TypeTextPanel({ progress }: { progress: ReadProgress }) {
         {failed ? (
           <p className="type-text-note">内容没取到</p>
         ) : current ? (
-          paragraphsOf(current.text).map((paragraph) => <p key={paragraph}>{paragraph}</p>)
+          paragraphsOf(current.text).map((paragraph, index) => <p key={index}>{paragraph}</p>)
         ) : pack ? null : (
           <p className="type-text-note">取内容…</p>
         )}
