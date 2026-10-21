@@ -44,7 +44,7 @@
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**分包固定为三块**（`vite.config.ts` 的 `rolldownOptions.output.codeSplitting`）：`index`（React + UI 层）、`world`（世界层，创建画布时动态导入）、`phaser`（引擎单独一块）。**引擎分块是为了缓存**：引擎 chunk 的 hash 只在升级 Phaser 时变化，业务代码改动不会让老用户重下引擎（否则两者同块，改任何一行界面代码都要重下 363 KB gzip）。构建末尾那条 `(!) Some chunks are larger than 500 kB` 是**引擎自己超线**（1374 kB），不是业务代码膨胀；**刻意不调 `chunkSizeWarningLimit`**，好让这条提示继续对业务代码生效。实测产物：`index` 249 kB / gzip 79 kB、`world` 16 kB / gzip 6 kB、`phaser` 1374 kB / gzip 357 kB |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
 | 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/20-layout.md` §4）。`public/` 只放素材 |
-| 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
+| 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。CI 里是 `npm run build` + `npx wrangler deploy`，本机应急路径合成一条 `npm run deploy` |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。Phaser + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。
 
@@ -94,22 +94,6 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 **典型症状：忘了注入 `SESSION_SECRET`**
 `/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
 `Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
-
-### 4.3 发版（Release）
-
-一次发版 = 版本号 + CHANGELOG + 提交 + 推 tag（部署与 Release 由 CI 完成），**顺序固定**：
-
-| 步骤 | 动作 |
-| :--- | :--- |
-| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
-| 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
-| 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
-| 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
-| 5 | 全绿即完成；任一环红了的失败形态与恢复见 §4.4 |
-
-**顺序为什么从「部署在 tag 之前」改成「tag 触发一切」**：标签仍是公开且难撤的产物，但「有没有发布」的判据从「tag 是否存在」换成「Release 是否存在」——Release 只在部署与冒烟都通过后才建，所以部署失败时仓库里仍不会出现「标了发布但没上线」的版本。代价是 tag 会先存在（可删可重推），恢复方式是修好后**重跑失败的 job**，不是删 tag。
-
-**多账号的机器先切账号**：`gh auth status` 看当前是谁，`gh auth switch` 选对推送 `origin` 与建 Release 的那个账号（`gh` 与 `wrangler` 是两套凭据，平台侧用 `npx wrangler whoami` 核对）。
 
 ### 4.2 生产入口：自定义域名或路由（默认的 `workers.dev` 不能用）
 
@@ -163,6 +147,22 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 **部署对已连接用户的影响**：平台在运行时更新时会给出宽限窗口，之后进程可能终止，已建立的连接会被关闭。对应到我们的设计：关闭即进入宽限期，睡痕逻辑照常生效，用户重连后恢复到他的床边或床上。**所以部署是安全的，不需要停服公告。**
 
+### 4.3 发版（Release）
+
+一次发版 = 版本号 + CHANGELOG + 提交 + 推 tag（部署与 Release 由 CI 完成），**顺序固定**：
+
+| 步骤 | 动作 |
+| :--- | :--- |
+| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
+| 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
+| 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
+| 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
+| 5 | 全绿即完成；任一环红了的失败形态与恢复见 §4.4 |
+
+**顺序为什么从「部署在 tag 之前」改成「tag 触发一切」**：标签仍是公开且难撤的产物，但「有没有发布」的判据从「tag 是否存在」换成「Release 是否存在」——Release 只在部署与冒烟都通过后才建，所以部署失败时仓库里仍不会出现「标了发布但没上线」的版本。代价是 tag 会先存在（可删可重推），恢复方式是修好后**只重跑失败的 job**（`verify` 红要改代码，那一步只能删 tag 重推，见 §4.4），不一定要删 tag。
+
+**多账号的机器先切账号**：`gh auth status` 看当前是谁，`gh auth switch` 选对推送 `origin` 与建 Release 的那个账号（`gh` 与 `wrangler` 是两套凭据，平台侧用 `npx wrangler whoami` 核对）。
+
 ### 4.4 CI 自动部署（正常发版路径）
 
 推一个版本 tag 就是一次发版。`.github/workflows/release.yml` 里三个 job 串行，任一环失败即停：
@@ -194,13 +194,13 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 **没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。
 
-**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded sleep-cloud (5.33 sec)` → `Deployed sleep-cloud triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 飞部署这条路实测可用。
+**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded sleep-cloud (5.33 sec)` → `Deployed sleep-cloud triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
 
 失败形态分两段，别弄混：
 
 | 失败发生在 | 现象 | 恢复 |
 | :--- | :--- | :--- |
-| 上传**之前**（token 缺 Workers Scripts:Edit、`npm run build` 红） | tag 已存在、未上线、无 Release | 只重跑 `deploy` job（上传幂等） |
+| 上传**之前**（token 缺 per-Worker `Editor`、`npm run build` 红） | tag 已存在、未上线、无 Release | 只重跑 `deploy` job（上传幂等） |
 | 上传**之后**（triggers 阶段：`Zone:Read` 缺失、10082、路由被别的 Worker 占用） | **代码已上线、无 Release** | 先补权限，再只重跑 `deploy` job |
 | `verify`（含版本一致性） | 一个都没部署 | **删 tag 重推**：`git push origin :vX.Y.Z`，修好提交后再打同名 tag 推上去；重跑同一个 job 只会同因再红 |
 

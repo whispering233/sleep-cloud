@@ -114,6 +114,7 @@ npm test                       # 单测（L1）：纯逻辑、状态机序列穷
 npm run typecheck
 npm run art                    # （可选）从 tools/art/masters/ 的母图重新生成图集
 npm run deploy                 # 部署（应急：手工；正常发版推 tag 由 CI 完成，见 docs/design/build.md §4.4）
+git tag vX.Y.Z && git push origin vX.Y.Z   # 发版：CI 跑质量门 → 部署 → 建 Release
 ```
 
 设计令牌的唯一来源是 `docs/ui/DESIGN.md`（`npm run tokens` 导出为 Tailwind 主题与画布用的 JSON）：
