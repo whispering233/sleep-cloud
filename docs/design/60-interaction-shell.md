@@ -15,6 +15,9 @@
 | **面板停靠 / 插槽显隐** | `composer` 状态（store） | `.app-shell` 的 `data-composer`、面板的 `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
 | **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`）；底部占位 = **面板自身高度** | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑）；「屏底 − 面板顶边」（打字态会把整屏算成界面） |
 | **世界缩放** | `zoomMode` | `camera.zoom` | 键盘、面板 |
+| **游戏页是否打开** | `gamesOpen`（store） | `GamesOverlay` 的挂载、`WorldHandle.pause()` / `resume()`、`suspendHall()` / `resumeHall()` | 由 DOM 焦点或 `history` 推导（见 `110-games-page.md` §2） |
+
+**游戏页是唯一一个「盖住整屏、却不是输入会话」的层**：它只可能在 `composer === 'idle'` 时被打开（打开它的那颗胶囊就在被「收起」替换掉的那一组里），所以不参与 §2 的状态机，也没有第二条退场路径。
 
 **键盘高度不存在。** 不是「不重要」，是**这个量不许被推导出来**：`innerHeight − visualViewport.height`、`documentElement.clientHeight − visualViewport.height` 一类的差值一律禁止。理由见 `50-slot-panel.md` §2：部分内核既不缩布局视口也不缩视觉视口（或一起缩导致差值归零）。
 
@@ -132,6 +135,7 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 - **打字态齿轮不可达**：typing 态右端被「收起」占位（连同它左边那四颗），换床 / 缩放 / 看版本要先收起（打字时开设置本来也无意义）。`reading` 态同理（右端也是「收起」）——想看阅读历史以外的事，先收起再开。
 - **画布不追键盘那次收缩**：打字期间与退场之后，画布都停在进打字态前的像素尺寸。内核若不恢复布局视口，画布就固定比宿主高那一条（底部被 `.app-shell` 裁掉，不可见）。
 - **打字时看不见世界**（插槽铺满的既有代价）。
+- **游戏页盖住整屏时也看不见厅里**：聊天气泡、别人的走动全部被遮住；明暗层照旧压住它（三档不为例外）。
 
 ## 10. 验收判据
 
