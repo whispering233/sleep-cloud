@@ -164,6 +164,19 @@
     border-radius: var(--radius-full);
   }
 
+  /* 窄屏（≤360px）：动作行五颗胶囊的原有间距会把右端齿轮顶出屏（实测 320px 下溢出 24px）。
+     只收紧两处留白（胶囊左右 padding 12→8、组间 12→8），**不缩 44px 触击目标**、
+     也不改文案——320px 是能覆盖到的最小宽度，再窄的屏不再往下适配 */
+  @media (max-width: 360px) {
+    .action-row {
+      gap: var(--spacing-sm);
+    }
+
+    .hud-action {
+      padding: 0 var(--spacing-sm);
+    }
+  }
+
   /* 设置齿轮与阅读入口：钉在动作行右端，`margin-inline-start: auto` 把中间拉开。
      组内 8px（`docs/ui/DESIGN.md` 的 `action-row` 行） */
   .hud-settings {
@@ -407,11 +420,16 @@
     letter-spacing: var(--tracking-reading);
   }
 
-  /* 每段首行缩进；段内硬换行靠 `white-space: pre-line`（`paragraphsOf` 已把空行切开） */
+  /* 每段首行缩进；段内硬换行靠 `white-space: pre-line`（`paragraphsOf` 已把空行切开）。
+     段间空一行：`1.7em` 正好是这个字号下的一个行高（行高写死 1.7，见上） */
   .type-text-body p {
     margin: 0;
     text-indent: 2em;
     white-space: pre-line;
+  }
+
+  .type-text-body p + p {
+    margin-block-start: 1.7em;
   }
 
   .type-text-note {
