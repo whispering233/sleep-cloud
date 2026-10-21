@@ -165,4 +165,4 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 
 ### 只能在真机 / 模拟器得结论
 
-真 IME 下的键盘动画观感、iOS 视觉视口 pan、低端机帧率、特定内核（夸克 / Via）。另外几条可量化的：**打字退场时 `canvas.width/height` 全程不变**；**发送后 `screenrecord` 逐帧不得出现整块变黑**（判据：画布区域亮度不低于空闲帧）；**整屏页期间画布不再重绘**（`readPixels` 间隔取两次，逐字节相同）；**覆盖期间不出现 ≥1.8 s 的 rAF 停顿**（基线：SwiftShader 上 6 次复现里 5 次出现）；**关掉整屏页后位置不跳**（`?debug=1` 的 `regressPx` 仍为 0，`posAge` 一帧内回到正常）。
+真 IME 下的键盘动画观感、iOS 视觉视口 pan、低端机帧率、特定内核（夸克 / Via）。另外几条可量化的：**打字退场时 `canvas.width/height` 全程不变**；**发送后 `screenrecord` 逐帧不得出现整块变黑**（判据：画布区域亮度不低于空闲帧）；**整屏页期间画布不再重绘**（`drawElements` / `drawArrays` 计数 1.2 s 增量为 0；`readPixels` 不可用——Phaser 不开 `preserveDrawingBuffer`）；**覆盖期间不出现 ≥1.8 s 的 rAF 停顿**（基线：SwiftShader 上 6 次复现里 5 次出现）；**关掉整屏页后位置不跳**（`?debug=1` 的 `regressPx` 仍为 0，`posAge` 一帧内回到正常）。
