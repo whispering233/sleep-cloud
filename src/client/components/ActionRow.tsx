@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openGames, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -28,7 +28,7 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 };
 
 /**
- * 右端三颗**还没做功能**的入口（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
+ * 右端两颗**还没做功能**的入口（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
  * 图形是设计给的 24 × 24 绘制区 SVG（`stroke-width 1.6`）——按钮里按 20×20 渲染，所以描边写 `1.8`，
  * 视觉上才等于 20 绘制区上的 `1.5px`（与书本 / 齿轮同一套画法）。
  * 先上界面、后接功能：点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
@@ -57,19 +57,6 @@ const PLACEHOLDER_ENTRIES = [
         <ellipse cx="12" cy="9.8" rx="6.1" ry="1.7" />
         <path d="M8.9 9.6 8.1 5.2M10.6 9.6V3.4M12.4 9.6V2.2M14.2 9.6V3.8M15.4 9.6l.7-4.2" />
         <path d="M6.3 15.2h11.4" />
-      </>
-    ),
-  },
-  {
-    key: 'game',
-    label: '游戏',
-    notice: '游戏 · 还没做',
-    paths: (
-      <>
-        <path d="M8.3 7.2h7.4c2.5 0 4.6 1.9 4.9 4.4l.5 4c.2 1.9-2.1 3.1-3.5 1.7l-2.1-2.2H8.5l-2.1 2.2c-1.4 1.4-3.7.2-3.5-1.7l.5-4C3.7 9.1 5.8 7.2 8.3 7.2Z" />
-        <path d="M7.3 10v3.8M5.4 11.9h3.8" />
-        <circle cx="16.2" cy="11.5" r="1" />
-        <circle cx="18" cy="13.4" r="1" />
       </>
     ),
   },
@@ -257,7 +244,7 @@ export function ActionRow() {
             </button>
           ) : (
             <>
-              {/* 三颗「还没做」的入口（睡不着留言板 / 求签 / 游戏）：组内 8px、均在阅读入口左侧。
+              {/* 两颗「还没做」的入口（睡不着留言板 / 求签）：组内 8px、均在阅读入口左侧。
                   独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理（免得被 React 原地复用 / 聚焦换位） */}
               {PLACEHOLDER_ENTRIES.map((entry) => (
                 <button
@@ -282,6 +269,32 @@ export function ActionRow() {
                   </svg>
                 </button>
               ))}
+              {/* 游戏（`docs/design/110-games-page.md` §2）：打开整屏游戏页，**不发任何上行**。
+                  与「还没做」那两颗同一套 44×44 图标胶囊；独立 `key` + `pointerdown` 拦默认行为同上 */}
+              <button
+                key="game"
+                type="button"
+                className="hud-action hud-icon"
+                aria-label="游戏"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => openGames()}
+              >
+                <svg
+                  className="hud-icon-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8.3 7.2h7.4c2.5 0 4.6 1.9 4.9 4.4l.5 4c.2 1.9-2.1 3.1-3.5 1.7l-2.1-2.2H8.5l-2.1 2.2c-1.4 1.4-3.7.2-3.5-1.7l.5-4C3.7 9.1 5.8 7.2 8.3 7.2Z" />
+                  <path d="M7.3 10v3.8M5.4 11.9h3.8" />
+                  <circle cx="16.2" cy="11.5" r="1" />
+                  <circle cx="18" cy="13.4" r="1" />
+                </svg>
+              </button>
               {/* 阅读入口（`docs/design/50-slot-panel.md` §附）：齿轮左侧第二颗。
                   只在空闲态出现——非空闲态那格被「收起」占住，两者天然互斥 */}
               <button

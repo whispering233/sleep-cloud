@@ -911,6 +911,89 @@
     margin-inline-end: var(--spacing-xs);
   }
 
+  /* ——— 游戏页（第三种「临时整屏页」：壳 / 卡片 / 标题复用入场层那套，只补出口、舞台与列表） ——— */
+
+  /* 出口钉在左上角。`.entry-overlay` 靠 `place-items` 居中，而两条 inset 都是显式的绝对定位孩子
+     不吃那套居中（`place-items` 只给 auto 的那两条 insets 收尾）。卡片顶部留出它的高：
+     `44px` 是触击尺寸（`touch-target-min`），加上它自己的开场边距 */
+  .games-leave {
+    position: absolute;
+    inset-block-start: calc(env(safe-area-inset-top) + var(--spacing-md));
+    inset-inline-start: calc(env(safe-area-inset-left) + var(--spacing-md));
+  }
+
+  .games-page {
+    padding-block-start: calc(env(safe-area-inset-top) + var(--spacing-lg) + 44px + var(--spacing-md));
+  }
+
+  /* 舞台：铺满整页、裁掉溢出、把 `games-stage-inner` 居中（`place-items`）。空着的时候整块透明且
+     **不吃点击**（`pointer-events: none`），列表照常可点；挂上游戏后只有那块 inner 吃点击。
+     它在卡片之后、出口之前：游戏正好盖住列表，而出口仍在最上面 */
+  .games-stage {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* 基准尺寸与等比缩放由 `host.ts` 现算写进这三个自定义属性（`base` 是条目数据、容器大小是当场量的，
+     CSS 推不出来）；布局尺寸仍是 `base`，缩放只改画出来的大小，所以居中一直是同一块 */
+  .games-stage-inner {
+    width: var(--games-w);
+    height: var(--games-h);
+    transform: scale(var(--games-scale));
+    pointer-events: auto;
+  }
+
+  /* 有一个游戏在台上时列表收起（`GamesOverlay` 的 `data-playing`）：列表只是「选哪一个」的那一下，
+     选中后整页交给舞台。换游戏 = 离开这一页再进（首版只有一个条目） */
+  .games-page[data-playing] .entry-card {
+    display: none;
+  }
+
+  /* ——— 游戏列表（纯文字条目：标题 + 一句说明 +「横屏更好」小标） ——— */
+
+  .games-list {
+    display: grid;
+    gap: var(--spacing-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* 整行可点 = 描边胶囊（外观沿用 `.hud-action`，项目里「这是个按钮」的既有答案）：
+     与动作行那排图标胶囊的差别只在于它是两行文字，所以宽撑满、上下留出内边距 */
+  .games-entry {
+    display: grid;
+    justify-items: start;
+    gap: var(--spacing-xs);
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    text-align: start;
+  }
+
+  .games-entry-blurb {
+    color: var(--color-neutral-muted);
+  }
+
+  /* 「横屏更好」小标：由 `base.w > base.h` 现推，不是另一个字段 */
+  .games-entry-wide {
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    letter-spacing: var(--tracking-caption);
+  }
+
+  /* 空态：一条弱文字（首版已有条目，只为将来兜底） */
+  .games-empty {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
   /* ——— 形象二选一 ——— */
 
   .appearance-row {

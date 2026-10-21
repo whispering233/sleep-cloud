@@ -7,6 +7,7 @@ import { AboutOverlay } from './components/AboutOverlay';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
+import { GamesOverlay } from './components/GamesOverlay';
 import { Hud } from './components/Hud';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
@@ -29,6 +30,8 @@ export function App() {
   const [entered, setEntered] = useState(false);
   /** 说明面板：`null` = 关着，否则是打开的原因（自动 / 手动） */
   const [aboutOpen, setAboutOpen] = useState<AboutSource | null>(() => getState().aboutOpen);
+  /** 游戏页：与说明面板同一种「整屏页开关」，也只看 store 那一个字段 */
+  const [gamesOpen, setGamesOpen] = useState(() => getState().gamesOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +52,14 @@ export function App() {
     setAboutOpen(getState().aboutOpen);
     return subscribe((state) => {
       setAboutOpen((prev) => (prev === state.aboutOpen ? prev : state.aboutOpen));
+    });
+  }, []);
+
+  // 游戏页的开关同理（`gamesOpen`）：打开只发生在 `entered` 之后，关掉 = 卸载这一页
+  useEffect(() => {
+    setGamesOpen(getState().gamesOpen);
+    return subscribe((state) => {
+      setGamesOpen((prev) => (prev === state.gamesOpen ? prev : state.gamesOpen));
     });
   }, []);
 
@@ -107,6 +118,10 @@ export function App() {
           </div>
 
           <ChatPanel />
+
+          {/* 游戏页（`docs/design/110-games-page.md` §1）：挂在聊天面板之后、说明面板之前，
+              层级靠 DOM 顺序、不加 `z-index`，所以 `tone-layer` 照旧盖得住它 */}
+          {gamesOpen ? <GamesOverlay /> : null}
         </>
       ) : null}
 

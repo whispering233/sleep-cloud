@@ -148,6 +148,11 @@ export interface ClientState {
    */
   aboutOpen: AboutSource | null;
   /**
+   * **游戏页**（客户端本地状态，不进协议、不进快照）：`true` = 整屏那一页开着。
+   * 大厅的连接照旧，人只是暂时不看厅里——所以它不进任何上行（`docs/design/110-games-page.md` §2）。
+   */
+  gamesOpen: boolean;
+  /**
    * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
    */
@@ -189,6 +194,7 @@ const emptyState = (): ClientState => ({
   rain: readWeather() === 'rain',
   sound: readSound() === 'rain',
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
+  gamesOpen: false,
 });
 
 let state: ClientState = emptyState();
@@ -404,6 +410,18 @@ export function openAbout(source: AboutSource): void {
 export function closeAbout(): void {
   if (state.aboutOpen === null) return;
   setState({ aboutOpen: null });
+}
+
+/** 打开游戏页（见 `ClientState.gamesOpen`）：同值不写。 */
+export function openGames(): void {
+  if (state.gamesOpen) return;
+  setState({ gamesOpen: true });
+}
+
+/** 关闭游戏页：「离开」与 `Esc` 走同一个出口，可能重复触发，所以幂等。 */
+export function closeGames(): void {
+  if (!state.gamesOpen) return;
+  setState({ gamesOpen: false });
 }
 
 /**
