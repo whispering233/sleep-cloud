@@ -25,6 +25,10 @@
 - **发版改为推 tag 触发 CI 自动部署**：`.github/workflows/release.yml` 改成三段串行——三条基线（`npm test` / `typecheck` / `lint:design`，先跑 `npm run tokens` 生成构造产物）+ 版本一致性 → 部署 → `GET /api/health` 冒烟 → 建 GitHub Release，任一环失败就不建 Release。凭据只在 GitHub 的 `production` environment 里。`wrangler.jsonc` 的生产路由值改为占位符、由 CI 注入；本地 `npm run deploy` 保留为应急路径（`docs/design/build.md` §4.3、§4.4）
 - **内容过滤手工表补词**：`tools/words/curated.txt` 由 39 条增至 111 条，词库 25,376 条（外来 25,265 + 手工 111）。手工表同时进昵称检测与聊天打码，新增条目对两处都生效。改词表后需重跑 `npm run words` 并部署
 
+### Fixed
+
+- **整屏页盖住世界时世界不再空转**（`docs/design/60-interaction-shell.md` §5.2）：入场层与说明面板都是不透明的整屏页，此前它们盖住的 2.7 Mpx 画布照旧每帧重绘，宿主 Android 模拟器（SwiftShader）上实测覆盖期间 rAF 停顿 1.8 ~ 3.7 s、一次 tap 排队最长 270 ms——真机 Via 上表现为「点『知道了』没反应、1-2 秒后大厅直接出现」。现在 `covered = !entered || aboutOpen` 期间世界层 `loop.sleep()` 整帧停（连渲染），揭幕时 `resetDelta()` + `wake()` 重锚，避免陈旧 `lastTime` 算出一个「暂停了多久」的 delta 让画面跳一屏。代价：醒来那一帧直接对齐当下（与 `hop` 同型），不补播这期间的动作
+
 ### Note
 
 - **发版入口只有一处**：`docs/design/build.md` §4.3（顺序）、§4.4（CI 三个 job 与凭据）、§4.2（入口路由）。正常发版是推 tag，本机 `npm run deploy` 只作应急；`wrangler.jsonc` 的路由值是占位符，真实入口只在 GitHub 的 `production` environment 里
