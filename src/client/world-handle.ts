@@ -23,7 +23,7 @@ export function focusBed(bedNo: number): void {
 }
 
 /**
- * 设世界缩放档位（动作行那颗胶囊选出来的）。它是 WCAG 2.5.1 要的那个**单指入口**
+ * 设世界缩放档位（齿轮浮层的「缩放」二级选出来的）。它是 WCAG 2.5.1 要的那个**单指入口**
  * （多指手势必须有单指替代，而且捏合没有可发现性），所以不能只靠捏合。
  */
 export function setZoomMode(mode: ZoomMode): void {

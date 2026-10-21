@@ -27,7 +27,7 @@ export interface HudView {
   rttMs?: number;
   /** 换床模式是否开着：开着时门控行换成换床提示、可点击组收起 `GO`（见 `docs/ui/DESIGN.md`） */
   switching: boolean;
-  /** 世界缩放档位：动作行那颗缩放胶囊的文案吃它（见 `src/client/zoom.ts`） */
+  /** 世界缩放档位：HUD 那一段「缩放 …」吃它（见 `src/client/zoom.ts`） */
   zoomMode: ZoomMode;
   /** 天气（客户端本地偏好）：齿轮浮层里那一颗胶囊的文案与 `aria-pressed` 吃它 */
   rain: boolean;
