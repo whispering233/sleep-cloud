@@ -1081,7 +1081,7 @@ export class Hall extends DurableObject<Env> {
       const event = this.autoSleepEvent(connection);
       if (event) this.due.upsert(event);
     }
-    // 床上但人已离线的人：宽限到期必须发生（上一个实例可能已经把内存里的宽限记录丢了）
+    // 床上但人已离线的人：宽限到期必须发生（行是权威——实例换了、内存丢了都不影响）
     const live = this.liveUserIds();
     for (const row of listOccupiedBeds(this.ctx.storage.sql)) {
       if (live.has(row.ownerUserId)) continue;
