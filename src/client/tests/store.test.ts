@@ -198,16 +198,16 @@ describe('客户端状态归约', () => {
     expect(getState().me?.ownedBedNo).toBe(42);
   });
 
-  it('睡痕条目带着 traceUntil 落进 people（到期由客户端自行淡出）', () => {
+  it('睡痕条目落进 people（服务端不给到期时刻：睡痕不自己消失）', () => {
     applySnapshot(
       snapshot({
         people: [
-          { id: 'u_trace', name: '夜猫', appearance: 'boy', state: 'trace', bedNo: 8, traceUntil: 1_735_728_000_000 },
+          { id: 'u_trace', name: '夜猫', appearance: 'boy', state: 'trace', bedNo: 8 },
         ],
       }),
     );
 
-    expect(getState().people.get('u_trace')).toMatchObject({ state: 'trace', bedNo: 8, traceUntil: 1_735_728_000_000 });
+    expect(getState().people.get('u_trace')).toMatchObject({ state: 'trace', bedNo: 8 });
   });
 
   it('pos：没有上一个窗口时直接落位，并把权威坐标记进 people', () => {

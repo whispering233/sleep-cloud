@@ -23,7 +23,7 @@ function connection(overrides: Partial<ConnectionState> = {}): ConnectionState {
 }
 
 function traceRow(overrides: Partial<TraceBedRow> = {}): TraceBedRow {
-  return { bedNo: 5, userId: 'u_trace', name: '夜猫', appearance: 'girl', traceUntil: 1735728000000, ...overrides };
+  return { bedNo: 5, userId: 'u_trace', name: '夜猫', appearance: 'girl', ...overrides };
 }
 
 const snapshot = (overrides: Partial<Parameters<typeof buildSnapshot>[0]> = {}) =>
@@ -58,15 +58,15 @@ describe('快照组装', () => {
     expect(decodeOwnedBeds(message.ownedBeds, BED_COUNT)).toEqual([5, 42, 113]);
   });
 
-  it('睡痕条目来自数据库行：名字与外观取快照值，带 bedNo 与绝对到期时刻', () => {
+  it('睡痕条目来自数据库行：名字与外观取快照值，带 bedNo', () => {
     const message = snapshot({ ownedBeds: [5], traceRows: [traceRow()] });
 
     expect(message.people).toEqual([
-      { id: 'u_trace', name: '夜猫', appearance: 'girl', state: 'trace', bedNo: 5, traceUntil: 1735728000000 },
+      { id: 'u_trace', name: '夜猫', appearance: 'girl', state: 'trace', bedNo: 5 },
     ]);
   });
 
-  it('宽限中的床上离线者照旧是 lying/asleep（睡痕还没到，占用不能凭空消失），且不带 traceUntil', () => {
+  it('宽限中的床上离线者照旧是 lying/asleep（睡痕还没到，占用不能凭空消失）', () => {
     const message = snapshot({
       ownedBeds: [5],
       offlineOccupants: [{ bedNo: 5, state: 'asleep', userId: 'u_sleeper', name: '阿雅', appearance: 'girl' }],

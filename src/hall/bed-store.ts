@@ -1,4 +1,4 @@
-import { BED_OWNERSHIP_TTL_MS, TRACE_TTL_MS } from '../shared/constants';
+import { BED_OWNERSHIP_TTL_MS } from '../shared/constants';
 import { HALL_LEVELS, levelIndexOfBedCount } from '../shared/layout';
 import type { HallLevel } from '../shared/layout';
 import type { Appearance } from '../shared/protocol';
@@ -10,8 +10,8 @@ import { META_KEYS } from './schema';
  *
  * 两条纪律贯穿本文件：
  * 1. **惰性行**：只有「有主或有占用」的床才有一行，没有行 = 无主空床；行数 ≈ 有主床数（几百）；
- * 2. **过期是读取时推导**：睡痕过期（`updated_at + TRACE_TTL_MS`）视为无占用、归属过期
- *    （`last_seen_at + BED_OWNERSHIP_TTL_MS`）视为无主，**都不写库**；只有每日唤醒才真正清行。
+ * 2. **过期是读取时推导**：归属过期（`last_seen_at + BED_OWNERSHIP_TTL_MS`）视为无主，**不写库**；
+ *    只有每日唤醒才真正清行。**睡痕没有 TTL**——它跟归属同寿（见 `docs/db/schema.md` §7）。
  */
 
 /** 床位占用状态（主体是**一张床**）。没有 `roaming`——人不在床上时那张床就是 `empty`。 */
@@ -44,32 +44,14 @@ export function ownershipAlive(lastSeenAt: number | null, now: number): boolean 
   return lastSeenAt !== null && lastSeenAt >= now - BED_OWNERSHIP_TTL_MS;
 }
 
-/** 睡痕还没到期：`updated_at` 写的是**宽限到期的时刻**，睡痕活到它加一个 TTL。 */
-export function traceAlive(raw: Pick<RawBedRow, 'state' | 'updated_at'>, now: number): boolean {
-  return raw.state !== 'trace' || raw.updated_at + TRACE_TTL_MS > now;
-}
-
-/** 睡痕行是否已经过期到「这张床回到可认领池」。 */
-function traceExpired(raw: Pick<RawBedRow, 'state' | 'updated_at'>, now: number): boolean {
-  return !traceAlive(raw, now);
-}
-
-/**
- * 有效归属：归属未过期，**且这张床不是一条已过期的睡痕**。
- *
- * 后半句的出处是 `docs/db/schema.md` §6 与 `10-hall-runtime.md` §4.3：睡痕一过期，这张床就回落为
- * 「可认领」——睡了一夜再没回来的人，床该给别人了（同 §13「睡痕已过期 → 那张床不再是他的」）。
- * 行里的 `owner_user_id` 不因此被清掉，只等待「别人躺上去覆盖」或「每日唤醒释放」。
- */
+/** 有效归属：归属未过期。睡痕不会过期，所以它不影响归属（**到期只靠 30 天归属释放**）。 */
 export function effectivelyOwned(raw: RawBedRow, now: number): boolean {
-  if (!ownershipAlive(raw.last_seen_at, now)) return false;
-  return !traceExpired(raw, now);
+  return ownershipAlive(raw.last_seen_at, now);
 }
 
 /** 这张床此刻算不算「有主或有占用」（升级/降级与出生点共用这一条判据）。 */
 export function bedBusy(raw: RawBedRow, now: number): boolean {
-  if (effectivelyOwned(raw, now)) return true;
-  return raw.state !== 'empty' && traceAlive(raw, now);
+  return effectivelyOwned(raw, now) || raw.state !== 'empty';
 }
 
 /** 读取时推导：原始行 → 此刻的制度事实。**这是全系统唯一一处拼写「过期」的地方**。 */
@@ -77,7 +59,7 @@ export function effectiveBed(raw: RawBedRow, now: number): BedRow {
   const owned = effectivelyOwned(raw, now);
   return {
     bedNo: raw.bed_no,
-    state: raw.state === 'trace' && !traceAlive(raw, now) ? 'empty' : (raw.state as BedState),
+    state: raw.state as BedState,
     ownerUserId: owned ? raw.owner_user_id : null,
     ownerName: owned ? raw.owner_name : null,
     ownerAppearance: owned ? raw.owner_appearance : null,
@@ -101,34 +83,43 @@ export interface OwnedBed {
 
 /**
  * 我当前拥有的床（**有效归属**）。走唯一索引取一行；没有 = 我还没有床。
- * 谓词与 `effectivelyOwned` 逐字对应（含「已过期的睡痕不算我的床」那一条，两处必须一起改）。
+ * 谓词与 `effectivelyOwned` 逐字对应（两处必须一起改）。
  */
 export function findOwnedBed(sql: SqlStorage, userId: string, now: number): OwnedBed | undefined {
   const row = sql
     .exec<{ bed_no: number; claimed_at: number | null }>(
       `SELECT bed_no, claimed_at FROM bed WHERE owner_user_id = ?
         AND last_seen_at IS NOT NULL AND last_seen_at >= ?
-        AND NOT (state = 'trace' AND updated_at + ? <= ?)
        ORDER BY bed_no`,
       userId,
       now - BED_OWNERSHIP_TTL_MS,
-      TRACE_TTL_MS,
-      now,
     )
     .toArray()[0];
   return row ? { bedNo: row.bed_no, claimedAt: row.claimed_at } : undefined;
 }
 
-/** 我的床是否正留着**未过期**的睡痕（宽限已过、人已离线）。走唯一索引取一行。 */
-export function findTraceBed(sql: SqlStorage, userId: string, now: number): number | undefined {
-  return sql
-    .exec<{ bed_no: number }>(
-      `SELECT bed_no FROM bed WHERE owner_user_id = ? AND state = 'trace' AND updated_at + ? > ?`,
+/** 我名下正占着的床位行（`trace` 也在内）：重连恢复的**唯一判据**。 */
+export interface OwnedOccupiedBed {
+  bedNo: number;
+  state: 'lying' | 'asleep' | 'trace';
+}
+
+/**
+ * 我名下**正占着**的那张床（含睡痕）。走 `owner_user_id` 唯一索引取一行；没有 = 我没在床上
+ * （可能还有归属，但床是空的）。行上的 `state` 就是重连回来的状态（`10-hall-runtime.md` §6）。
+ * **归属过期就不算数**（与 `findOwnedBed` 同一条边）：过期后按新人处理，落在出生点。
+ */
+export function findOccupiedBedByOwner(sql: SqlStorage, userId: string, now: number): OwnedOccupiedBed | undefined {
+  const row = sql
+    .exec<{ bed_no: number; state: OwnedOccupiedBed['state'] }>(
+      `SELECT bed_no, state FROM bed WHERE owner_user_id = ?
+        AND state IN ('lying', 'asleep', 'trace')
+        AND last_seen_at IS NOT NULL AND last_seen_at >= ?`,
       userId,
-      TRACE_TTL_MS,
-      now,
+      now - BED_OWNERSHIP_TTL_MS,
     )
-    .toArray()[0]?.bed_no;
+    .toArray()[0];
+  return row ? { bedNo: row.bed_no, state: row.state } : undefined;
 }
 
 /**
@@ -152,25 +143,21 @@ export function listOccupiedBeds(sql: SqlStorage): OccupiedBedRow[] {
     }));
 }
 
-/** 睡痕行（人已离线）：`state` 索引 + **在 SQL 里就过滤掉已过期的**（过期睡痕不该再被画出来）。 */
+/** 睡痕行（人已离线）：走 `state` 索引，**没有时间过滤**（睡痕没有 TTL，见 `docs/db/schema.md` §7）。 */
 export interface TraceBedRow {
   bedNo: number;
   /** 睡痕的「人」由归属快照给出：内存里已经没有他了 */
   userId: string;
   name: string | null;
   appearance: string | null;
-  /** 睡痕的绝对到期时刻：客户端拿它自行淡出，服务端不需要为它挂任何定时器 */
-  traceUntil: number;
 }
 
-export function listTraceBeds(sql: SqlStorage, now: number): TraceBedRow[] {
+export function listTraceBeds(sql: SqlStorage): TraceBedRow[] {
   return sql
     .exec<RawBedRow>(
       `SELECT bed_no, state, owner_user_id, owner_name, owner_appearance, last_seen_at, updated_at FROM bed
-        WHERE state = 'trace' AND owner_user_id IS NOT NULL AND updated_at + ? > ?
+        WHERE state = 'trace' AND owner_user_id IS NOT NULL
         ORDER BY bed_no`,
-      TRACE_TTL_MS,
-      now,
     )
     .toArray()
     .map((row) => ({
@@ -178,7 +165,6 @@ export function listTraceBeds(sql: SqlStorage, now: number): TraceBedRow[] {
       userId: row.owner_user_id as string,
       name: row.owner_name,
       appearance: row.owner_appearance,
-      traceUntil: row.updated_at + TRACE_TTL_MS,
     }));
 }
 
@@ -208,7 +194,7 @@ export function releaseExpiredOwnerships(sql: SqlStorage, now: number): void {
 }
 
 /**
- * **有效归属**的有主床号（快照的归属位图用它）：过期归属不算有主，已过期的睡痕也不算
+ * **有效归属**的有主床号（快照的归属位图用它）：过期归属不算有主
  * ——谓词与 `effectivelyOwned` 逐字对应（快照里的归属与「能不能躺」必须给同一个答案）。
  */
 export function listOwnedBeds(sql: SqlStorage, now: number): number[] {
@@ -216,11 +202,8 @@ export function listOwnedBeds(sql: SqlStorage, now: number): number[] {
     .exec<{ bed_no: number }>(
       `SELECT bed_no FROM bed WHERE owner_user_id IS NOT NULL
         AND last_seen_at IS NOT NULL AND last_seen_at >= ?
-        AND NOT (state = 'trace' AND updated_at + ? <= ?)
        ORDER BY bed_no`,
       now - BED_OWNERSHIP_TTL_MS,
-      TRACE_TTL_MS,
-      now,
     )
     .toArray()
     .map((row) => row.bed_no);
@@ -308,8 +291,8 @@ export interface PutInBedInput {
  */
 export function putInBed(sql: SqlStorage, input: PutInBedInput): void {
   if (input.claiming) {
-    // 一人一床靠唯一索引兜底：我名下若还留着**已过期睡痕**的行（那张床已经回到可认领池，所以它不是我的
-    // 当前床），那条行必须先让开，否则这次认领会撞唯一索引。
+    // 一人一床靠唯一索引兜底：我名下若还留着别的床的行（归属已过期、那行还没被释放），必须先让开，
+    // 否则这次认领会撞唯一索引。
     sql.exec(
       `UPDATE bed SET owner_user_id = NULL, owner_name = NULL, owner_appearance = NULL,
         claimed_at = NULL, sleep_started_at = NULL, state = 'empty', updated_at = ?
@@ -365,12 +348,12 @@ export interface RestoreBedInput {
 }
 
 /**
- * 从睡痕恢复：床重新被占用（清醒）。**不是新的一次上床**——归属与 `sleep_started_at` 都不动，
- * 只刷新名字快照（见 `docs/db/schema.md` §6）。
+ * 从睡痕恢复：**睡着的还原**（`state = 'asleep'`）。**不是新的一次上床**——归属与 `sleep_started_at`
+ * 都不动，只刷新名字快照（见 `docs/db/schema.md` §7「宽限已过后重连」）。
  */
 export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): void {
   sql.exec(
-    `UPDATE bed SET state = 'lying', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?
+    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?
      WHERE bed_no = ?`,
     input.name,
     input.appearance,
@@ -413,7 +396,7 @@ export function smallestClaimableBed(sql: SqlStorage, bedCount: number, now: num
 }
 
 /**
- * 降级判据：`[from, bedCount)` 这一圈床**全部无主且无占用**（含未过期睡痕）→ 可以缩到上一档。
+ * 降级判据：`[from, bedCount)` 这一圈床**全部无主且无占用**（睡痕也算占用）→ 可以缩到上一档。
  * 没有行 = 空床，所以只看有没有行是「忙」的。
  */
 export function outerRingBusy(sql: SqlStorage, from: number, bedCount: number, now: number): boolean {

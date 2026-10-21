@@ -394,14 +394,6 @@ export function personAlpha(state: PersonState): number {
 }
 
 /**
- * 睡痕到期由**客户端**按快照里的 `traceUntil` 自行淡出：服务端不写库、不广播、不起定时器
- * （见 `docs/api/20-api-ws.md` §4.2）。到点之后这条条目就不该再画出来。
- */
-export function isFaded(person: Person, serverNow: number): boolean {
-  return person.traceUntil !== undefined && person.traceUntil <= serverNow;
-}
-
-/**
  * 轻点命中（屏幕点已换算成**世界像素**）：人 > 自己 > 猫 > 床 > 地面（见 `docs/ui/DESIGN.md`、`80-reserve-decor.md` §3.6）。
  * 命中判定与渲染器无关，可单测。
  */

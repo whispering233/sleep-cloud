@@ -29,7 +29,6 @@ import {
   campfireLit,
   clampZoom,
   followStep,
-  isFaded,
   isMoving,
   layoutTopOf,
   personPoint,
@@ -532,9 +531,6 @@ class WorldScene extends Phaser.Scene {
     if (state.me) persons.push(state.me);
 
     for (const person of persons) {
-      // 睡痕到期由本地推导（不挂定时器、服务端也不广播）：到点就不再画
-      if (isFaded(person, serverNow)) continue;
-
       // 自己那一份由 `update` 取一次后传进来：跟随追的就是这个点
       const point =
         person.id === state.me?.id

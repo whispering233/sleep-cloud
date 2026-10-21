@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DAILY_WAKE_UTC_HOUR, TRACE_TTL_MS } from '../../shared/constants';
+import { DAILY_WAKE_UTC_HOUR } from '../../shared/constants';
 import { HALL_LEVELS } from '../../shared/layout';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from '../daily';
 import { previousLevelCapacity } from '../level-rules';
@@ -37,11 +37,6 @@ describe('每日唤醒排期（UTC 20:00，无时区换算）', () => {
       expect(previous).toBeLessThanOrEqual(now);
       expect(next - previous).toBe(24 * 60 * 60 * 1000);
     }
-  });
-
-  it('睡痕 TTL 与每日唤醒是两回事：每日唤醒只结算归属与缩级，睡痕过期不靠它', () => {
-    // 12 小时的 TTL 与「一天一次」的排期不是一回事（写在一起是为了钉住「没有清理任务」这条语义）
-    expect(TRACE_TTL_MS).toBe(12 * 60 * 60 * 1000);
   });
 });
 

@@ -28,7 +28,7 @@ export interface SnapshotInput {
   offlineOccupants: OfflineOccupantRow[];
   /** 有主的床号（**归属未过期**的那些） */
   ownedBeds: number[];
-  /** 未过期的睡痕行（`bed-store.listTraceBeds` 在 SQL 里就滤掉了过期的那些） */
+  /** 睡痕行（`bed-store.listTraceBeds`：睡痕没有 TTL，读到就是该画的） */
   traceRows: TraceBedRow[];
 }
 
@@ -41,15 +41,13 @@ function selfPerson(connection: ConnectionState, myOwnedBedNo: number | null): S
 
 function personFromRow(row: TraceBedRow | OfflineOccupantRow, state: 'lying' | 'asleep' | 'trace'): Person {
   const stored = row.appearance as Appearance | null;
-  const person: Person = {
+  return {
     id: row.userId,
     name: row.name ?? '',
     appearance: stored && APPEARANCES.includes(stored) ? stored : appearanceFor(row.userId),
     state,
     bedNo: row.bedNo,
   };
-  if (state === 'trace') person.traceUntil = (row as TraceBedRow).traceUntil;
-  return person;
 }
 
 /**
@@ -96,7 +94,7 @@ export function splitLive(
  * 生成全量快照（见 `docs/api/20-api-ws.md` §4.1）。
  *
  * 两个正交维度在这里合流：归属走 `ownedBeds` 位图（有主的床，不带名字），占用走 `people`
- * （含睡痕条目，带 `traceUntil`）。**已经在线的睡痕行不再重复出现在 `people` 里**——在线连接是更新的真相。
+ * （含睡痕条目）。**已经在线的睡痕行不再重复出现在 `people` 里**——在线连接是更新的真相。
  *
  * `people` 必须覆盖**每一个占用者**，睡痕与宽限中的床上离线者都没有连接，因此只能查库补录。
  */

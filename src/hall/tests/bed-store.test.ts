@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { BED_OWNERSHIP_TTL_MS, TRACE_TTL_MS } from '../../shared/constants';
+import { BED_OWNERSHIP_TTL_MS } from '../../shared/constants';
 import { HALL_LEVELS } from '../../shared/layout';
 import {
   effectivelyOwned,
   findOwnedBed,
-  findTraceBed,
   listExpiredOwnerships,
   listOccupiedBeds,
   listOwnedBeds,
@@ -17,6 +16,7 @@ import {
   readMeta,
   releaseExpiredOwnerships,
   smallestClaimableBed,
+  usedBedCount,
   writeBedCount,
   writeDailyWakeAt,
 } from '../bed-store';
@@ -57,7 +57,6 @@ describe('惰性行：没有行 = 无主空床', () => {
     const sql = freshSql();
     expect(bedRowCount(sql)).toBe(0);
     expect(readBed(sql, 0, NOW)).toBeUndefined();
-    expect(smallestClaimableBed(sql, FIRST, NOW)).toBe(0);
   });
 
   it('认领才诞生行；再认领一张就多一行（行数 = 有主或有占用的床）', () => {
@@ -68,7 +67,7 @@ describe('惰性行：没有行 = 无主空床', () => {
     expect(bedRowCount(sql)).toBe(2);
   });
 
-  it('编号最小的可认领床会跳过有主、有占用、未过期睡痕的那些（30 天释放留下的坑会被新人补上）', () => {
+  it('编号最小的可认领床会跳过有主、有占用、睡痕的那些（30 天释放留下的坑会被新人补上）', () => {
     const sql = freshSql();
     insertBed(sql, 0, { state: 'empty', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW });
     insertBed(sql, 1, { state: 'asleep', ownerUserId: 'u_b', lastSeenAt: NOW, updatedAt: NOW });
@@ -86,7 +85,7 @@ describe('惰性行：没有行 = 无主空床', () => {
     expect(rawRow(sql, 1)).toMatchObject({ owner_user_id: null });
     expect(smallestClaimableBed(sql, 2, NOW)).toBe(1);
 
-    // 1 号床换成一张未过期睡痕（有占用）→ 两张床都忙，没有可认领的床
+    // 1 号床换成一张睡痕（有占用）→ 两张床都忙，没有可认领的床
     sql.exec(
       "UPDATE bed SET state = 'trace', owner_user_id = 'u_b', last_seen_at = ?, updated_at = ? WHERE bed_no = 1",
       NOW,
@@ -172,71 +171,53 @@ describe('meta：bed_count / daily_wake_at', () => {
   });
 });
 
-describe('睡痕：过期是读取时推导（不写库、不广播）', () => {
-  it('未过期睡痕算占用：读出来是 trace，可带 traceUntil，也占着床', () => {
+describe('睡痕：没有 TTL，跟归属同寿（30 天释放才消失）', () => {
+  it('睡痕算占用：读出来是 trace，也占着床', () => {
     const sql = freshSql();
     const tracedAt = NOW - 1000;
     insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: tracedAt, updatedAt: tracedAt });
 
     expect(readBed(sql, 4, NOW)?.state).toBe('trace');
-    expect(listTraceBeds(sql, NOW)).toEqual([
-      { bedNo: 4, userId: 'u_a', name: '夜猫', appearance: 'boy', traceUntil: tracedAt + TRACE_TTL_MS },
-    ]);
-    expect(smallestClaimableBed(sql, FIRST, NOW)).toBe(0); // 跳过 4
+    expect(listTraceBeds(sql)).toEqual([{ bedNo: 4, userId: 'u_a', name: '夜猫', appearance: 'boy' }]);
   });
 
-  it('过期睡痕视为无占用、这张床回到可认领池；行本身**不写库**（还在）', () => {
+  it('睡痕远超 12 小时仍是占用（没有 TTL，唯一的时间轴是 30 天归属释放）', () => {
     const sql = freshSql();
-    const tracedAt = NOW - TRACE_TTL_MS; // 正好到点就算过期
+    const tracedAt = NOW - 20 * 24 * 3600_000; // 二十天前就离开，仍在 30 天归属期内
     insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: tracedAt, updatedAt: tracedAt });
 
-    expect(readBed(sql, 4, NOW)).toMatchObject({ state: 'empty', ownerUserId: null });
-    expect(listTraceBeds(sql, NOW)).toEqual([]);
-    expect(listOccupiedBeds(sql)).toEqual([]);
-    expect(listOwnedBeds(sql, NOW)).toEqual([]);
-    expect(listExpiredOwnerships(sql, NOW)).toEqual([]); // 30 天没到：归属还没被释放
-    expect(findOwnedBed(sql, 'u_a', NOW)).toBeUndefined(); // 不再是他的床
-    expect(rawRow(sql, 4)).toMatchObject({ state: 'trace', owner_user_id: 'u_a' }); // 库里的行原样留着
-
-    // 别人躺上去：UPSERT 覆盖（归属与占用一起换掉）
-    putInBed(sql, claim(4, 'u_b', '阿夜'));
-    expect(readBed(sql, 4, NOW)).toMatchObject({ state: 'lying', ownerUserId: 'u_b', ownerName: '阿夜' });
+    expect(readBed(sql, 4, NOW)).toMatchObject({ state: 'trace', ownerUserId: 'u_a' });
+    expect(listTraceBeds(sql)).toHaveLength(1);
+    expect(listOwnedBeds(sql, NOW)).toEqual([4]);
+    expect(findOwnedBed(sql, 'u_a', NOW)?.bedNo).toBe(4);
+    expect(usedBedCount(sql, NOW)).toBe(1); // 二十天前的睡痕仍然算「已用」
   });
 
-  it('睡痕过期后本人回来认领新床：名下那条过期睡痕行先让开（否则撞一人一床的唯一索引）', () => {
+  it('睡痕只随 30 天归属释放消失：行变 empty，位图与睡痕列表都不再有它', () => {
     const sql = freshSql();
-    insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW - TRACE_TTL_MS });
+    const tracedAt = NOW - BED_OWNERSHIP_TTL_MS - 1;
+    insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: tracedAt, updatedAt: tracedAt });
+
+    expect(listExpiredOwnerships(sql, NOW)).toEqual([4]);
+    releaseExpiredOwnerships(sql, NOW);
+    expect(rawRow(sql, 4)).toMatchObject({ state: 'empty', owner_user_id: null });
+    expect(listTraceBeds(sql)).toEqual([]);
+    expect(listOwnedBeds(sql, NOW)).toEqual([]);
+  });
+
+  it('本人回来认领新床：名下那条没人释放的行先让开（否则撞一人一床的唯一索引）', () => {
+    const sql = freshSql();
+    insertBed(sql, 4, {
+      state: 'trace',
+      ownerUserId: 'u_a',
+      lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS - 1,
+      updatedAt: NOW - BED_OWNERSHIP_TTL_MS - 1,
+    });
 
     putInBed(sql, claim(9, 'u_a')); // 唯一索引不会拦下
     expect(readBed(sql, 9, NOW)).toMatchObject({ state: 'lying', ownerUserId: 'u_a' });
     expect(rawRow(sql, 4)).toMatchObject({ state: 'empty', owner_user_id: null });
     expect(bedRowCount(sql)).toBe(2); // 让开的那行还在，只是变成无主空床
-  });
-
-  it('刚好差 1 毫秒还没过期（边界只切一次）', () => {
-    const sql = freshSql();
-    insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW - TRACE_TTL_MS + 1 });
-    expect(listTraceBeds(sql, NOW)).toHaveLength(1);
-    expect(readBed(sql, 4, NOW)?.state).toBe('trace');
-  });
-
-  it('没有睡痕清理任务：每日唤醒的两件事（归属释放 + 缩级）都不动已过期的睡痕行', () => {
-    const sql = freshSql();
-    const tracedAt = NOW - TRACE_TTL_MS;
-    insertBed(sql, 7, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: tracedAt });
-
-    releaseExpiredOwnerships(sql, NOW); // 归属没到期（30 天），这一行不该被动
-    expect(rawRow(sql, 7)).toMatchObject({ state: 'trace', owner_user_id: 'u_a', updated_at: tracedAt });
-    expect(listTraceBeds(sql, NOW)).toEqual([]); // 过期只体现在「读不到」上
-  });
-
-  it('睡痕到期后我还能回去躺自己那张床（`findTraceBed` 也按 TTL 过滤）', () => {
-    const sql = freshSql();
-    insertBed(sql, 4, { state: 'trace', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW - 1000 });
-    expect(findTraceBed(sql, 'u_a', NOW)).toBe(4);
-
-    insertBed(sql, 5, { state: 'trace', ownerUserId: 'u_b', lastSeenAt: NOW, updatedAt: NOW - TRACE_TTL_MS });
-    expect(findTraceBed(sql, 'u_b', NOW)).toBeUndefined();
   });
 });
 
@@ -246,15 +227,12 @@ describe('归属：过期同样是读取时推导', () => {
     expect(ownershipAlive(NOW, NOW)).toBe(true);
   });
 
-  it('有效归属 = 归属未过期 ∧ 不是已过期的睡痕（两个“过期”各有各的 TTL）', () => {
+  it('有效归属 = 归属未过期（睡痕不影响归属：它没有 TTL）', () => {
     const owned = { state: 'empty', last_seen_at: NOW, updated_at: NOW };
     expect(effectivelyOwned(owned as never, NOW)).toBe(true);
     expect(effectivelyOwned({ ...owned, last_seen_at: null } as never, NOW)).toBe(false);
     expect(effectivelyOwned({ ...owned, last_seen_at: NOW - BED_OWNERSHIP_TTL_MS - 1 } as never, NOW)).toBe(false);
     expect(effectivelyOwned({ ...owned, state: 'trace' } as never, NOW)).toBe(true);
-    expect(
-      effectivelyOwned({ ...owned, state: 'trace', updated_at: NOW - TRACE_TTL_MS } as never, NOW),
-    ).toBe(false);
   });
 
   it('正好 30 天不算超期，多 1 毫秒算（取行与释放是同一条边）', () => {
@@ -311,16 +289,16 @@ describe('降级判据：外圈那一圈全无主且无占用', () => {
     expect(outerRingBusy(sql, FIRST, SECOND, NOW)).toBe(true);
   });
 
-  it('外圈只有过期归属或过期睡痕 → 不忙（两者都是读取时推导）', () => {
+  it('外圈只有过期归属 → 不忙', () => {
     const sql = freshSql();
     insertBed(sql, 120, { state: 'empty', ownerUserId: 'u_gone', lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS - 1, updatedAt: NOW });
-    insertBed(sql, 121, { state: 'trace', ownerUserId: 'u_trace', lastSeenAt: NOW, updatedAt: NOW - TRACE_TTL_MS });
     expect(outerRingBusy(sql, FIRST, SECOND, NOW)).toBe(false);
   });
 
-  it('外圈有未过期睡痕 → 忙（睡痕也算占用）', () => {
+  it('外圈有睡痕（哪怕二十天前）→ 忙（睡痕也算占用，没有 TTL）', () => {
     const sql = freshSql();
-    insertBed(sql, 121, { state: 'trace', ownerUserId: 'u_trace', lastSeenAt: NOW, updatedAt: NOW - 1000 });
+    const tracedAt = NOW - 20 * 24 * 3600_000;
+    insertBed(sql, 121, { state: 'trace', ownerUserId: 'u_trace', lastSeenAt: tracedAt, updatedAt: tracedAt });
     expect(outerRingBusy(sql, FIRST, SECOND, NOW)).toBe(true);
   });
 });
