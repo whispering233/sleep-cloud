@@ -4,25 +4,6 @@
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 > 契约与预算的唯一权威是 `100-log.md`：卡片里出现的字段名、阈值、闸门都必须与它逐字一致，不一致就改代码不改文档。
 
-## 卡 1 — 日志单一出口 + 关掉 invocation log
-
-**目标**：建立唯一的日志出口，并让它的第一批调用点（Worker 层的 `err`）端到端可见。
-
-**改动范围**
-- 新增 `src/shared/log.ts`：按 `100-log.md` §4 实现字段白名单（`ev` + 每个事件的字段表）、永不抛、闸门（30 条/分钟，超出累加，每 5 分钟最多一条 `suppressed`）、静默点带 `n` 的聚合出口。
-- `wrangler.jsonc`：`observability` 改成 `{ "enabled": true, "logs": { "invocation_logs": false } }`。**不要动** `logs.persist` / `logs.enabled`。
-- `src/worker/app.ts` 的 `onError`：改写为 `log.err({ where: 'http', code: '9001' })` + 保留原 `console.error`（本地 `wrangler tail` 仍要能看见堆栈）。
-- 新增 `src/shared/tests/log.test.ts`。
-
-**不做**：埋点事件（卡 3/4）、`Hall` 内任何改动、`head_sampling_rate` 调优。
-
-**验证**
-- 单测：未知 `ev` 被丢弃；字段表外的键被丢弃；出口自身在 `console.log` 抛异常时不向上抛；闸门在 31 条后只剩 `suppressed`；`n` 聚合在阈值与 5 分钟边界各触发一次。
-- `npm test` / `npm run typecheck` 零失败。
-- 由 reviewer 独立核对：`100-log.md` §3/§4 的每个字段与阈值在实现里逐条存在。
-
-**回滚**：单条 `revert`（新模块无调用方依赖，`wrangler.jsonc` 一行可单独改回）。
-
 ## 卡 2 — 入口异常与静默降级
 
 **目标**：让今天被吞掉的错误变成 `err`，让高频降级变成带 `n` 的 `drop`。

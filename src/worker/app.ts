@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import { HALL_ID, NICKNAME_MAX_LEN, UA_HASH_HEX_LEN } from '../shared/constants';
 import { detect } from '../shared/content-filter';
 import { LAYOUT_VERSION } from '../shared/layout';
+import * as log from '../shared/log';
 import { APPEARANCES } from '../shared/protocol';
 import { appearanceFor, IDENTITY_HEADERS } from '../hall/connection';
 import type { EntrySource } from '../hall/risk';
@@ -23,6 +24,7 @@ const app = new Hono<{ Bindings: Env }>();
  */
 app.onError((error, c) => {
   console.error('请求处理失败：', error);
+  log.err({ where: 'http', code: '9001' });
   return fail(c, '9001');
 });
 
