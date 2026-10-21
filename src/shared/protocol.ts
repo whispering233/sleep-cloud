@@ -18,8 +18,13 @@ export type PersonPlacement =
   | { state: 'roaming'; x: number; y: number }
   | { state: 'lying' | 'asleep' | 'trace'; bedNo: number };
 
-/** 厅内可见的人。三类占用者（走动的、床上在线的、睡痕）用同一结构表达。 */
-export type Person = { id: string; name: string; appearance: Appearance } & PersonPlacement;
+/**
+ * 厅内可见的人。三类占用者（走动的、床上在线的、睡痕）用同一结构表达。
+ *
+ * `act` 与显示态正交：它说的是「我在看哪一页」，不是我躺着还是睡着。**只有 `game` 会被记住**
+ * （`hall` 等于默认，字段省略）；睡痕条目恒为空——连接没了，附加数据也没了。
+ */
+export type Person = { id: string; name: string; appearance: Appearance; act?: 'game' } & PersonPlacement;
 
 /**
  * 自己的完整状态：比 `people` 条目多一个**归属位**。
@@ -150,6 +155,12 @@ interface UpstreamPayloads {
   lie: { bedNo: number };
   rise: Record<string, never>;
   sleep: Record<string, never>;
+  /**
+   * 活动声明：`hall`（在看厅，默认）/ `game`（在游戏页）。**与 `state` 正交**——服务端无从推导
+   * 「我在看哪一页」，所以只能由客户端说；它不进任何业务判定。只在进 / 出游戏页各发一次，
+   * 重连后要补发一次（附加数据已丢，否则后缀静默消失）。见 `docs/design/110-games-page.md` §6。
+   */
+  act: { act: 'hall' | 'game' };
   chat: { text: string };
   whisper: { toId: string; text: string };
   /**
@@ -174,6 +185,7 @@ export const UPSTREAM_TYPES = [
   'lie',
   'rise',
   'sleep',
+  'act',
   'chat',
   'whisper',
   'report',

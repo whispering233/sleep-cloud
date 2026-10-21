@@ -24,6 +24,11 @@ export interface ConnectionState {
   bedNo?: number;
   state: 'roaming' | 'lying' | 'asleep';
   /**
+   * 「我在看哪一页」：只有 `game` 会被记住（`hall` 等于默认、字段省略）。可丢弃的临时量——
+   * 断线即丢，重连后由客户端补发（见 `docs/design/110-games-page.md` §6）。
+   */
+  act?: 'game';
+  /**
    * 正在走向的目标点（走完就清空）。
    * 路径本身**不存这里**：附件体积要小，而且路径能由街网确定性重算（见 `pathfinding.ts`）。
    */
@@ -88,9 +93,13 @@ export function recoverForShrink(connection: ConnectionState, bedCount: number):
 /** 连接 → 协议里「一个人」的条目（在床上带床号，否则带世界像素坐标）。 */
 export function personFromConnection(connection: ConnectionState): Person {
   const base = { id: connection.userId, name: connection.name, appearance: connection.appearance };
-  return connection.state === 'roaming' || connection.bedNo === undefined
-    ? { ...base, state: 'roaming', x: connection.x, y: connection.y }
-    : { ...base, state: connection.state, bedNo: connection.bedNo };
+  const person: Person =
+    connection.state === 'roaming' || connection.bedNo === undefined
+      ? { ...base, state: 'roaming', x: connection.x, y: connection.y }
+      : { ...base, state: connection.state, bedNo: connection.bedNo };
+  // 只有 `game` 才带字段：`hall` 等于默认，「在看厅」不必占一个字节
+  if (connection.act === 'game') person.act = 'game';
+  return person;
 }
 
 /**
