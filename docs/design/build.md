@@ -192,7 +192,9 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 **`wrangler.local.jsonc` 与 CI 并存**：本地 `npm run deploy` 保留为应急路径，它吃真实路由、不碰占位符。**不要在本地裸跑 `wrangler deploy`**——它会先把代码传上去，再在 triggers 阶段把占位符当路由去解析。
 
-**没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。首次验证就是一次真发版。
+**没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。
+
+**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded sleep-cloud (5.33 sec)` → `Deployed sleep-cloud triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 飞部署这条路实测可用。
 
 失败形态分两段，别弄混：
 

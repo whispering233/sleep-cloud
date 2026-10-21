@@ -136,3 +136,4 @@
 | **部署版本标记与回滚** | 平台保留版本历史（`wrangler deploy` 也能给版本打 tag/message）；现在回滚靠本机 `npm run deploy` 重推旧代码 | 生产真出过一次需要回滚的事故 |
 | **端到端冒烟脚本** | CI 现在只探 `GET /api/health`；「入场 → 走动 → 躺下 → 另一客户端确认可见」需要 WebSocket 客户端才能验 | 想自动挡住「接口活着但厅坏了」那一类回归时 |
 | **占位符机制的终局** | 域名与 zone 现在靠 CI 注入以避免入库。如果哪天接受域名进仓库，占位符 + `sed` 那一步就能整个删掉 | 决定公开入口域名时 |
+| **action 版本维护** | `actions/setup-node@v4` 已触发 Node 20 弃用警告，advisory 还建议把 action pin 到 commit SHA | 下次动工作流时 |
