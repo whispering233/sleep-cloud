@@ -11,6 +11,7 @@ import {
   applyJoin,
   applyLeave,
   applyPos,
+  applyReportReceipt,
   applyResize,
   applySnapshot,
   applyState,
@@ -23,6 +24,7 @@ import {
   setBedDirection,
   setComposer,
   setState,
+  startReport,
   subscribe,
 } from '../store';
 
@@ -449,5 +451,70 @@ describe('说明面板', () => {
     expect(getState().aboutOpen).toBeNull();
     expect(notified).toBe(2);
     off();
+  });
+});
+
+describe('举报回执', () => {
+  beforeEach(() => {
+    applySnapshot(snapshot());
+    selectPerson('u_other');
+    setComposer({ kind: 'exit' });
+    setState({ pendingReportTo: undefined, reportedIds: new Set(), chatHint: undefined });
+  });
+
+  it('点举报：进 report 态并记下这一单打给谁', () => {
+    startReport('u_other');
+    expect(getState().composer).toBe('report');
+    expect(getState().pendingReportTo).toBe('u_other');
+    expect(getState().reportedIds.has('u_other')).toBe(false);
+  });
+
+  it('5003 回执：对象进「已举报」、待办单清空、那行话常驻', () => {
+    startReport('u_other');
+    applyReportReceipt();
+    expect(getState().reportedIds.has('u_other')).toBe(true);
+    expect(getState().pendingReportTo).toBeUndefined();
+    expect(getState().chatHint).toBe('已收到你的反馈');
+  });
+
+  it('没有待办单时的回执是空操作（重复的 5003 不置灰别人）', () => {
+    applyReportReceipt();
+    expect(getState().reportedIds.size).toBe(0);
+    expect(getState().chatHint).toBeUndefined();
+  });
+
+  it('回执话常驻到下一次操作：退场不演它，开新会话 / 改选 / 取消选中才让位', () => {
+    startReport('u_other');
+    applyReportReceipt();
+    setComposer({ kind: 'exit' });
+    expect(getState().composer).toBe('idle');
+    expect(getState().chatHint).toBe('已收到你的反馈');
+
+    setComposer({ kind: 'focus-in' });
+    expect(getState().chatHint).toBeUndefined();
+    setComposer({ kind: 'exit' });
+    setState({ chatHint: '已收到你的反馈' });
+    selectPerson('u_other');
+    expect(getState().chatHint).toBeUndefined();
+  });
+
+  it('举报对象走了：表单跟着退场', () => {
+    startReport('u_other');
+    applyLeave({ t: 'leave', id: 'u_other', online: 1 });
+    expect(getState().composer).toBe('idle');
+    expect(getState().selectedId).toBeUndefined();
+  });
+
+  it('举报中取消选中：表单跟着退场', () => {
+    startReport('u_other');
+    clearSelection();
+    expect(getState().composer).toBe('idle');
+    expect(getState().pendingReportTo).toBe('u_other');
+  });
+
+  it('举报中改选别人：表单也跟着退场（否则看不见对象在写事由）', () => {
+    startReport('u_other');
+    selectPerson('u_third');
+    expect(getState().composer).toBe('idle');
   });
 });

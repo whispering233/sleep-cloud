@@ -120,6 +120,12 @@ describe('后台转发：鉴权先于转发', () => {
     expect(res.status).toBe(401);
   });
 
+  it('没有 cookie 打 /api/admin/reports → 401，厅对象一次都没被调用', async () => {
+    const res = await app.request('/api/admin/reports', {}, makeEnv({ HALL: explodingHall }));
+
+    expect(res.status).toBe(401);
+  });
+
   it('没有 cookie 打 /api/admin/blocks（POST）→ 401，厅对象同样不被调用', async () => {
     const res = await app.request(
       '/api/admin/blocks',

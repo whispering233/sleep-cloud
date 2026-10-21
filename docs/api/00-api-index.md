@@ -32,6 +32,8 @@
 | POST | `/api/admin/blocks` | 封禁（新增或改判） | `30-api-admin.md` |
 | DELETE | `/api/admin/blocks/:kind/:value` | 解封 | `30-api-admin.md` |
 | GET | `/api/admin/audit` | 审计 | `30-api-admin.md` |
+| GET | `/api/admin/reports` | 举报明细（`id` 倒序） | `30-api-admin.md` |
+| GET | `/api/admin/reports/targets` | 举报按被举报人折叠（次数 / 举报人数） | `30-api-admin.md` |
 
 **后台面是契约例外**：未授权回 **HTTP 401**、成功直接返回数据对象，**不套** `{code,msg,data}`（理由见 `30-api-admin.md` §1）。这是唯一例外，只限 `/api/admin/*`。
 

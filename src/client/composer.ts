@@ -4,10 +4,11 @@
  * DOM 焦点只是入口之一，不是状态本体：焦点会被卸载、被抢走、被系统手势吞掉。
  * 所以状态住 store，进出都走这里的两条纯函数。**纯状态、不碰 DOM**。
  */
-export type ComposerState = 'idle' | 'typing';
+export type ComposerState = 'idle' | 'typing' | 'report';
 
 export type ComposerEvent =
   | { kind: 'focus-in' }
+  | { kind: 'report' }
   | { kind: 'exit' }
   | { kind: 'lost-focus' }
   | { kind: 'offline' };
@@ -15,7 +16,11 @@ export type ComposerEvent =
 export function composerReducer(state: ComposerState, event: ComposerEvent): ComposerState {
   switch (event.kind) {
     case 'focus-in':
-      return 'typing';
+      // `report` 下不降级：事件不带焦点目标，分不清「事由框复焦」与「点聊天输入框」，
+      // 降级会当场卸载表单、丢掉已写的事由（§2）
+      return state === 'report' ? 'report' : 'typing';
+    case 'report':
+      return 'report';
     case 'exit':
     case 'lost-focus':
     case 'offline':

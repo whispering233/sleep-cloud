@@ -155,6 +155,11 @@ interface UpstreamPayloads {
   sleep: Record<string, never>;
   chat: { text: string };
   whisper: { toId: string; text: string };
+  /**
+   * 举报当前选中的那个人（不要求在线）。事由**不过内容过滤**，只有运维看得到，打码会把要说的事毁掉。
+   * 落库（含 24 小时内并入重复）后回 `5003`；空事由 / 举报自己 → `4003`，超长 → `4001`。
+   */
+  report: { toId: string; reason: string };
 }
 
 export type UpstreamType = keyof UpstreamPayloads;
@@ -174,6 +179,7 @@ export const UPSTREAM_TYPES = [
   'sleep',
   'chat',
   'whisper',
+  'report',
 ] as const satisfies readonly UpstreamType[];
 
 /** 运行时可枚举的下行类型名（顺序与 `docs/api/20-api-ws.md` §4 表格一致）。 */

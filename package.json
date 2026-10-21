@@ -8,6 +8,7 @@
     "tokens": "design.md export docs/ui/DESIGN.md --format css-tailwind > src/client/styles/tokens.css && design.md export docs/ui/DESIGN.md --format json-tailwind > src/client/styles/tokens.json",
     "lint:design": "design.md lint docs/ui/DESIGN.md",
     "art": "node tools/art/build-sprites.mjs",
+    "words": "node tools/words/build-words.mjs",
     "build": "npm run tokens && vite build",
     "dev": "node tools/dev/dev.mjs",
     "dev:web": "npm run tokens && vite",

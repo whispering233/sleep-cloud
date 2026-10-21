@@ -12,6 +12,7 @@ vi.mock('cloudflare:workers', () => ({
 import { HALL_ID } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
+import { recordReport } from '../report';
 import { listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
 import { freshSql, insertBed } from './sqlite';
 
@@ -84,6 +85,7 @@ const NOW = Date.now();
 
 interface IdentityItem {
   userId: string;
+  nickname: string | null;
   lastSeenAt: number;
   lastIp: string | null;
   bedNo: number | null;
@@ -104,6 +106,30 @@ interface AuditItem {
   untilAt: number | null;
   reason: string | null;
   actor: string;
+}
+
+interface ReportItem {
+  id: number;
+  createdAt: number;
+  lastAt: number;
+  count: number;
+  reporter: { userId: string; nickname: string | null };
+  target: { userId: string; nickname: string | null };
+  reason: string;
+  evidence: { text: string; at: number }[];
+}
+
+interface ReportPage {
+  items: ReportItem[];
+  next: { before: number } | null;
+}
+
+interface ReportTargetItem {
+  target: { userId: string; nickname: string | null };
+  count: number;
+  reporters: number;
+  lastAt: number;
+  reason: string;
 }
 
 const adminGet = (hall: Hall, path: string): Promise<Response> =>
@@ -162,6 +188,25 @@ test('按 IP 反查只回该 IP 的行', async () => {
   const page = await pageOf(await adminGet(hall, '/admin/identities?ip=1.1.1.1'));
   expect(page.items.map((item) => item.userId).sort()).toEqual(['u_a', 'u_b']);
   expect(page.items.every((item) => item.lastIp === '1.1.1.1')).toBe(true);
+});
+
+test('按昵称子串反查：命中 / 不命中，`%` 只是个百分号', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', nickname: '夜猫子' }, NOW + 3);
+  recordIdentity(sql, { userId: 'u_b', nickname: '早睡' }, NOW + 2);
+  recordIdentity(sql, { userId: 'u_c', nickname: '100%的人' }, NOW + 1);
+
+  const hit = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('夜猫')}`));
+  expect(hit.items.map(({ userId, nickname }) => ({ userId, nickname }))).toEqual([
+    { userId: 'u_a', nickname: '夜猫子' },
+  ]);
+
+  const miss = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('猫夜')}`));
+  expect(miss.items).toEqual([]);
+
+  // 不转义的话 `%` 会当成通配符，把三条全返回
+  const percent = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('%')}`));
+  expect(percent.items.map((item) => item.userId)).toEqual(['u_c']);
 });
 
 test('bedNo 是显示床号（内部 0 → 1），online 只对已握手的连接为真', async () => {
@@ -361,4 +406,101 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
   ).json()) as { items: AuditItem[]; next: { before: number } | null };
   expect(second.items).toHaveLength(1);
   expect(second.next).toBeNull();
+});
+
+const reportsOf = async (hall: Hall, query = ''): Promise<ReportPage> =>
+  (await (await adminGet(hall, `/admin/reports${query}`)).json()) as ReportPage;
+
+test('举报列表：字段齐全，昵称读时现补（写了查不到昵称的那一行 → null）', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_reporter' }, NOW);
+  recordIdentity(sql, { userId: 'u_target', nickname: '夜猫子' }, NOW);
+  recordReport(
+    sql,
+    { reporterUserId: 'u_reporter', targetUserId: 'u_target', reason: '刷屏', evidence: [{ text: '你*', at: NOW - 5 }] },
+    NOW,
+  );
+
+  const page = await reportsOf(hall);
+  expect(page.items).toEqual([
+    {
+      id: 1,
+      createdAt: NOW,
+      lastAt: NOW,
+      count: 1,
+      reporter: { userId: 'u_reporter', nickname: null },
+      target: { userId: 'u_target', nickname: '夜猫子' },
+      reason: '刷屏',
+      evidence: [{ text: '你*', at: NOW - 5 }],
+    },
+  ]);
+  expect(page.next).toBeNull();
+});
+
+test('举报证据：空数组原样透传，脏 JSON 降级为 []', async () => {
+  const { hall, sql } = newHall();
+  recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_b', reason: '没人说话', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_c', reason: '脏行', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_a', targetUserId: 'u_d', reason: '不是数组', evidence: [] }, NOW);
+  sql.exec("UPDATE report SET evidence = 'not json' WHERE target_user_id = 'u_c'");
+  sql.exec("UPDATE report SET evidence = 'null' WHERE target_user_id = 'u_d'");
+
+  const page = await reportsOf(hall);
+  expect(page.items.map((item) => item.evidence)).toEqual([[], [], []]);
+});
+
+test('举报分页：id 倒序，before 排他，两页合起来不重不漏', async () => {
+  const { hall, sql } = newHall();
+  for (const target of ['u_1', 'u_2', 'u_3']) {
+    recordReport(sql, { reporterUserId: 'u_a', targetUserId: target, reason: '刷屏', evidence: [] }, NOW);
+  }
+
+  const first = await reportsOf(hall, '?limit=2');
+  expect(first.items.map((item) => item.target.userId)).toEqual(['u_3', 'u_2']);
+  expect(first.next).toEqual({ before: first.items[1]?.id });
+
+  const second = await reportsOf(hall, `?limit=2&before=${first.next?.before}`);
+  expect(second.items.map((item) => item.target.userId)).toEqual(['u_1']);
+  expect(second.next).toBeNull();
+
+  const ids = [...first.items, ...second.items].map((item) => item.id);
+  expect(ids).toEqual([3, 2, 1]);
+});
+
+const reportTargetsOf = async (hall: Hall, query = ''): Promise<{ items: ReportTargetItem[] }> =>
+  (await (await adminGet(hall, `/admin/reports/targets${query}`)).json()) as { items: ReportTargetItem[] };
+
+test('按被举报人折叠：合计次数与举报人数对得上，次数多者在前，昵称为 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_heavy', nickname: '夜猫子' }, NOW);
+
+  // u_heavy：两个人报，其中一个连报两次（24 小时内并合成 count 2）
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_heavy', reason: '刷屏', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_heavy', reason: '刷屏', evidence: [] }, NOW + 10);
+  recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_heavy', reason: '最近的那条', evidence: [] }, NOW + 20);
+  // u_light：一个人连报两次，合计 2 次但只有 1 个举报人，且最近一次比 u_heavy 晚
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_light', reason: '另一个人的事由', evidence: [] }, NOW + 30);
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_light', reason: '另一个人的事由', evidence: [] }, NOW + 40);
+
+  const body = await reportTargetsOf(hall);
+  expect(body.items).toEqual([
+    {
+      target: { userId: 'u_heavy', nickname: '夜猫子' },
+      count: 3,
+      reporters: 2,
+      lastAt: NOW + 20,
+      reason: '最近的那条',
+    },
+    {
+      target: { userId: 'u_light', nickname: null },
+      count: 2,
+      reporters: 1,
+      lastAt: NOW + 40,
+      reason: '另一个人的事由',
+    },
+  ]);
+  // 排序键不是主键：不分页，也就没有 `next`
+  expect(body).not.toHaveProperty('next');
+  // `limit` 照旧生效（默认 50、上限 100）
+  expect((await reportTargetsOf(hall, '?limit=1')).items.map((item) => item.target.userId)).toEqual(['u_heavy']);
 });

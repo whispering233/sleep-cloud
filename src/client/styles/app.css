@@ -33,8 +33,9 @@
   /* ——— 布局骨架：世界铺满视口，界面只占边缘（视野中央留给大厅本身） ——— */
 
   /* 两态只有一份布局，只换行（`docs/design/60-interaction-shell.md` §3）：
-     空闲 `auto 1fr auto` = HUD / 世界 / 面板；打字 `auto auto 1fr` = HUD / 面板 / 插槽面板（铺满到屏底）。
-     `data-composer` 由 `ChatPanel` 写在 shell 上——两块面板都是 shell 的网格项，选择器必须从这儿够过去 */
+     空闲 `auto 1fr auto` = HUD / 世界 / 面板；非空闲 `auto auto 1fr` = HUD / 面板 / 插槽面板（铺满到屏底）。
+     非空闲 = `typing` **或** `report`（举报表单也在插槽面板里），所以选择器写「不是 idle」而不是「是 typing」。
+     `data-composer` 由 `ChatPanel` 写在 shell 上（值是**明文状态**）——两块面板都是 shell 的网格项，选择器必须从这儿够过去 */
   .app-shell {
     position: fixed;
     inset: 0;
@@ -44,7 +45,7 @@
     grid-template-rows: auto 1fr auto;
   }
 
-  .app-shell[data-composer='typing'] {
+  .app-shell[data-composer]:not([data-composer='idle']) {
     grid-template-rows: auto auto 1fr;
   }
 
@@ -388,11 +389,11 @@
     border-start-end-radius: var(--radius-md);
   }
 
-  /* 打字态：整块底部组合挪到 HUD 下沿（`../design/60-interaction-shell.md` §2、§3），顶部与键盘天然不重叠，
+  /* 打字态 / 举报态：整块底部组合挪到 HUD 下沿（`../design/60-interaction-shell.md` §2、§3），顶部与键盘天然不重叠，
      界面不需要知道键盘多高。位置由网格行给（第 2 行），**没有位移、没有过渡**——两态瞬切（§3 §9）。
      边框接缝（§3）：它现在是上面那块 → 拥有整块的上边（这里紧贴 HUD，所以不画）与**交接处那条线**（下边），
      下圆角归插槽面板、上角不圆（上面是 HUD，圆角是给两块之间那个接缝的） */
-  .app-shell[data-composer='typing'] .chat-panel {
+  .app-shell[data-composer]:not([data-composer='idle']) .chat-panel {
     grid-row: 2;
     border-block-start: 0;
     border-block-end: 1px solid var(--color-claimed);
@@ -453,7 +454,9 @@
     border-radius: var(--radius-full);
   }
 
-  /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉） */
+  /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉）。
+     三栏：名字 `flex-[3]`（窄屏省略号）/ 竖线 / 「举报」`flex-[1]`，× 在最右。
+     举报按钮和名字共用一行、自带文案：纯文字不当按钮用，但这一行里它是唯一的动作，所以靠对比区分 */
   .whisper-target {
     display: flex;
     align-items: center;
@@ -469,6 +472,40 @@
     border-radius: var(--radius-md);
   }
 
+  .whisper-target-name {
+    flex: 3 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .whisper-target-divider {
+    flex: 0 0 auto;
+    align-self: stretch;
+    width: 1px;
+    margin-block: var(--spacing-xs);
+    background-color: var(--color-claimed);
+  }
+
+  /* 举报按钮：44px 触摸目标、无明显底色（这一行已经够重了）。回过执后 disabled 置灰成「已举报」 */
+  .whisper-target-report {
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 0 var(--spacing-xs);
+    color: var(--color-neutral);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    border: 0;
+  }
+
+  .whisper-target-report:disabled {
+    color: var(--color-neutral-muted);
+    opacity: 0.6;
+  }
+
   .whisper-target-clear {
     min-width: 44px;
     min-height: 44px;
@@ -477,6 +514,22 @@
     background-color: transparent;
     font-size: var(--text-label);
     border: 0;
+  }
+
+  /* 举报表单（插槽面板的第三个内容源，`docs/design/50-slot-panel.md` §4）：
+     顶对齐、纵向排。事由框吃 `.input-field` 的字号（≥16px，避免聚焦时页面缩放）与墨色，
+     只覆盖高度：多行、可滚，按钮永远在它下方——面板贴着 HUD，键盘弹起也盖不到 */
+  .report-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+  }
+
+  .report-reason {
+    flex: 0 0 auto;
+    min-height: 96px;
+    resize: none;
   }
 
   /* 表情切换键：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
@@ -527,8 +580,8 @@
       margin-inline: var(--spacing-md);
     }
 
-    /* 屏底那道留白只属于空闲态：打字态插槽面板接在聊天面板下面，中间不该漏出世界 */
-    .app-shell:not([data-composer='typing']) .chat-panel {
+    /* 屏底那道留白只属于空闲态：非空闲时插槽面板接在聊天面板下面，中间不该漏出世界 */
+    .app-shell[data-composer='idle'] .chat-panel {
       margin-block-end: var(--spacing-md);
     }
 
@@ -548,7 +601,7 @@
       margin-inline: 0 var(--spacing-lg);
     }
 
-    .app-shell:not([data-composer='typing']) .chat-panel {
+    .app-shell[data-composer='idle'] .chat-panel {
       margin-block-end: var(--spacing-lg);
     }
   }
@@ -583,7 +636,8 @@
   .hud-action:focus-visible,
   .hud-settings-button:focus-visible,
   .gate-cancel:focus-visible,
-  .whisper-target-clear:focus-visible {
+  .whisper-target-clear:focus-visible,
+  .whisper-target-report:focus-visible {
     outline: 2px solid var(--color-neutral);
     outline-offset: 1px;
   }

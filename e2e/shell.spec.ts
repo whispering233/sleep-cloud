@@ -10,6 +10,7 @@ import type { Page } from '@playwright/test';
 /** 测试侧打点：出站帧（不是生产代码的一部分）。 */
 interface Instrumented {
   __frames: string[];
+  __incoming: string[];
   __canvasResizes: { count: number };
   __blankDown: { seen: number; prevented: number };
 }
@@ -18,7 +19,9 @@ interface Instrumented {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const frames: string[] = [];
+    const incoming: string[] = [];
     (window as unknown as Instrumented).__frames = frames;
+    (window as unknown as Instrumented).__incoming = incoming;
     const send = WebSocket.prototype.send;
     WebSocket.prototype.send = function trackedSend(
       this: WebSocket,
@@ -26,6 +29,27 @@ test.beforeEach(async ({ page }) => {
     ): void {
       frames.push(String(data));
       send.call(this, data);
+    };
+    const addEventListener = WebSocket.prototype.addEventListener;
+    WebSocket.prototype.addEventListener = function trackedAddEventListener(
+      this: WebSocket,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ): void {
+      if (type !== 'message' || typeof listener !== 'function') {
+        addEventListener.call(this, type, listener, options);
+        return;
+      }
+      addEventListener.call(
+        this,
+        type,
+        (event: Event) => {
+          if (event instanceof MessageEvent) incoming.push(String(event.data));
+          listener.call(this, event);
+        },
+        options,
+      );
     };
   });
 });
@@ -40,8 +64,16 @@ const clearFrames = (page: Page): Promise<void> =>
   });
 
 const shell = (page: Page) => page.locator('.app-shell');
-const expectComposer = (page: Page, state: 'idle' | 'typing') =>
+const expectComposer = (page: Page, state: 'idle' | 'typing' | 'report') =>
   expect(shell(page)).toHaveAttribute('data-composer', state);
+
+/** `GO` 到指定床（显示床号）：相机对准床中心，所以「床脚前 +78」的屏幕坐标可推算。 */
+async function hopToDisplayBed(page: Page, bedNo: string): Promise<void> {
+  await page.getByRole('button', { name: '跳到指定床号' }).click();
+  await page.getByLabel('跳到床号').fill(bedNo);
+  await page.getByRole('button', { name: '确定', exact: true }).click();
+  await expectComposer(page, 'idle');
+}
 
 /** 进厅：入场层每次都在（`EntryOverlay`），昵称 + 18 岁 + 提交。 */
 async function enterHall(page: Page): Promise<void> {
@@ -190,10 +222,7 @@ test('只有从画布起手的 tap 才产生 walk', async ({ page }) => {
   await enterHall(page);
 
   // 先把相机对到厅中间一张床（`GO`）：床中心就落在可用视口中心，tap 的世界坐标才可推算
-  await page.getByRole('button', { name: '跳到指定床号' }).click();
-  await page.getByLabel('跳到床号').fill('60');
-  await page.getByRole('button', { name: '确定', exact: true }).click();
-  await expectComposer(page, 'idle');
+  await hopToDisplayBed(page, '60');
 
   // 床中心 + (120, 70) 世界像素：床高 100 + 走道 56，所以 +70 落在床脚前的横走道上（可走），
   // 且离我（hop 之后站在床脚前 +78）有 120px，不会被读成「点自己 = 相机回中」
@@ -218,6 +247,95 @@ test('只有从画布起手的 tap 才产生 walk', async ({ page }) => {
   // 从画布起手：走
   await page.touchscreen.tap(floor.x, floor.y);
   await expect.poll(() => walkCount(page)).toBeGreaterThan(0);
+});
+
+test('举报：选中某人 → 事由表单 → 收起 / 提交回执', async ({ page, browser }) => {
+  await enterHall(page);
+  const url = page.url();
+
+  // 第二个用户：独立 cookie 上下文 = 另一个人（同厅、同一份服务端状态）
+  const otherContext = await browser.newContext({
+    viewport: { width: 393, height: 852 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+  });
+  const other = await otherContext.newPage();
+  await other.goto(url);
+  await enterHall(other);
+
+  // 可用视口中心 = 相机对准的床中心（`GO` 之后）。两块面板的高度由布局给，所以这里量 DOM 就够
+  const center = await page.evaluate(() => {
+    const hud = document.querySelector('.hud');
+    const panel = document.querySelector('.chat-panel');
+    if (!(hud instanceof HTMLElement) || !(panel instanceof HTMLElement)) return null;
+    return {
+      x: window.innerWidth / 2,
+      y: (hud.getBoundingClientRect().bottom + panel.getBoundingClientRect().top) / 2,
+    };
+  });
+  if (!center) throw new Error('量不到可用视口中心');
+  const { x: centerX, y: centerY } = center;
+
+  // B 先站到 60 号床前（床脚前那条横走道），不会再动
+  await hopToDisplayBed(other, '60');
+
+  // A 也 `GO` 到同一张床：相机对准床中心（可用视口中心偏上一点是静态画面里的实测点），
+  // 那里站着 B——点它就等于「点小人」
+  await hopToDisplayBed(page, '60');
+  await page.touchscreen.tap(centerX, centerY - 30);
+
+  await expect(page.locator('.whisper-target')).toContainText('私聊');
+  await expect(page.locator('.whisper-target-report')).toHaveText('举报');
+
+  // ① 点举报 → report 态，事由表单出现；空事由时按钮禁用
+  await page.locator('.whisper-target-report').click();
+  await expectComposer(page, 'report');
+  await expect(page.getByLabel('举报事由')).toBeVisible();
+  await expect(page.getByRole('button', { name: '确认举报' })).toBeDisabled();
+
+  // 内容顶对齐：事由框紧贴表单顶部（padding 内），按钮在它下方——键盘弹起盖不到按钮
+  const geometry = await page.evaluate(() => {
+    const form = document.querySelector('.report-form');
+    const reason = document.querySelector('.report-reason');
+    const submit = document.querySelector('.report-form .action-primary');
+    if (!(form instanceof HTMLElement) || !(reason instanceof HTMLElement) || !(submit instanceof HTMLElement)) {
+      return null;
+    }
+    return {
+      reasonTop: reason.getBoundingClientRect().top - form.getBoundingClientRect().top,
+      submitTop: submit.getBoundingClientRect().top,
+      reasonBottom: reason.getBoundingClientRect().bottom,
+    };
+  });
+  if (!geometry) throw new Error('量不到举报表单几何');
+  expect(geometry.reasonTop).toBeLessThan(32);
+  expect(geometry.submitTop).toBeGreaterThanOrEqual(geometry.reasonBottom);
+
+  // ② 唯一出口：收起胶囊（举报态也必须有，超额被静默丢弃时只有它能退场）
+  await page.getByRole('button', { name: '收起输入' }).click();
+  await expectComposer(page, 'idle');
+  await expect(page.locator('.report-form')).toHaveCount(0);
+
+  // ③ 重开 → Enter 是换行、不提交；按钮点了才发一条 `report`
+  await page.locator('.whisper-target-report').click();
+  await expectComposer(page, 'report');
+  await page.getByLabel('举报事由').fill('一直打扰别人休息');
+  await expect(page.getByRole('button', { name: '确认举报' })).toBeEnabled();
+  await clearFrames(page);
+  await page.getByLabel('举报事由').press('Enter');
+  await page.waitForTimeout(300);
+  expect((await framesOf(page)).filter((frame) => frame.includes('"t":"report"')).length).toBe(0);
+  await expectComposer(page, 'report');
+
+  await page.getByRole('button', { name: '确认举报' }).click();
+  // 服务端落库后回 `5003`：面板退场、按钮置灰成「已举报」、一行回执常驻
+  await expectComposer(page, 'idle');
+  await expect(page.locator('.chat-hint')).toHaveText('已收到你的反馈');
+  await expect(page.locator('.whisper-target-report')).toHaveText('已举报');
+  await expect(page.locator('.whisper-target-report')).toBeDisabled();
+  expect((await framesOf(page)).filter((frame) => frame.includes('"t":"report"')).length).toBe(1);
+
+  await otherContext.close();
 });
 
 test('隐私说明两处入口都指向静态页，入场层仍是三项', async ({ page }) => {

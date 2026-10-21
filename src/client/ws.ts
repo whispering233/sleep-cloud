@@ -16,6 +16,7 @@ import {
   shouldReconnect,
 } from './conn-state';
 import type { ConnState, HaltReason } from './conn-state';
+import { exitComposer } from './focus';
 import {
   applyBed,
   applyChat,
@@ -23,6 +24,7 @@ import {
   applyJoin,
   applyLeave,
   applyPos,
+  applyReportReceipt,
   applyResize,
   applySnapshot,
   applyState,
@@ -144,6 +146,15 @@ export function sendChat(text: string): boolean {
 export function sendWhisper(toId: string, text: string): boolean {
   const s = live();
   return s ? sendRaw(s, { t: 'whisper', toId, text }) : false;
+}
+
+/**
+ * 举报：`toId` 只能来自当前选中，事由的规则（trim 后 1~200 字）由服务端判定。
+ * 回执是 `5003`（`docs/api/20-api-ws.md` §4.9）——超额被静默丢弃时没有回执，出口是「收起」。
+ */
+export function sendReport(toId: string, reason: string): boolean {
+  const s = live();
+  return s ? sendRaw(s, { t: 'report', toId, reason }) : false;
 }
 
 /** 躺到某张床上：走过去 + 躺下是服务端的一条复合意图。 */
@@ -422,6 +433,13 @@ function handleMessage(s: Session, event: MessageEvent): void {
       // （一条有倒计时、一条没有）会让人以为发生了两件事（见 `docs/design/70-privacy-risk.md` §5.4）。
       if (message.code === '5002') {
         if (message.untilAt !== undefined) setBlockedUntil(message.untilAt);
+        return;
+      }
+      // 举报回执（`5003`）：唯一「成功用 error 报文回」的例外，走本地三件事（退场 / 置灰 / 一行回执），
+      // 不进瞬时提示条。文案取自错误码表，与文档逐字一致
+      if (message.code === '5003') {
+        exitComposer();
+        applyReportReceipt();
         return;
       }
       applyError(message.code);

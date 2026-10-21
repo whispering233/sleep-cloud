@@ -12,9 +12,13 @@ export function isEditable(target: EventTarget | null): target is HTMLElement {
   );
 }
 
-/** 落在聊天面板里的可编辑控件：入场层也有昵称输入框，进厅时绝不能带着一个「打字态」进来。 */
+/**
+ * 落在两块面板里的可编辑控件：入场层也有昵称输入框，进厅时绝不能带着一个「打字态」进来。
+ * 举报事由框在**插槽面板**里（聊天面板的兄弟节点），只匹配前者会把「聚焦事由框」判成面板外、
+ * 下一帧对账当场退场（`docs/design/60-interaction-shell.md` §2）。
+ */
 function isPanelEditable(target: EventTarget | null): boolean {
-  return isEditable(target) && target.closest('.chat-panel') !== null;
+  return isEditable(target) && target.closest('.chat-panel, .slot-panel') !== null;
 }
 
 /**

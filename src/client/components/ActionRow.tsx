@@ -32,7 +32,7 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
  * （`床号 n ↑` / `GO` / 缩放胶囊）、右 = 设置齿轮（点开的浮层是五项：**更换床位** / **天气** /
  * **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
- * 门控行紧贴其下。**打字态**（`composer === 'typing'`）右端那把齿轮换成「收起」胶囊——
+ * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那把齿轮换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
  * 分组**只靠外观区分**：纯文字不是按钮，描边胶囊是（`hud-action`）。
  *
@@ -115,9 +115,9 @@ export function ActionRow() {
     };
   }, [menuOpen]);
 
-  // 打字态右端被「收起」占位（齿轮与菜单一起卸载）：菜单跟着收，否则退场后它会开着回来
+  // 非空闲态右端被「收起」占位（齿轮与菜单一起卸载）：菜单跟着收，否则退场后它会开着回来
   useEffect(() => {
-    if (view.composer === 'typing') setMenuOpen(false);
+    if (view.composer !== 'idle') setMenuOpen(false);
   }, [view.composer]);
 
   const jump = (): void => {
@@ -194,10 +194,11 @@ export function ActionRow() {
           )}
         </div>
 
-        {/* 右端：`typing` 态换成 **44px「收起」胶囊**（唯一的可见出口，`docs/design/60-interaction-shell.md` §2），
-            空闲态是齿轮。两者共用同一个右端位置，`margin-inline-start: auto` 在 `.hud-settings` 上 */}
+        {/* 右端：非空闲态换成 **44px「收起」胶囊**（唯一的可见出口，`docs/design/60-interaction-shell.md` §2），
+            空闲态是齿轮。两者共用同一个右端位置，`margin-inline-start: auto` 在 `.hud-settings` 上。
+            举报态也必须有出口：超额被静默丢弃时服务端不回执，没有「收起」就回不到大厅 */}
         <div className="hud-settings">
-          {view.composer === 'typing' ? (
+          {view.composer !== 'idle' ? (
             <button
               // **必须有 `key`**：不加时 React 会把这颗按钮原地复用成齿轮（同一个 `<button>` 只换属性），
               // 而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑——于是按一下「收起」

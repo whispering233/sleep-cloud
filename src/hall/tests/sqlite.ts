@@ -10,6 +10,8 @@ import {
   IDENTITY_INDEX_SQL,
   IDENTITY_TABLE_SQL,
   META_TABLE_SQL,
+  REPORT_INDEX_SQL,
+  REPORT_TABLE_SQL,
 } from '../schema';
 
 /**
@@ -27,6 +29,8 @@ export function freshSql(): SqlStorage {
   for (const statement of IDENTITY_INDEX_SQL) db.exec(statement);
   db.exec(BLOCK_TABLE_SQL);
   db.exec(ADMIN_AUDIT_TABLE_SQL);
+  db.exec(REPORT_TABLE_SQL);
+  for (const statement of REPORT_INDEX_SQL) db.exec(statement);
 
   return {
     exec: (query: string, ...bindings: unknown[]) => {

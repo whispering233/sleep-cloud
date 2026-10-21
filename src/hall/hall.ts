@@ -1,6 +1,15 @@
 import { DurableObject } from 'cloudflare:workers';
 
-import { AUTO_SLEEP_MS, CHAT_MAX_LEN, GRACE_MS, HALL_ID, TICK_MS, UPSTREAM_RATE_PER_SEC } from '../shared/constants';
+import {
+  AUTO_SLEEP_MS,
+  CHAT_MAX_LEN,
+  GRACE_MS,
+  HALL_ID,
+  REPORT_EVIDENCE_MAX,
+  REPORT_REASON_MAX_LEN,
+  TICK_MS,
+  UPSTREAM_RATE_PER_SEC,
+} from '../shared/constants';
 import type { ErrorCode } from '../shared/error-code';
 import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount } from '../shared/layout';
 import type { Point } from '../shared/layout';
@@ -56,7 +65,9 @@ import { advanceMover } from '../shared/movement';
 import type { MoverState } from '../shared/movement';
 import { findPath } from '../shared/pathfinding';
 import { consumeUpstream } from './rate-limit';
-import { blockStateOf, forgetStaleSources, purgeExpiredAudit, purgeExpiredBlocks, recordIdentity } from './risk';
+import { purgeExpiredReports, recordReport } from './report';
+import type { ReportEvidence } from './report';
+import { blockStateOf, findIdentity, forgetStaleSources, purgeExpiredAudit, purgeExpiredBlocks, recordIdentity } from './risk';
 import type { EntrySource } from './risk';
 import {
   ADMIN_AUDIT_TABLE_SQL,
@@ -66,6 +77,8 @@ import {
   IDENTITY_INDEX_SQL,
   IDENTITY_TABLE_SQL,
   META_TABLE_SQL,
+  REPORT_INDEX_SQL,
+  REPORT_TABLE_SQL,
 } from './schema';
 import { createDueHeap } from './scheduler';
 import type { DueEvent } from './scheduler';
@@ -104,6 +117,13 @@ export class Hall extends DurableObject<Env> {
   private readonly grace = new Map<string, GraceSession>();
 
   /**
+   * 发言缓冲（**厅实例的内存**，驱逐即丢）：每人最近 `REPORT_EVIDENCE_MAX` 条自己发出的文本，
+   * 只装**打码后的那一份**（与广播出去的逐字一致）。**不放连接附加数据**——附加数据要跨休眠存活，
+   * 放它上面等于把聊天内容持久化了（见 `docs/design/10-hall-runtime.md` §10.1）。
+   */
+  private readonly speech = new Map<string, ReportEvidence[]>();
+
+  /**
    * 到期事件堆（内存最小堆，见 `docs/design/10-hall-runtime.md` §4.4）。
    * 平台只给一个持久唤醒槽位，堆顶就是该写进槽位的时刻。
    */
@@ -128,9 +148,18 @@ export class Hall extends DurableObject<Env> {
     for (const statement of BED_INDEX_SQL) sql.exec(statement);
     sql.exec(META_TABLE_SQL);
     sql.exec(IDENTITY_TABLE_SQL);
+    try {
+      // 已部署的库不会被 `CREATE TABLE IF NOT EXISTS` 改动：新列得在表后面补一次。
+      // 重复加列是一种错误（`duplicate column name`），真语法错也会被这里吞掉——靠单测钉住列真的可读可写。
+      sql.exec('ALTER TABLE identity ADD COLUMN nickname TEXT');
+    } catch {
+      // 列已经在了
+    }
     for (const statement of IDENTITY_INDEX_SQL) sql.exec(statement);
     sql.exec(BLOCK_TABLE_SQL);
     sql.exec(ADMIN_AUDIT_TABLE_SQL);
+    sql.exec(REPORT_TABLE_SQL);
+    for (const statement of REPORT_INDEX_SQL) sql.exec(statement);
   }
 
   /** 当前床位数（读 `meta` + 内存缓存）。 */
@@ -249,7 +278,18 @@ export class Hall extends DurableObject<Env> {
           return;
         }
         // 成功入场才记账：厅满被拒的人没有入场，不该在台账里留下「最近一见」
-        recordIdentity(this.ctx.storage.sql, connection, now);
+        recordIdentity(
+          this.ctx.storage.sql,
+          {
+            userId: connection.userId,
+            // 走到这里昵称已经过入场层校验：台账里的那一份是运维认人的快照（见 `docs/db/schema.md` §4.1）
+            nickname: connection.name,
+            ip: connection.ip,
+            country: connection.country,
+            uaHash: connection.uaHash,
+          },
+          now,
+        );
 
         const ready: ConnectionState = { ...resumed, ready: true };
         // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
@@ -399,8 +439,9 @@ export class Hall extends DurableObject<Env> {
     }
 
     if (!gate.allowed) {
-      // 被限流：不写附件（省一次写入），也不刷新任何状态
-      this.sendError(ws, '4002');
+      // 被限流：不写附件（省一次写入），也不刷新任何状态。`report` 超额**静默丢弃**
+      // （`docs/api/20-api-ws.md` §4.9）：客户端已经本地置灰防连点，回一个 `4002` 只会多一次可见噪音。
+      if (message.t !== 'report') this.sendError(ws, '4002');
       return;
     }
     const fresh: ConnectionState = { ...connection, lastInputAt: now, rate: gate.window };
@@ -489,7 +530,9 @@ export class Hall extends DurableObject<Env> {
           return;
         }
         // 发给所有人（**含发送者本人**）：客户端靠这一条显示自己的消息，不做本地乐观回显
-        this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts: Date.now() });
+        const ts = Date.now();
+        this.rememberSpeech(fresh.userId, verdict.text, ts);
+        this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts });
         return;
       }
       case 'whisper': {
@@ -509,20 +552,69 @@ export class Hall extends DurableObject<Env> {
           return;
         }
         // 发送者与接收者收到**同一条 payload**；第三人一条都收不到，所以不走 broadcast
+        const ts = Date.now();
         const payload = JSON.stringify({
           t: 'whisper',
           fromId: fresh.userId,
           toId,
           text: verdict.text,
-          ts: Date.now(),
+          ts,
         } satisfies WhisperMessage);
         this.send(ws, payload);
         if (target !== ws) this.send(target, payload);
+        // 只说**送达成功**的那句：对方不在厅的私聊没发出去，那话也就没进过任何人的屏幕
+        this.rememberSpeech(fresh.userId, verdict.text, ts);
+        return;
+      }
+      case 'report': {
+        // 校验顺序照 `docs/api/20-api-ws.md` §4.9：先事由（空 → `4003`、超长 → `4001`），再看对象
+        const reason = typeof message.reason === 'string' ? message.reason.trim() : '';
+        if (!reason) {
+          this.sendError(ws, '4003');
+          return;
+        }
+        if ([...reason].length > REPORT_REASON_MAX_LEN) {
+          this.sendError(ws, '4001');
+          return;
+        }
+        // `toId` 只能来自当前选中：服务端验不了「选中」，只验它是个别人；**不要求在线**
+        const toId = typeof message.toId === 'string' ? message.toId : '';
+        if (!toId || toId === fresh.userId) {
+          this.sendError(ws, '4003');
+          return;
+        }
+        // 目标必须是**真实存在过的身份**（`identity` 有一行）：否则随便填个字符串就能无上限地刷行，
+        // 一次写入就是一次计费。不要求在线——刚说完就下线正是最该记下来的时候。
+        if (!findIdentity(this.ctx.storage.sql, toId)) {
+          this.sendError(ws, '4003');
+          return;
+        }
+        recordReport(
+          this.ctx.storage.sql,
+          {
+            reporterUserId: fresh.userId,
+            targetUserId: toId,
+            reason,
+            // 证据 = 被举报人最近 ≤10 条自己发过的文本（已是打码后的那份）；没说过就是空数组
+            evidence: this.speech.get(toId) ?? [],
+          },
+          now,
+        );
+        // `5003` 是唯一「成功用 error 报文回」的例外（否则用户会被骗「已收到」）
+        this.sendError(ws, '5003');
         return;
       }
       default:
         return;
     }
+  }
+
+  /** 记一句他自己说的话（打码后的那份）进发言缓冲；满了挤掉最旧的一条。 */
+  private rememberSpeech(userId: string, text: string, at: number): void {
+    const recent = this.speech.get(userId) ?? [];
+    recent.push({ text, at });
+    if (recent.length > REPORT_EVIDENCE_MAX) recent.splice(0, recent.length - REPORT_EVIDENCE_MAX);
+    this.speech.set(userId, recent);
   }
 
   /**
@@ -1151,6 +1243,9 @@ export class Hall extends DurableObject<Env> {
     forgetStaleSources(sql, now);
     purgeExpiredBlocks(sql, now);
     purgeExpiredAudit(sql, now);
+    purgeExpiredReports(sql, now);
+    // 发言缓冲是厅的内存量（不是持久状态）：每日清一次，别让不再说话的人一直占着
+    this.speech.clear();
 
     writeDailyWakeAt(sql, previousDailyWakeAt(now));
     this.armDailyWake();

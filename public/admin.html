@@ -31,6 +31,10 @@
         padding-top: 16px;
         border-top: 1px solid var(--line);
       }
+      h3 {
+        font-size: 15px;
+        margin: 20px 0 8px;
+      }
       label {
         display: block;
         margin: 0 0 6px;
@@ -126,7 +130,8 @@
           <h2>台账</h2>
           <div class="bar">
             <label for="ipFilter">按 IP 反查<input id="ipFilter" placeholder="1.2.3.4" autocomplete="off" /></label>
-            <button type="button" id="ipSearch">反查</button>
+            <label for="nameFilter">按昵称搜<input id="nameFilter" placeholder="名字的一部分" autocomplete="off" /></label>
+            <button type="button" id="ipSearch">搜索</button>
             <button type="button" id="ipClear">清除</button>
           </div>
           <div class="pager">
@@ -137,6 +142,7 @@
             <thead>
               <tr>
                 <th>身份</th>
+                <th>昵称</th>
                 <th>最近出现</th>
                 <th>IP</th>
                 <th>国家</th>
@@ -196,6 +202,41 @@
             <tbody id="audit"></tbody>
           </table>
         </section>
+
+        <section>
+          <h2>举报</h2>
+          <h3>按被举报人</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>被举报人</th>
+                <th>次数</th>
+                <th>举报人数</th>
+                <th>最近一次</th>
+                <th>最近事由</th>
+              </tr>
+            </thead>
+            <tbody id="reportTargets"></tbody>
+          </table>
+          <h3>明细</h3>
+          <div class="pager">
+            <button type="button" id="reportsPrev" disabled>上一页</button>
+            <button type="button" id="reportsNext" disabled>下一页</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>次数</th>
+                <th>举报人</th>
+                <th>被举报人</th>
+                <th>事由</th>
+                <th>证据</th>
+              </tr>
+            </thead>
+            <tbody id="reports"></tbody>
+          </table>
+        </section>
       </div>
     </main>
 
@@ -212,6 +253,7 @@
       const sections = document.getElementById('sections');
 
       const ipFilter = document.getElementById('ipFilter');
+      const nameFilter = document.getElementById('nameFilter');
       const identityRows = document.getElementById('identities');
       const identitiesPrev = document.getElementById('identitiesPrev');
       const identitiesNext = document.getElementById('identitiesNext');
@@ -227,11 +269,18 @@
       const auditPrev = document.getElementById('auditPrev');
       const auditNext = document.getElementById('auditNext');
 
+      const reportRows = document.getElementById('reports');
+      const reportTargetRows = document.getElementById('reportTargets');
+      const reportsPrev = document.getElementById('reportsPrev');
+      const reportsNext = document.getElementById('reportsNext');
+
       /** 每页的起始游标（第 0 页是 `null`）：上一页靠它回退，下一页靠响应里的 `next` 推进。 */
       let identityCursors = [null];
       let identityIndex = 0;
       let auditCursors = [null];
       let auditIndex = 0;
+      let reportCursors = [null];
+      let reportIndex = 0;
 
       /** 未授权只有 401、超限 429：后台接口不套 `{code,msg,data}`，所以按 HTTP 状态码分支。 */
       function say(text, bad) {
@@ -303,6 +352,7 @@
         const tr = document.createElement('tr');
         tr.append(
           cell(item.userId),
+          cell(item.nickname ?? '—'),
           cell(fmtTime(item.lastSeenAt)),
           cell(item.lastIp ?? '—'),
           cell(item.lastCountry ?? '—'),
@@ -346,11 +396,132 @@
         return tr;
       }
 
+      const partyText = (party) =>
+        party.nickname === null ? party.userId : `${party.nickname} · ${party.userId}`;
+
+      /** 台账详情（§5.2）：展开时现读一次，封禁仍然只在黑名单那一处。 */
+      async function loadIdentityDetail(userId, box) {
+        const res = await dataFetch(`/api/admin/identities/${encodeURIComponent(userId)}`);
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`台账详情读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        const lines = [
+          `最近出现：${fmtTime(data.lastSeenAt)}`,
+          `IP：${data.lastIp ?? '—'} · 国家：${data.lastCountry ?? '—'}`,
+          `床号：${data.bedNo === null ? '—' : data.bedNo} · 在线：${data.online ? '是' : '—'}`,
+          `封禁：${blockText(data.block)}`,
+          `同网络的其他身份（${data.ipHistory.length}）：`,
+          ...data.ipHistory.map(
+            (peer) => `　${peer.userId} · 最近 ${fmtTime(peer.lastSeenAt)} · ${blockText(peer.block)}`,
+          ),
+          `该身份的审计（${data.audit.length}）：`,
+          ...data.audit.map(
+            (entry) =>
+              `　${fmtTime(entry.at)} ${entry.action} ${entry.kind} ${entry.value} ` +
+              `${entry.untilAt === null ? '' : `到 ${fmtTime(entry.untilAt)} `}${entry.reason ?? ''}`,
+          ),
+        ];
+        box.replaceChildren(...lines.map((line) => htmlLine(line)));
+      }
+
+      function htmlLine(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div;
+      }
+
+      function partyDetail(party) {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = partyText(party);
+        const box = document.createElement('div');
+        details.append(summary, box);
+        let loaded = false;
+        details.addEventListener('toggle', () => {
+          if (!details.open || loaded) return;
+          loaded = true;
+          void loadIdentityDetail(party.userId, box);
+        });
+        return details;
+      }
+
+      function reportRow(item) {
+        const tr = document.createElement('tr');
+        const target = document.createElement('td');
+        target.append(partyDetail(item.target));
+        const evidence = document.createElement('td');
+        evidence.append(
+          ...(item.evidence.length === 0
+            ? [htmlLine('—')]
+            : item.evidence.map((entry) => htmlLine(`${fmtTime(entry.at)} ${entry.text}`))),
+        );
+        tr.append(
+          cell(fmtTime(item.lastAt)),
+          cell(String(item.count)),
+          cell(partyText(item.reporter)),
+          target,
+          cell(item.reason),
+          evidence,
+        );
+        return tr;
+      }
+
+      /** 按被举报人（§5.7）：无分页（响应里没有 `next`），一次读完全部折叠行。 */
+      async function loadReportTargets() {
+        const res = await dataFetch('/api/admin/reports/targets');
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`按被举报人读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        render(reportTargetRows, data.items, reportTargetRow, 5);
+      }
+
+      function reportTargetRow(item) {
+        const tr = document.createElement('tr');
+        const target = document.createElement('td');
+        // 被举报人仍是 `<details>`：点开就是台账详情，封禁只在那一处（§5.2）
+        target.append(partyDetail(item.target));
+        tr.append(
+          target,
+          cell(String(item.count)),
+          cell(String(item.reporters)),
+          cell(fmtTime(item.lastAt)),
+          cell(item.reason),
+        );
+        return tr;
+      }
+
+      async function loadReports(index) {
+        const cursor = reportCursors[index] ?? null;
+        const params = new URLSearchParams({ limit: String(PAGE) });
+        if (cursor) params.set('before', String(cursor.before));
+
+        const res = await dataFetch(`/api/admin/reports?${params.toString()}`);
+        if (!res) return;
+        if (res.status !== 200) {
+          say(`举报读取失败（${res.status}）。`, true);
+          return;
+        }
+        const data = await res.json();
+        reportIndex = index;
+        if (data.next) reportCursors[index + 1] = data.next;
+        reportsPrev.disabled = index === 0;
+        reportsNext.disabled = !data.next;
+        render(reportRows, data.items, reportRow, 6);
+      }
+
       async function loadIdentities(index) {
         const cursor = identityCursors[index] ?? null;
         const params = new URLSearchParams({ limit: String(PAGE) });
         const ip = ipFilter.value.trim();
         if (ip) params.set('ip', ip);
+        const name = nameFilter.value.trim();
+        if (name) params.set('name', name);
         if (cursor) {
           params.set('before', String(cursor.before));
           params.set('beforeId', cursor.beforeId);
@@ -367,7 +538,7 @@
         if (data.next) identityCursors[index + 1] = data.next;
         identitiesPrev.disabled = index === 0;
         identitiesNext.disabled = !data.next;
-        render(identityRows, data.items, identityRow, 7);
+        render(identityRows, data.items, identityRow, 8);
       }
 
       async function loadBlocks() {
@@ -494,6 +665,7 @@
       });
       document.getElementById('ipClear').addEventListener('click', () => {
         ipFilter.value = '';
+        nameFilter.value = '';
         identityCursors = [null];
         void loadIdentities(0);
       });
@@ -501,6 +673,8 @@
       identitiesNext.addEventListener('click', () => void loadIdentities(identityIndex + 1));
       auditPrev.addEventListener('click', () => void loadAudit(auditIndex - 1));
       auditNext.addEventListener('click', () => void loadAudit(auditIndex + 1));
+      reportsPrev.addEventListener('click', () => void loadReports(reportIndex - 1));
+      reportsNext.addEventListener('click', () => void loadReports(reportIndex + 1));
 
       loginForm.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -514,7 +688,8 @@
             say('已登录。');
             identityCursors = [null];
             auditCursors = [null];
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
+            reportCursors = [null];
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
           } else if (res.status === 429) {
             say('尝试次数过多，请等一分钟再试。', true);
           } else {
@@ -533,6 +708,8 @@
         identityRows.replaceChildren();
         blockRows.replaceChildren();
         auditRows.replaceChildren();
+        reportRows.replaceChildren();
+        reportTargetRows.replaceChildren();
         say('已登出。');
       });
 
@@ -543,7 +720,7 @@
           showLoggedIn(res.status === 200);
           if (res.status === 200) {
             say('已登录。');
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
+            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
           }
         } catch {
           say('无法连接服务器。', true);

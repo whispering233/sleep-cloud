@@ -1,5 +1,7 @@
 import { displayBedNoOf } from '../shared/layout';
 import { findOwnedBed } from './bed-store';
+import { listReports, listReportTargets } from './report';
+import type { ReportRecord } from './report';
 import {
   blockDetailOf,
   countIdentitiesFor,
@@ -91,6 +93,7 @@ function identityView(row: IdentityRecord, ctx: AdminContext, now: number): Reco
   const bedNo = findOwnedBed(ctx.sql, row.userId, now)?.bedNo;
   return {
     userId: row.userId,
+    nickname: row.nickname,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     lastIp: row.lastIp,
@@ -110,10 +113,12 @@ function identitiesPage(url: URL, ctx: AdminContext): Response {
   // 而静默当成第一页会让「下一页」原地打转（见 `docs/api/30-api-admin.md` §4）。
   if (before !== undefined && beforeId === undefined) return badRequest();
   const ip = url.searchParams.get('ip') ?? undefined;
+  const name = url.searchParams.get('name') ?? undefined;
   // 多取一行只用来判断「还有没有下一页」
   const rows = listIdentities(ctx.sql, {
     limit: limit + 1,
     ...(ip === undefined ? {} : { ip }),
+    ...(name === undefined ? {} : { name }),
     ...(before === undefined || beforeId === undefined ? {} : { before, beforeId }),
   });
   const now = Date.now();
@@ -203,6 +208,45 @@ function deleteBlock(rawKind: string, rawValue: string, ctx: AdminContext): Resp
   return json({ removed });
 }
 
+/** 举报里的一方（§5.6）：昵称**读时现补**——表里不存快照，过了留存期就是 `null`。 */
+function partyOf(sql: SqlStorage, userId: string): { userId: string; nickname: string | null } {
+  return { userId, nickname: findIdentity(sql, userId)?.nickname ?? null };
+}
+
+function reportsPage(url: URL, ctx: AdminContext): Response {
+  const limit = limitOf(url);
+  const before = cursorOf(url, 'before');
+  const rows = listReports(ctx.sql, { limit: limit + 1, ...(before === undefined ? {} : { before }) });
+  const items = rows.slice(0, limit);
+  const last: ReportRecord | undefined = items.at(-1);
+  return json({
+    items: items.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt,
+      lastAt: row.lastAt,
+      count: row.count,
+      reporter: partyOf(ctx.sql, row.reporterUserId),
+      target: partyOf(ctx.sql, row.targetUserId),
+      reason: row.reason,
+      evidence: row.evidence,
+    })),
+    next: rows.length > limit && last ? { before: last.id } : null,
+  });
+}
+
+/** 被举报人折叠（§5.7）：无 `next`——排序键不是主键，游标翻页在这里会漏行。 */
+function reportTargetsPage(url: URL, ctx: AdminContext): Response {
+  return json({
+    items: listReportTargets(ctx.sql, limitOf(url)).map((row) => ({
+      target: partyOf(ctx.sql, row.targetUserId),
+      count: row.count,
+      reporters: row.reporters,
+      lastAt: row.lastAt,
+      reason: row.reason,
+    })),
+  });
+}
+
 function auditPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const rows = listAudit(ctx.sql, limit + 1, cursorOf(url, 'before'));
@@ -211,7 +255,7 @@ function auditPage(url: URL, ctx: AdminContext): Response {
   return json({ items, next: rows.length > limit && last ? { before: last.id } : null });
 }
 
-/** 六个数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
+/** 数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
 export async function handleAdminRequest(
   request: Request,
   url: URL,
@@ -243,6 +287,12 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
   }
   if (resource === 'audit' && second === undefined && request.method === 'GET') {
     return auditPage(url, ctx);
+  }
+  if (resource === 'reports' && second === 'targets' && request.method === 'GET') {
+    return reportTargetsPage(url, ctx);
+  }
+  if (resource === 'reports' && second === undefined && request.method === 'GET') {
+    return reportsPage(url, ctx);
   }
   return notFound();
 }

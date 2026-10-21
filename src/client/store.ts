@@ -147,6 +147,18 @@ export interface ClientState {
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
    */
   composer: ComposerState;
+  /**
+   * 正在举报谁（客户端本地状态，不进协议、不进快照）：点「举报」时记下。
+   * `5003` 回执只有码、没有目标 id，本地必须记着这一单打给谁才知该置灰哪颗按钮。
+   */
+  pendingReportTo?: string;
+  /** 已收到回执的举报对象（**本次会话内有效**）：私聊行那颗按钮据此变成「已举报」并置灰 */
+  reportedIds: Set<string>;
+  /**
+   * 面板上那行常驻弱提示（今天只有 `5003` 回执一个来源）：**常驻到下一次操作**。
+   * 不挂定时器——与气泡同一理由：内存定时器会让页面无法休眠（硬纪律 6）。
+   */
+  chatHint?: string;
 }
 
 const emptyState = (): ClientState => ({
@@ -158,6 +170,7 @@ const emptyState = (): ClientState => ({
   bubbles: new Map(),
   switching: false,
   composer: 'idle',
+  reportedIds: new Set(),
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
   // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
   zoomMode: readZoomMode(),
@@ -235,12 +248,38 @@ function setBubble(id: string, text: string, kind: ChatBubble['kind']): void {
 
 /** 选中某个人：同一时刻只有一个选中对象（所以只有一个名字气泡、一个私聊目标）。 */
 export function selectPerson(id: string): void {
-  setState({ selectedId: id });
+  // 选了别人就是「下一次操作」：上一单的举报回执那行话让位
+  setState({ selectedId: id, chatHint: undefined });
+  // 举报态里改选别人：表单写的是原来那一位，留着就变成「看不见对象在写事由」
+  if (state.composer === 'report' && id !== state.pendingReportTo) setComposer({ kind: 'exit' });
 }
 
 /** 取消选中：点地面、点 ×、目标离开都走这里。 */
 export function clearSelection(): void {
-  setState({ selectedId: undefined });
+  setState({ selectedId: undefined, chatHint: undefined });
+  // 举报对象没了：表单跟着退场（§2 的「取消选中 → idle」）
+  if (state.composer === 'report') setComposer({ kind: 'exit' });
+}
+
+/**
+ * 点「举报」：记下这一单的对象并进 `report` 态（`docs/design/60-interaction-shell.md` §2）。
+ * 焦点由事由框的 `autoFocus` 接管，`focus-in` 在 `report` 下**不降级**——表单不会被自己卸掉。
+ */
+export function startReport(toId: string): void {
+  setState({ pendingReportTo: toId });
+  setComposer({ kind: 'report' });
+}
+
+/**
+ * 举报落库回执（`5003`）：这一单的目标进「已举报」集合（本次会话内有效），
+ * 那行确认文案常驻到下一次操作。**退场不在这里做**（收焦点归 `exitComposer()`）。
+ */
+export function applyReportReceipt(): void {
+  const toId = state.pendingReportTo;
+  if (toId === undefined) return;
+  const reportedIds = new Set(state.reportedIds);
+  reportedIds.add(toId);
+  setState({ pendingReportTo: undefined, reportedIds, chatHint: errorTextFor('5003') });
 }
 
 /**
@@ -262,7 +301,8 @@ export function setSwitching(on: boolean): void {
 export function setComposer(event: ComposerEvent): void {
   const next = composerReducer(state.composer, event);
   if (next === state.composer) return;
-  setState({ composer: next });
+  // 进新会话 = 「下一次操作」：上一单的举报回执那行话让位；退场（回 idle）时保留它
+  setState({ composer: next, ...(next === 'idle' ? {} : { chatHint: undefined }) });
 }
 
 /**
@@ -483,15 +523,20 @@ export function applyLeave(message: LeaveMessage): void {
   const patch: Partial<ClientState> = { people, motion, ...onlinePatch(message.online) };
   // 走的是我自己（宽限超时后服务端不认我了）：外推一并丢掉
   if (state.me?.id === message.id) patch.prediction = undefined;
-  // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）
-  if (state.selectedId === message.id) patch.selectedId = undefined;
+  // 离开的人正好是选中对象：一并取消选中（气泡不能留在空气里）；举报表单也随对象一起退场
+  if (state.selectedId === message.id) {
+    patch.selectedId = undefined;
+    patch.chatHint = undefined;
+  }
   // 走了就不该再留着他的气泡：同一个 id 在 CHAT_BUBBLE_MS 内重连会带着旧气泡复现
   if (state.bubbles.has(message.id)) {
     const bubbles = new Map(state.bubbles);
     bubbles.delete(message.id);
     patch.bubbles = bubbles;
   }
+  const reportTargetLeft = state.selectedId === message.id && state.composer === 'report';
   setState(patch);
+  if (reportTargetLeft) setComposer({ kind: 'exit' });
 }
 
 /** 封禁到期时刻（`5002` 随附）：只给提示文案用，不参与任何判定。 */
