@@ -23,9 +23,8 @@ src/client/styles/tokens.json
 # 测试缓存（vitest 每次跑测试都会写）
 .vitest/
 
-# 测试与覆盖率
+# 覆盖率
 coverage/
-.nyc_output/
 
 # 类型缓存
 *.tsbuildinfo

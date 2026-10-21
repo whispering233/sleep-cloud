@@ -110,6 +110,7 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 | 层 | 环境 | 内容 |
 | :--- | :--- | :--- |
 | **L1** | vitest（`npm test`） | `composerReducer` 的事件序列穷举；`shouldResize`、`keyboardOf`、`usableView` 之类布局算术 |
+| **L2** | 桌面浏览器（手机视口，手工过一遍） | 每个状态的出口可达、画布尺寸不变、`walk` 的来源、Popover 降级（开发者工具里删三个方法后仍能用） |
 | **L3** | 宿主 Android 模拟器（配方见 `test.md` §2） | 真 IME 下三个量的关系、`scale.resize` 次数、`screenrecord` 逐帧看闪烁 |
 | **L4** | 真机 | 手感、特定内核（夸克 / Via）、低亮度观感 |
 
