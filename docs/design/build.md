@@ -121,7 +121,7 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 | :--- | :--- |
 | `{ pattern: "<入口域名>/*" }`（不写 zone） | `Can't infer zone from route, please specify zone for "…" [code: 10082]`。**更麻烦的是这是「部分更新且不回滚」**：当场把当时那条自定义域名摘掉，那个域名随后连续 **530**；修法是改回能通过 trigger 同步的写法再 `deploy` 一次 |
 | `{ …, zone_name: "<写成了另一个 zone>" }` | `Could not find zone for <写错的那个>. Make sure the domain is set up to be proxied by Cloudflare.`——那个 zone 不在本账号里（实测 `GET /zones?name=<它>` 返回空） |
-| `{ pattern: "<入口域名>/*", zone_name: "<入口域名真正所属的 zone>" }` | **通过**：`Deployed sleep-cloud triggers → <入口域名>/* (zone name: <那个 zone>)` |
+| `{ pattern: "<入口域名>/*", zone_name: "<入口域名真正所属的 zone>" }` | **通过**：`Deployed <Worker 名> triggers → <入口域名>/* (zone name: <那个 zone>)` |
 
 入口域名与它所属 zone 的**根域**都不挂 Worker。
 
@@ -194,7 +194,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 **没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。
 
-**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded sleep-cloud (5.33 sec)` → `Deployed sleep-cloud triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
+**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded <Worker 名> (5.33 sec)` → `Deployed <Worker 名> triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
 
 失败形态分两段，别弄混：
 
