@@ -95,6 +95,10 @@ export interface WorldHandle {
   focusBed(bedNo: number): void;
   /** 设世界缩放档位（齿轮浮层的「缩放」二级选出来的；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
+  /** 让位（游戏页盖着时）：停掉渲染循环，**位置与状态一个字节都不改**。 */
+  pause(): void;
+  /** 恢复渲染循环。`wake(true)` 是 seamless，免得醒来第一帧吃一个巨大的 `delta`。 */
+  resume(): void;
 }
 
 /**
@@ -1092,6 +1096,12 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     },
     setZoomMode(mode: ZoomMode): void {
       scene.setZoomMode(mode);
+    },
+    pause(): void {
+      game.loop.sleep();
+    },
+    resume(): void {
+      game.loop.wake(true);
     },
   };
 }

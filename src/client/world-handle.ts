@@ -29,3 +29,16 @@ export function focusBed(bedNo: number): void {
 export function setZoomMode(mode: ZoomMode): void {
   world?.setZoomMode(mode);
 }
+
+/**
+ * 让位（游戏页开着时）：停掉世界层的渲染循环。**位置与状态一个字节都不改**，人还站在厅里。
+ * 世界层还没起来时什么都不做（同上面几条）。
+ */
+export function pauseWorld(): void {
+  world?.pause();
+}
+
+/** 回到大厅时恢复渲染循环（`wake(true)`，不吃暂停期间累积的 `delta`）。 */
+export function resumeWorld(): void {
+  world?.resume();
+}

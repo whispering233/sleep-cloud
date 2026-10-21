@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { resumeHall, suspendHall } from '../audio';
 import { createGameHost } from '../games/host';
 import type { GameHost } from '../games/host';
 import { GAMES } from '../games/registry';
-import { closeGames } from '../store';
+import { closeGames, subscribe } from '../store';
+import { pauseWorld, resumeWorld } from '../world-handle';
 import { PrimaryAction } from './PrimaryAction';
 
 /**
@@ -28,6 +30,27 @@ export function GamesOverlay() {
     // `preventScroll`：`.entry-overlay` 自己可滚，默认的聚焦会把列表一次跳到最下面
     leaveRef.current?.focus({ preventScroll: true });
   }, []);
+
+  // 让位（§5）：这一页盖着大厅的整段时间里大厅不必推进——世界层只停渲染循环（**位置与状态一个字节都不改**），
+  // 雨声一起挂起（没建 context 就什么都不做、不改偏好）。卸载时成对恢复：`wake(true)` 不吃暂停期间累积的 `delta`
+  useEffect(() => {
+    pauseWorld();
+    suspendHall();
+    return () => {
+      resumeWorld();
+      resumeHall();
+    };
+  }, []);
+
+  // 停住（封禁 / 被顶替 / 布局版本不符）必须先把这一页收掉：整屏页会把提示条与入场层盖住，
+  // 人那一刻只看到一片游戏、看不到自己为什么被踢。**只看 `halted`**——普通断线不该把人从游戏里踢出去
+  useEffect(
+    () =>
+      subscribe((state) => {
+        if (state.connection === 'halted') closeGames();
+      }),
+    [],
+  );
 
   // `Esc` 与「离开」是**同一个出口**（`closeGames` 幂等，重复触发没有代价）
   useEffect(() => {

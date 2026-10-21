@@ -10,6 +10,8 @@ import { RAIN_CROSSFADE_S, RAIN_INTRO_URL, RAIN_LOOP_URL } from '../shared/const
 
 let context: AudioContext | undefined;
 let sound = false;
+/** 大厅声音被整屏页（游戏页）挂起中：这时即使回到前台也**不许**自动拉起来（§5 雨声不与游戏声叠着响） */
+let hallSuspended = false;
 /** 每次开 / 关递增：异步解码回来时若已经切走，就丢弃这次结果（关了不许再出声）。 */
 let generation = 0;
 let inFlight: AbortController | undefined;
@@ -32,6 +34,7 @@ function ensureContext(): AudioContext | undefined {
     // 无手势 `resume()` 只在此 context 已被首次手势解锁过的前提下成立（见 `unlock`），失败就静默
     if (
       sound &&
+      !hallSuspended &&
       document.visibilityState === 'visible' &&
       created.state !== 'running' &&
       created.state !== 'closed'
@@ -143,6 +146,22 @@ export function setSound(on: boolean): void {
   sound = on;
   if (on) start();
   else stop();
+}
+
+/**
+ * 让位（`docs/design/110-games-page.md` §5）：游戏页盖着时把大厅的声音挂起。
+ * **没建 context 就什么都不做**（不为了挂起而建一个）、不改 `sound` 偏好、不共用总开关。
+ */
+export function suspendHall(): void {
+  hallSuspended = true;
+  if (context && context.state === 'running') void context.suspend().catch(() => {});
+}
+
+/** 退出游戏页：偏好还开着才接着响（关着的时候没有可响的东西，context 也就不必跑）。 */
+export function resumeHall(): void {
+  hallSuspended = false;
+  if (!sound || !context || context.state === 'running' || context.state === 'closed') return;
+  void context.resume().catch(() => {});
 }
 
 /**
