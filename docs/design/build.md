@@ -167,6 +167,8 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 推一个版本 tag 就是一次发版。`.github/workflows/release.yml` 里三个 job 串行，任一环失败即停：
 
+带后缀的预发布 tag（`vX.Y.Z-ci` 这类）**只部署、不建 Release**：版本一致性只比对基版本 `X.Y.Z`（与 `package.json` 的 `version`、`CHANGELOG.md` 的 `## [vX.Y.Z]` 段对齐），`release` job 因 `if` 跳过。它的用途是验证部署链路本身。
+
 | job | 做什么 | 失败后 |
 | :--- | :--- | :--- |
 | `verify` | `npm ci` → `npm run tokens`（`typecheck` 与 `test` 依赖它生成的 `src/client/styles/tokens.*`）→ `npm test` → `npm run typecheck` → `npm run lint:design` → **版本一致性**：标签去掉 `v` 必须等于 `package.json` 的 `version`，且 `CHANGELOG.md` 里存在 `## [vX.Y.Z]` 那一段 | 不部署、不建 Release |

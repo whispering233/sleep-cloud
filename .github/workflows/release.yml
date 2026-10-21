@@ -35,18 +35,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint:design
       # 版本一致性：标签去掉 v 必须等于 package.json 的 version，且 CHANGELOG.md 里有 ## [vX.Y.Z] 段。
+      # 带后缀的预发布 tag（vX.Y.Z-ci 这类）只比对基版本，Release 那一步会被跳过（见 release job 的 if）。
       # 放在 verify 而不是等 release 报错：那段对不上时 release 一定失败，排到它后面就成了「已上线但没 Release」。
       - name: 版本一致性
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
+          base="${tag%%-*}"
           version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
-          if [ "$tag" != "$version" ]; then
-            echo "::error::tag v$tag 与 package.json 的 version $version 不一致"
+          if [ "$base" != "$version" ]; then
+            echo "::error::tag v$tag 的基版本 $base 与 package.json 的 version $version 不一致"
             exit 1
           fi
-          if ! grep -q "^## \[v$tag\]" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md 缺少 ## [v$tag] 版本段"
+          if ! grep -q "^## \[v$base\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 缺少 ## [v$base] 版本段"
             exit 1
           fi
 
@@ -107,8 +109,10 @@ jobs:
           exit 1
 
   # 发布：用 CHANGELOG.md 里 tag 对应的那段正文建 GitHub Release。
+  # 预发布 tag（vX.Y.Z-ci 这类带后缀的）不建 Release：它们只是部署验证。
   release:
     needs: deploy
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
