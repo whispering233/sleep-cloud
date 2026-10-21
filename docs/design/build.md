@@ -68,14 +68,23 @@
 | `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。路由带着 zone 名，所以**不写在入库的 `wrangler.jsonc` 里**，而写在未入库的 `wrangler.local.jsonc`（部署命令已改为 `--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
-**典型症状：`wrangler` 报「Not logged in … the Cloudflare auth server could not be reached」**
-凭据没过期，是**这台机器的 IPv6 不可达**（实测 `ENETUNREACH`）而 Node 的 happy-eyeballs 把 `dash.cloudflare.com` 卡在超时（`curl` 走 IPv4 正常，`node -e "fetch(...)"` 报 `ETIMEDOUT`）。给 wrangler 加两个开关即可（已实测部署成功）：
+**典型症状：`wrangler` 报 `fetch failed`（或「Not logged in … the Cloudflare auth server could not be reached」）**
+凭据没问题，是**每次连接都被 250 ms 的尝试超时杀掉**，三层原因叠在一起：
+
+- 本机没有全局 IPv6 路由（`ip -6 route` 只有 `fe80::/64`），AAAA 候选一律 `ENETUNREACH`；
+- Node 22 默认 `autoSelectFamily = true` → 走 `connect/multiple`，**每个候选地址只给 250 ms**，超时就销毁 socket 换下一个；
+- 这台机器到 Cloudflare 的 TCP 握手要 **0.9–1.6 s**（`curl -w '%{time_connect}'` 0.89–0.98 s，`net.connect` 1.3–1.6 s），于是每个候选都在握手中途被杀 → `ETIMEDOUT` → undici 只报 `TypeError: fetch failed`（真实原因在 `cause` 里，日志不打印）。
+
+`npm run deploy` **已内置**这两个开关（`package.json` 的 `deploy` 脚本）：
 
 ```text
-NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" npm run deploy
+NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wrangler deploy --config wrangler.local.jsonc
 ```
 
-只加 `--dns-result-order=ipv4first` **不够**（实测仍旧失败），关键是 `--no-network-family-autoselection`。
+- `--no-network-family-autoselection`：退回单地址 `net.connect`，用操作系统的 TCP 超时，不再有 250 ms 上限；
+- `--dns-result-order=ipv4first`：单地址模式下先选 IPv4，缺了它就会先撞 IPv6 的 `ENETUNREACH`。
+
+两个缺一不可：只加 `ipv4first` 仍走 250 ms 多路复用（照样全部超时）；只加 `no-network-family-autoselection` 会先试 IPv6。**绕过脚本直接调 `wrangler` 的命令**（`npx wrangler whoami` / `tail` / `secret put`）不带这两个开关，需要时自己加。`curl` 不受影响：curl 的 happy-eyeballs 只是并行起下一个，不杀正在握手的那个。
 
 **典型症状：`/admin` 登录一直 401**
 `ADMIN_TOKEN` 没注入（或与输入的不是同一个）——缺它时后台**一律** 401，不回落任何默认值。`npx wrangler secret put ADMIN_TOKEN` 之后无需重新部署，下次请求就生效。

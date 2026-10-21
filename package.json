@@ -14,7 +14,7 @@
     "dev:web": "npm run tokens && vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "deploy": "npm run build && wrangler deploy --config wrangler.local.jsonc"
+    "deploy": "npm run build && NODE_OPTIONS=\"--no-network-family-autoselection --dns-result-order=ipv4first\" wrangler deploy --config wrangler.local.jsonc"
   },
   "repository": {
     "type": "git",
