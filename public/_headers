@@ -4,3 +4,8 @@
 # 代价：immutable 下浏览器不会再来问——换素材必须同时把文件名里的版本号 +1。
 /audio/*
   Cache-Control: public, max-age=31536000, immutable
+
+# 类型文本的数据包（`docs/design/50-slot-panel.md` §附）。同样是懒加载 + 文件名版本号：
+# 换内容必须改名（`texts.v1.json` → `v2`），否则 immutable 会把旧包销死一年。
+/fun/*
+  Cache-Control: public, max-age=31536000, immutable
