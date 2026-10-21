@@ -4,12 +4,6 @@
 > 派活的硬约束、验收基线（`npm test` / `npm run typecheck` / `npm run lint:design`）与「一次只做一张卡」见 `../../AGENTS.md`「开发流程（本项目）」，发版顺序见 `build.md` §4.3。
 > 契约与预算的唯一权威是 `100-log.md`：卡片里出现的字段名、阈值、闸门都必须与它逐字一致，不一致就改代码不改文档。
 
-## 卡 1 · 后台壳：侧栏 + hash + 分段 + 空态 + 只读抽屉 + toast
-
-- **范围**：`public/admin.html` 拆出 `public/admin.css` / `public/admin.js`（同目录、无目录、无打包）；侧栏五个视图（`#identities` / `#blocks` / `#audit` / `#reports` / `#feedback`，空 hash → `#identities`，未知 → `#identities`）；视图切换卸载重渲染（旧定时器全清，本卡还没有定时器）；`@media (max-width: 1023px)` 侧栏顶栏化；`thead` sticky；表格空态；身份抽屉（read-only，复用 `loadIdentityDetail`）；写操作统一 toast 显错（替换 `alert`）。接口零改动，登录/封禁/解封/分页行为不变。
-- **验收**：`npm run typecheck` 不变红；`node --check public/admin.js`；手工：五个 hash 直达、未知 hash 回落、表格空态只有一行、抽屉能打开且不发写请求、断网时 toast 有文案、1440 与 375 宽都不横向溢出；`ui-verifier` 独立复核（含 1023px 临界与刷新后 hash 保持）。
-- **不碰**：任何 `/api/admin/*` 契约、封禁表单、`confirm()`、`_headers`、`app.html`、React 前端、构建配置。
-- **产出**：`public/admin.css`、`public/admin.js`、`public/admin.html`、`CHANGELOG.md`（Added）。
 
 ## 卡 2 · 统计卡：`GET /api/admin/stats` + 概览
 
