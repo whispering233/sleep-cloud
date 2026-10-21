@@ -179,7 +179,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 | 名字 | 种类 | 内容 |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | secret | 平台 API Token。三条权限：**Workers Scripts:Edit**（账号级）+ **Workers Routes:Edit**（限入口域名所属那一个 zone）+ **Zone:Read**（限同一个 zone）。第三条不是可选项：wrangler 在 triggers 阶段要按 `zone_name` 反查 zone id（`GET /zones?name=…`），没有它直接报错——而那一步发生在**新代码上传之后**（见本节末尾的失败形态） |
+| `CLOUDFLARE_API_TOKEN` | secret | 平台 API Token，**按单个 Worker 授权**（2026-09-15 起的 per-Worker 角色，不要用旧的账号级 `Workers Scripts:Edit`）：策略一 = `Developer Platform → Individual Workers`，scope 选本项目的 Worker，勾 `Metadata Read-only` + `Content Read-only` + `Editor`（`Admin` 多一个删除能力，不给）；策略二 = zone 级 `Workers Routes:Edit`，限入口域名所属的那一个 zone；策略三 = `Zone:Read`，限同一个 zone。**两条幂区权限不能省**：per-Worker 角色管不到路由，wrangler 在 triggers 阶段会调 `GET /zones?name=…` 与 `/zones/:zone/workers/routes`。第三条不是可选项：没有她 `zone_name` 反查直接报错——而那一步发生在**新代码上传之后**（见本节末尾的失败形态）。`Editor` 不包含「新建 Worker」，本仓库的 Worker 已存在，够用 |
 | `CLOUDFLARE_ACCOUNT_ID` | secret | 账号 ID。token 属于多账号时必须显式给，否则 wrangler 报「more than one account」 |
 | `ENTRY_HOST` | secret | 入口域名的 hostname（不带 `/*`） |
 | `ENTRY_ZONE` | secret | 入口域名所属的 zone |
