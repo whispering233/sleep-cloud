@@ -24,15 +24,18 @@
 idle ──focusin(可编辑控件)──▶ typing
 idle ──点「举报」（已选中某人）──▶ report
 idle ──点阅读入口──▶ reading（不拉键盘，所以不靠 focusin）
+idle ──点齿轮「反馈与建议」──▶ feedback（拉键盘，焦点进事由框）
 report ──focusin──▶ report（不降级：事由框换焦点不该把它换成快捷用语）
+feedback ──focusin──▶ feedback（不降级：同 report，否则会卸载表单、丢掉已写的字）
 reading ──focusin──▶ typing（点了输入框就该能打字，文本让位）
 report ──5003 回执 / 收起键 / 点面板空白 / 取消选中──▶ idle
+feedback ──5004 回执 / 收起键 / 点面板空白──▶ idle
 reading ──收起键 / 点面板空白──▶ idle
-typing / report / reading ──断线 / 焦点对账失败──▶ idle
+typing / report / reading / feedback ──断线 / 焦点对账失败──▶ idle
 ```
 
-- **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
-- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有三个源：聊天输入、`GO` 的床号输入、举报事由（它在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗书本图标胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
+- **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading' | 'feedback'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
+- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗书本图标胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
 - **出口唯一**：`exitComposer()`。它必须满足三条：
   1. **幂等**（重复调用无副作用）；
   2. **不看 `activeElement` 是谁**（当前实现正是因为它只看输入框，才在输入框被卸载后彻底失效）；

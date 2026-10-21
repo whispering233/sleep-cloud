@@ -55,18 +55,21 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | GET | `/api/admin/audit` | 审计（分页） |
 | GET | `/api/admin/reports` | 举报明细（分页，只读） |
 | GET | `/api/admin/reports/targets` | 举报**按被举报人折叠**（次数多者在前，只读） |
+| GET | `/api/admin/stats` | 四张统计卡（在线 / 有主床 / 生效封禁 / 近 24 小时举报） |
+| GET | `/api/admin/feedback` | 反馈与建议（分页，只读） |
 
 **没有的接口**：删除用户数据、改昵称/形象、禁言、素材上传。这些没有需求方，最后一项也没有管线（见 `../design/backlog.md`）。
 
 ## 4. 分页
 
-**只有真正会长大的列表才分页**：`identities`（跟着历史身份数增长）、`audit`（跟着运维动作增长）与 `reports`（跟着举报数增长）。`blocks` 不分页——它是人工动作的产物，几十行量级，与用户规模无关（见 `../db/schema.md` §9）。
+**只有真正会长大的列表才分页**：`identities`（跟着历史身份数增长）、`audit`（跟着运维动作增长）、`reports`（跟着举报数增长）与 `feedback`（跟着反馈数增长）。`blocks` 不分页——它是人工动作的产物，几十行量级，与用户规模无关（见 `../db/schema.md` §9）。
 
 | 列表 | 请求 | 响应 | 排序键 |
 | :--- | :--- | :--- | :--- |
 | `identities` | `?limit=50&before=<ts>&beforeId=<userId>` | `{ items, next: { before, beforeId } \| null }` | `last_seen_at DESC, user_id DESC`（**复合游标**：只按时刻会漏掉同一毫秒的那些行）。**两个参数必须成对给**，只给一半 → 400 |
 | `audit` | `?limit=50&before=<id>` | `{ items, next: { before } \| null }` | 自增主键 `id DESC` |
 | `reports` | `?limit=50&before=<id>` | `{ items, next: { before } \| null }` | 自增主键 `id DESC` |
+| `feedback` | `?limit=50&before=<id>` | `{ items, next: { before } \| null }` | 自增主键 `id DESC` |
 | `blocks` | — | `{ items }` | `created_at DESC`（数据库层排好，不再分页） |
 
 `limit` 默认 50、上限 100。**不用 offset**：`before` 分页在「边看边有人进出」时不会翻出重复行，也不依赖行数。`next: null` = 没有下一页。
@@ -179,6 +182,37 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 **排序**：`count DESC, lastAt DESC`；同一个人只出现一行。响应用 `{ items }`，**没有 `next`**——排序键不是主键，游标翻页在这里会漏行。
 
 **成本**：一次 `GROUP BY target_user_id` 全表扫（`report` 上没有 `target_user_id` 索引；行数 = 「一对举报人」数，且 90 天就删），每行再补一次昵称单行读。真涨到需要索引时先看 §5.6 的分页是否还够用。
+
+### 5.8 `GET /api/admin/stats`
+
+后台顶部的四张卡，一次取回。
+
+| 字段 | 是否必选 | 数据类型 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `online` | 是 | number | 厅对象内存里的活连接数（与 `snapshot.hall.online` 同源，不发 SQL） |
+| `ownedBeds` | 是 | number | `owner_user_id` 非空**且归属未过期**（`last_seen_at` 在 30 天内）的床数 |
+| `blocks` | 是 | number | `until_at` 为空（永久）或 `until_at > now` 的封禁行数 |
+| `reports24h` | 是 | number | `last_at >= now − 24 小时` 的举报**行数**（一行 = 一对举报人 / 被举报人） |
+
+```json
+{ "online": 37, "ownedBeds": 214, "blocks": 3, "reports24h": 5 }
+```
+
+**成本**：三条聚合查询（床 / 封禁 / 举报各一次 `COUNT`）+ 一次内存读数。**没有逐行读**，比台账翻一页便宜。口径与「为什么不是 `SUM(count)`」见 `../design/110-admin-console.md` §3。
+
+### 5.9 `GET /api/admin/feedback`
+
+反馈与建议的只读列表：参数 `limit` / `before`（自增 `id` 游标），排序 `id DESC`。**没有过滤器**（不按人、不按时间、不按关键词）。
+
+| 字段 | 是否必选 | 数据类型 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `id` | 是 | number | 自增主键（游标） |
+| `createdAt` | 是 | number | 提交时刻（epoch 毫秒） |
+| `userId` | 是 | string | 提交者身份（L1） |
+| `nickname` | 否 | string | **读时现补**的最近昵称；`null` = 已过 90 天留存期或从未写过 |
+| `text` | 是 | string | 用户原文（**未过内容过滤**，只有运维看得到） |
+
+**成本**：一页 50 行 = 1 次列表查询 + 每行一次台账主键读补昵称。与 §5.6 同一取舍。
 
 ## 6. 错误语义
 

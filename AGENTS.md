@@ -24,10 +24,10 @@
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
-| 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
-| 运行、构建、部署、发版顺序、额度监控；测试环境与流程（哪类测试用哪个环境） | `docs/design/build.md`、`docs/design/test.md` |
-| 数据模型 | `docs/db/schema.md` |
-| 接口、协议、错误码 | `docs/api/` |
+| 后台管理面板：五个视图、统计卡、抽屉、文件拆分与取舍 | `docs/design/110-admin-console.md` |
+| 反馈与建议：入口、表单、协议、上限、留存、后台列表 | `docs/design/120-feedback.md` |
+| 配置（常量 / 限制 / 密钥 / 词表）、运行构建部署发版、测试环境与流程 | `docs/design/config.md`、`docs/design/build.md`、`docs/design/test.md` |
+| 数据模型与接口契约（HTTP / WebSocket / 后台 / 错误码） | `docs/db/schema.md`、`docs/api/` |
 | 视觉令牌、组件、素材变体清单 | `docs/ui/DESIGN.md` |
 | 竞品与开源参考 | `docs/research/competitive-analysis.md` |
 | 已决定推迟的事；当前任务卡片 | `docs/design/backlog.md`、`docs/design/tasks.md` |
