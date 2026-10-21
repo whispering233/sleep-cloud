@@ -17,7 +17,6 @@ import {
   campfireLit,
   cameraStep,
   followStep,
-  isFaded,
   isMoving,
   keyboardOf,
   personAlpha,
@@ -126,7 +125,7 @@ describe('「还在走」的判据（渲染的摆动与相机跟随共用）', (
   });
 });
 
-describe('名字、不透明度与睡痕淡出', () => {
+describe('名字与不透明度', () => {
   it('名字只画在别人身上（床上与走动都一样），自己一律不画', () => {
     expect(shouldDrawName(sleeper, 'u_me')).toBe(true);
     expect(shouldDrawName(sleeper, 'u_1')).toBe(false);
@@ -137,13 +136,6 @@ describe('名字、不透明度与睡痕淡出', () => {
     expect(personAlpha('trace')).toBeLessThan(1);
     expect(personAlpha('roaming')).toBe(1);
     expect(personAlpha('asleep')).toBe(1);
-  });
-
-  it('睡痕到期由本地推导（比对 traceUntil，不挂定时器）', () => {
-    const untilNow = { ...trace, traceUntil: 1000 };
-    expect(isFaded(untilNow, 999)).toBe(false);
-    expect(isFaded(untilNow, 1000)).toBe(true);
-    expect(isFaded(trace, 10_000_000)).toBe(false); // 没有 traceUntil 的条目（在线者）不会被淡出
   });
 });
 

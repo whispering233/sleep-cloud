@@ -298,7 +298,7 @@ export class Hall extends DurableObject<Env> {
   /**
    * 握手时的状态恢复与出生点（见 `docs/design/10-hall-runtime.md` §9、§13）：
    * 宽限期内 → 原位置、原路径、原床位（对外表现为无变化，因此不广播）；
-   * 宽限已过、而那张床还留着**未过期**的睡痕 → 回到床上（清醒）；
+   * 我的床还留着睡痕（宽限已过、人已离线）→ 回到床上（清醒）；
    * 已有**未过期归属**的床 → 站在自己床脚前的横走道（跨厅走不动，人先落在自己的位置，见 §9 步 0）；
    * 否则出现在「编号最小的可认领床」前方走道。整厅没有可认领的床（且已触顶）→ 不入场。
    */
@@ -307,7 +307,7 @@ export class Hall extends DurableObject<Env> {
     if (graced) return graced.connection;
 
     const now = Date.now();
-    const bedNo = findTraceBed(this.ctx.storage.sql, connection.userId, now);
+    const bedNo = findTraceBed(this.ctx.storage.sql, connection.userId);
     if (bedNo !== undefined) {
       restoreBedOccupancy(this.ctx.storage.sql, {
         bedNo,
@@ -983,7 +983,7 @@ export class Hall extends DurableObject<Env> {
         continue;
       }
       // 宽限到期时刻就是 `lastSeenAt + 宽限期`（`graceVerdict` 只在非空时判 `expired`）；
-      // 兜底用 `now`——写成 `now + 宽限期` 会变成未来戳，那条睡痕要等到明天才过期
+      // 兜底用 `now`——写成 `now + 宽限期` 会让那一行记下一件还没发生的事
       const tracedAt = row.lastSeenAt === null ? now : row.lastSeenAt + GRACE_MS;
       this.markTrace(row.bedNo, row.ownerUserId, tracedAt); // 在床上 → 睡痕，**不发 leave**
     }
@@ -1000,8 +1000,8 @@ export class Hall extends DurableObject<Env> {
   /**
    * 变成睡痕：库里记上，再广播显示态（名字与轮廓由客户端按 `trace` 变暗）。
    *
-   * `updated_at` 写的是**宽限到期的时刻**（`last_seen_at + 宽限期`），不是「发现它的时刻」：睡痕过期
-   * （`updated_at + TRACE_TTL_MS`）拿它当判据，写发现时刻会让远处的睡痕多活一整个 TTL。
+   * `updated_at` 写的是**宽限到期的时刻**（`last_seen_at + 宽限期`），不是「发现它的时刻」——它已经不是
+   * 任何判据了，但存下来能让行表达「这件事本该何时发生」。
    */
   private markTrace(bedNo: number, userId: string, tracedAt: number): void {
     setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
@@ -1157,7 +1157,7 @@ export class Hall extends DurableObject<Env> {
   }
 
   /**
-   * 缩级评估（见 `10-hall-runtime.md` §8）：**已用率 < 50%** 且最外那一圈床**全部无主且无占用**（含未过期睡痕）→
+   * 缩级评估（见 `10-hall-runtime.md` §8）：**已用率 < 50%** 且最外那一圈床**全部无主且无占用**（含睡痕）→
    * 取下 `meta.bed_count`、广播 `resize`。**不写任何床位行**。
    * 一天只跳一档：跳档需要「这一圈真的没人要了」的判断，实时判定会在人数波动时来回跳。
    */
@@ -1230,8 +1230,8 @@ export class Hall extends DurableObject<Env> {
       me,
       myOwnedBedNo: findOwnedBed(sql, me.userId, now)?.bedNo ?? null,
       others,
-      // 走 state 索引取 trace 行，并在 SQL 里就滤掉已过期的那些（几十行量级，不是全表扫描）
-      traceRows: listTraceBeds(sql, now),
+      // 走 state 索引取 trace 行（睡痕没有 TTL，没有时间过滤；几十行量级，不是全表扫描）
+      traceRows: listTraceBeds(sql),
       ownedBeds: listOwnedBeds(sql, now),
       offlineOccupants,
     });

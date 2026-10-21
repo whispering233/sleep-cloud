@@ -140,7 +140,7 @@ describe('缩级判据（每日唤醒评估）：已用率 < 50% 且外圈全空
     expect(previousLevelCapacity(SECOND, usedBedCount(sql, NOW), outerRingBusy(sql, FIRST, SECOND, NOW))).toBeUndefined();
   });
 
-  it('外圈有人（哪怕 29 天没回来、哪怕只留下一张未过期睡痕）→ 保留，不缩级（任何比率都不降）', () => {
+  it('外圈有人（哪怕 29 天没回来、哪怕只留下一张睡痕）→ 保留，不缩级（任何比率都不降）', () => {
     for (const used of [0, 1, atShrink(SECOND) - 1, SECOND]) {
       expect(previousLevelCapacity(SECOND, used, true)).toBeUndefined();
       expect(previousLevelCapacity(TOP, used, true)).toBeUndefined();

@@ -54,7 +54,7 @@ describe('躺下的五重校验', () => {
     expect(checkLie(input({ bed: undefined, bedNo: FIRST - 1 }))).toEqual({ ok: true, claiming: true });
   });
 
-  it('床被占用（有人或**未过期的**睡痕）→ 3002', () => {
+  it('床被占用（有人或有睡痕）→ 3002', () => {
     expect(checkLie(input({ bed: bed({ state: 'lying', ownerUserId: 'u_me' }) }))).toEqual({ ok: false, code: '3002' });
     expect(checkLie(input({ bed: bed({ state: 'asleep', ownerUserId: 'u_me' }) }))).toEqual({ ok: false, code: '3002' });
     expect(checkLie(input({ bed: bed({ state: 'trace', ownerUserId: 'u_other' }) }))).toEqual({ ok: false, code: '3002' });
@@ -64,8 +64,8 @@ describe('躺下的五重校验', () => {
     expect(checkLie(input({ bed: bed({ ownerUserId: 'u_other', ownerName: '别人' }) }))).toEqual({ ok: false, code: '3003' });
   });
 
-  it('过期睡痕 / 过期归属都由上游推导成「无占用、无主」，这里只看制度事实 → 可以认领', () => {
-    // `bed-store.effectiveBed` 把过期睡痕算成 empty、把过期归属算成无主，取行时就已经是这个形状
+  it('过期归属由上游推导成「无主」，这里只看制度事实 → 可以认领', () => {
+    // `bed-store.effectiveBed` 把过期归属算成无主，取行时就已经是这个形状
     expect(checkLie(input({ bed: bed({ state: 'empty', ownerUserId: null }) }))).toEqual({ ok: true, claiming: true });
   });
 

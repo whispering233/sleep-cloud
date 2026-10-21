@@ -18,7 +18,7 @@ import { freshSql, insertBed, rawRow } from './sqlite';
 
 /**
  * 出生点（`10-hall-runtime.md` §9）：已有归属的人落在**自己床脚前**，
- * 已有未过期睡痕的人回床上躺着，都没有的人才落到最小可认领床。
+ * 已有睡痕的人回床上躺着，都没有的人才落到最小可认领床。
  */
 function newHall(): { hall: Hall; sql: SqlStorage } {
   const sql = freshSql();
@@ -80,7 +80,7 @@ test('我的床归属已过期：落到最小可认领床，不是过期那张',
   expect(resumed.state).toBe('roaming');
 });
 
-test('我有未过期睡痕：仍回床上躺着（既有分支的回归）', () => {
+test('我有睡痕：仍回床上躺着（既有分支的回归）', () => {
   const { hall, sql } = newHall();
   const now = Date.now();
   insertBed(sql, 7, { state: 'trace', ownerUserId: 'u_me', lastSeenAt: now, updatedAt: now });

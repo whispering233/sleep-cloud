@@ -19,10 +19,7 @@ export type PersonPlacement =
   | { state: 'lying' | 'asleep' | 'trace'; bedNo: number };
 
 /** 厅内可见的人。三类占用者（走动的、床上在线的、睡痕）用同一结构表达。 */
-export type Person = { id: string; name: string; appearance: Appearance } & PersonPlacement & {
-  /** 仅睡痕条目有：睡痕的**绝对到期时刻**（epoch 毫秒）。客户端拿自己的时钟比对，到点自行淡出 */
-  traceUntil?: number;
-};
+export type Person = { id: string; name: string; appearance: Appearance } & PersonPlacement;
 
 /**
  * 自己的完整状态：比 `people` 条目多一个**归属位**。

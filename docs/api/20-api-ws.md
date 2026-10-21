@@ -99,7 +99,7 @@
 | `hall` | 是 | `{ bedCount, online }`。**没有厅名**（单厅之后它只是产品名，HUD 不显示，见 `../ui/DESIGN.md`） |
 | `me` | 是 | `{ id, name, appearance, state, x, y, bedNo?, ownedBedNo? }` 自己的完整状态。**`bedNo` 是占用**（我在床上时才有），**`ownedBedNo` 是归属**（我的床是哪张，走路时也带着）——客户端靠它在厅里走动时也能画出「我的床」的暖灯标记 |
 | `ownedBeds` | 是 | **归属位图**（§4.2）：第 `bedNo` 位为 1 表示该床有主。base64 编码 |
-| `people` | 是 | 厅内可见的人：`[{ id, name, appearance, state, x, y, bedNo?, traceUntil? }]`。**含睡痕条目**——服务端按床位 `state` 索引取出未过期的 `trace` 行并带上 `traceUntil`；在线的人则来自活着的连接。**不含自己**（自己在 `me` 里），因此客户端不必去重 |
+| `people` | 是 | 厅内可见的人：`[{ id, name, appearance, state, x, y, bedNo? }]`。**含睡痕条目**——服务端按床位 `state` 索引取出 `trace` 行（睡痕没有到期时刻，它跟归属同寿）；在线的人则来自活着的连接。**不含自己**（自己在 `me` 里），因此客户端不必去重 |
 
 ```json
 {
@@ -111,7 +111,7 @@
   "ownedBeds": "SAAAAA==",
   "people": [
     { "id": "u_1a2b3c", "name": "阿雅", "appearance": "girl", "state": "asleep", "bedNo": 3 },
-    { "id": "u_9d8e7f", "name": "夜猫", "appearance": "boy", "state": "trace", "bedNo": 8, "traceUntil": 1735728000000 },
+    { "id": "u_9d8e7f", "name": "夜猫", "appearance": "boy", "state": "trace", "bedNo": 8 },
     { "id": "u_5c4d3e", "name": "数羊", "appearance": "boy", "state": "roaming", "x": 1200, "y": 640 }
   ]
 }
@@ -130,7 +130,7 @@
 
 **归属为什么用位图编码**：床位数会涨到 9558。`bedNo` 数组在 9558 张床全有主时是 9558 个数字（约 50 KB JSON），而位图只有 `ceil(9558/8) = 1195` 字节（base64 后约 1.6 KB）。快照只在进入时发一次，但没必要为此付 50 KB。
 
-**睡痕为什么带 `traceUntil`**：睡痕到期（TTL 12 小时）**不改库、不广播**（见 `../design/config.md` §2）。服务端在生成快照时按 `updated_at + TRACE_TTL_MS` 过滤掉已过期的睡痕，并给未过期的带上**绝对到期时刻**；客户端拿自己的 `clockOffsetMs` 与之比较，到点让睡痕自行淡出。于是「睡痕消失」这件事在整个系统里没有任何定时器。
+**睡痕为什么没有到期时刻**：睡痕没有自己的 TTL——它跟归属同寿（30 天，见 `../design/10-hall-runtime.md` §6）。所以服务端不需要过滤、不需要带绝对时刻，客户端也不需要拿 `clockOffsetMs` 去比：「睡痕消失」这件事在整个系统里**没有时间概念**，它只在行被改写时发生（主人回来 / 归属释放 / 别人躺上）。客户端画暗的判据就是 `state === 'trace'`。
 
 **归属为什么带名字**：不带。所有需要显示的名字都来自「人」那一侧：在场的人来自连接；**睡痕的人服务端内存里已经没有他**，只能从床位的 `owner_name` 快照读。于是 `owner_name` 只有一个消费者：生成快照时给睡痕条目填名字。
 
@@ -143,11 +143,11 @@
 | 站在/走在地上的人 | 活着的连接 | 否 |
 | 躺在床上且在线（`lying` / `asleep`） | 活着的连接（「在床上」与「当前姿势」存在连接附加数据里） | 否 |
 | **躺/睡在床上但连接已断、仍在宽限期内** | 没有连接 → 只能查库：取出 `state` 为 `lying` / `asleep` 的床位行，按 `last_seen_at + 宽限期` 判断该不该已经变成睡痕 | **是** |
-| **睡痕（`trace`）** | 没有连接 → 只能查库：按 `state` 索引取出 `trace` 行（**并过滤掉 `updated_at + TRACE_TTL_MS` 已过的**），用 `owner_user_id` 作 id、`owner_name` 作名字、`bed_no` 作 bedNo、`updated_at + TRACE_TTL_MS` 作 `traceUntil` | **是** |
+| **睡痕（`trace`）** | 没有连接 → 只能查库：按 `state` 索引取出 `trace` 行（**没有时间过滤**），用 `owner_user_id` 作 id、`owner_name` 作名字、`bed_no` 作 bedNo | **是** |
 
 第三行是前两行的兜底：**连接附加数据是可以丢的**（对象空闲约 10 秒后即可休眠，宽限期比它长），所以「床上有人」必须有一条只在数据库里的真相——`state` 为 `lying` / `asleep` 的床位行。
 
-**睡痕行数决定快照里的额外条目数**：约等于「昨晚在床上睡着且没有主动起身、且断线不到 12 小时的人」。这是一个值得监控的指标（行数暴增说明宽限期或 TTL 设置不合理）。
+**睡痕行数决定快照里的额外条目数**：约等于「近 30 天在床上睡着、没有主动起身、此后也没回来过的人」（每条约 76 字节）。这是快照体积的主驱动因素，值得监控；条目数真的上去了，就把「`hello` 发一次全量」换成「快照 + 增量广播」（`../design/backlog.md`）。
 
 **去重规则**：睡痕行若对应的人此刻在线（例如刚重连），该行**不进** `people`——在线连接是更新的真相。
 
@@ -258,7 +258,7 @@
 me        ：自己的身份与状态（含 bedNo / ownedBedNo）
 bedCount  ：当前床位数（未过期的床号区间是 0 … bedCount−1）
 ownedBeds ：归属集合（快照位图解开后是 Set<bedNo>；bed 消息增量维护）
-people    ：可见的人 Map<id, { name, appearance, state, x, y, bedNo?, traceUntil? }>
+people    ：可见的人 Map<id, { name, appearance, state, x, y, bedNo? }>
 ```
 
 | 收到 | 动作 |
@@ -273,11 +273,10 @@ people    ：可见的人 Map<id, { name, appearance, state, x, y, bedNo?, trace
 | `chat` / `whisper` | 挂到**那个人**身上成为气泡（与选中名字共用头顶唯一一个槽位，见 `../ui/DESIGN.md`）。**没有本地消息流、没有历史**；同人后来的消息覆盖前一条；人离开大厅则气泡随之消失（气泡挂在人身上，不留“空气里的名字”） |
 | `error` | 按错误码映射为提示（静默类不提示） |
 
-**三处纯客户端推导**（都不需要服务端参与）：
+**两处纯客户端推导**（都不需要服务端参与）：
 
 | 推导 | 依据 | 为什么放客户端 |
 | :--- | :--- | :--- |
-| 睡痕过期 | 条目的 `traceUntil` 与自己的 `clockOffsetMs` | 让「睡痕消失」不需要任何定时器与广播 |
 | 色调档位 | 自己的显示态（`roaming` / `lying` / `asleep`） | 只是画面氛围，不需要协议字段（见 `../ui/DESIGN.md`「三档色调」） |
 | 位置插值 | `pos.ts` | 位置不进前端框架的渲染循环（见下） |
 

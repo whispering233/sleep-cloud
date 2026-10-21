@@ -56,7 +56,7 @@
 | 昵称 `nickname` | **用户自己输入**（入场层） | 显示 | cookie + `bed.owner_name` 快照 | 床位行随归属 |
 | 形象 `appearance` | 用户选择，未选则按 `user_id` 派生 | 渲染 | cookie + `bed.owner_appearance` | 同上 |
 | 18 岁自述位 `ageConfirmed` | 入场一次点击（**自述，不是核验**） | 法律免责表述 | cookie | 随 cookie |
-| 床位归属与占用 | 行为派生 | 「我的床」、占用状态 | `bed` | 归属 30 天无访问释放；睡痕 12 小时 |
+| 床位归属与占用 | 行为派生 | 「我的床」、占用状态 | `bed` | 归属 30 天无访问释放；**睡痕没有独立期限，跟归属同寿**（因此也不存在「你多久前睡过哪张床」的更长期记录） |
 | **IP 全文** | 平台头 `CF-Connecting-IP` | **封禁与反查的唯一硬杠杆** | `identity.last_ip` | **90 天无访问后清空**（不删行） |
 | **`country`** | `request.cf.country`（ISO-3166-1 α2；TOR 为 `T1`） | 识别跨国/匿名网络刷屏 | `identity.last_country` | 同上 |
 | **UA 哈希** | 请求头，SHA-256 后取 16 hex | 区分客户端类型；辅助关联 | `identity.ua_hash` | 同上 |
