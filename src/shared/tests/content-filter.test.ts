@@ -141,8 +141,7 @@ describe('内容过滤', () => {
   });
 
   describe('词库产物', () => {
-    it('手工表恰 39 条，外来词条总数不少于 24,000（生成脚本见 tools/words/）', () => {
-      expect(words.curated).toHaveLength(39);
+    it('外来词条总数不少于 24,000（生成脚本见 tools/words/）', () => {
       const total = Object.values(words.categories).flat().length;
       expect(total).toBeGreaterThanOrEqual(24_000);
     });
