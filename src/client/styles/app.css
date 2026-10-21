@@ -164,12 +164,44 @@
     border-radius: var(--radius-full);
   }
 
-  /* 设置齿轮：钉在动作行右端（`margin-inline-start: auto` 把中间拉开） */
+  /* 窄屏（≤360px）：动作行五颗胶囊的原有间距会把右端齿轮顶出屏（实测 320px 下溢出 24px）。
+     只收紧两处留白（胶囊左右 padding 12→8、组间 12→8），**不缩 44px 触击目标**、
+     也不改文案——320px 是能覆盖到的最小宽度，再窄的屏不再往下适配 */
+  @media (max-width: 360px) {
+    .action-row {
+      gap: var(--spacing-sm);
+    }
+
+    .hud-action {
+      padding: 0 var(--spacing-sm);
+    }
+  }
+
+  /* 设置齿轮与阅读入口：钉在动作行右端，`margin-inline-start: auto` 把中间拉开。
+     组内 8px（`docs/ui/DESIGN.md` 的 `action-row` 行） */
   .hud-settings {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
+    gap: var(--spacing-sm);
     margin-inline-start: auto;
+  }
+
+  /* 阅读入口「!」：44×44 正方形（可见文字只有一个字符，不让胶囊自己变宽），
+     墨色与 `.hud-action` 一致（它是内容入口，不是齿轮那种次要入口） */
+  /* 阅读入口：44×44 正方形（只有图标）。图标吃 `neutral`（主入口，比齿轮高一档），
+     画法与齿轮同一套：`currentColor` 描边 1.5px、20×20 绘制区 */
+  .hud-read {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .hud-read-icon {
+    width: 20px;
+    height: 20px;
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
@@ -370,6 +402,68 @@
 
   .quick-phrase {
     width: 100%;
+  }
+
+  /* 类型文本 = 插槽面板的第二个内容（`../design/50-slot-panel.md` §附）：
+     正文顶对齐、**自己滚**，操作按钮钉在右下角——多长的一条都不会把按钮顶出屏幕。
+     行高写死 1.7：`tokens.css` 目前压根没导出 line-height（`var(--text-*--line-height)` 全是悬念变量），
+     而读长句 1.7 是 `typography.reading` 在 `docs/ui/DESIGN.md` 里写下的值 */
+  .type-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    height: 100%;
+    padding: var(--spacing-md);
+  }
+
+  .type-text-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: var(--color-neutral);
+    font-family: var(--font-reading);
+    font-size: var(--text-reading);
+    font-weight: var(--font-weight-reading);
+    line-height: 1.7;
+    letter-spacing: var(--tracking-reading);
+  }
+
+  /* 每行是一个 `<p>`（`paragraphsOf` 把任何换行都切开），所以**每行都首行缩进**；
+     行间空一整行：`1.7em` 正好是这个字号下的一个行高（行高写死 1.7，见上） */
+  .type-text-body p {
+    margin: 0;
+    text-indent: 2em;
+  }
+
+  .type-text-body p + p {
+    margin-block-start: 1.7em;
+  }
+
+  .type-text-note {
+    color: var(--color-neutral-muted);
+    text-indent: 0;
+  }
+
+  /* 按钮行：右对齐、「随机」与「再看一遍」互斥，同一格换字/换图标 */
+  .type-text-actions {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* 「随机」只有图标，所以也是 44×44 正方形；图标吃 `currentColor`，与胶囊的墨色同源 */
+  .type-text-random {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+
+  .type-text-random svg {
+    width: 20px;
+    height: 20px;
   }
 
   /* 排版归网格：空闲在第 3 行（贴底），打字态挪到第 2 行（插槽面板接在下面） */

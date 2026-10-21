@@ -1,4 +1,4 @@
-import { ZOOM_TIERS } from '../shared/constants';
+import { TYPE_TEXTS_PER_CATEGORY, ZOOM_TIERS } from '../shared/constants';
 import type { ZoomMode } from './zoom';
 
 /**
@@ -15,6 +15,7 @@ export const PREFS = {
   weather: 'sc.weather',
   sound: 'sc.sound',
   aboutSeen: 'sc.about.seen',
+  readSeen: 'sc.read.seen',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
@@ -212,4 +213,53 @@ export function readAboutSeen(storage?: PrefStorage): string | undefined {
 /** 写 `sc.about.seen`：值就是那一刻的公告版本（只有自动路径且勾选着关才写）。 */
 export function writeAboutSeen(version: string, storage?: PrefStorage): void {
   writePref(PREFS.aboutSeen, { v: PREFS_VERSION, seen: version }, storage);
+}
+
+/** 分类 id / 条目 id 的长度上限（与数据包校验、`40-client-storage.md` §3 白名单同一量）。 */
+const READ_ID_MAX_LEN = 32;
+
+/** `sc.read.seen` 的值：`seen` = 每个分类抽到过的条目 id，`current` = 每个分类的当前条。 */
+export type ReadProgress = {
+  seen: Record<string, string[]>;
+  current: Record<string, string>;
+};
+
+type StoredReadProgress = ReadProgress & { v: number };
+
+function isReadId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= READ_ID_MAX_LEN;
+}
+
+function isReadMap(value: unknown): value is Record<string, string> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.entries(value).every(([key, id]) => isReadId(key) && isReadId(id));
+}
+
+function isSeenMap(value: unknown): value is Record<string, string[]> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.entries(value).every(
+    ([key, ids]) =>
+      isReadId(key) &&
+      Array.isArray(ids) &&
+      ids.length <= TYPE_TEXTS_PER_CATEGORY &&
+      ids.every((id) => isReadId(id)),
+  );
+}
+
+/** 白名单只收形状（`40-client-storage.md` §3）：多出来的字段不是错误，只是不读。 */
+function isStoredReadProgress(value: unknown): value is StoredReadProgress {
+  if (typeof value !== 'object' || value === null) return false;
+  const { seen, current } = value as { seen?: unknown; current?: unknown };
+  return isSeenMap(seen) && isReadMap(current);
+}
+
+/** 读 `sc.read.seen`：缺键 / 坏值 / 版本不符一律回「一条都没读过、没有当前条」。 */
+export function readProgress(storage?: PrefStorage): ReadProgress {
+  const fallback: ReadProgress = { seen: {}, current: {} };
+  const { seen, current } = readPref(PREFS.readSeen, isStoredReadProgress, { v: PREFS_VERSION, ...fallback }, storage);
+  return { seen, current };
+}
+
+/** 写 `sc.read.seen`：`seen` 与 `current` **一次写落**，不出现「当前条写了、seen 没写」的中间态。 */
+export function writeProgress(progress: ReadProgress, storage?: PrefStorage): void {
+  writePref(PREFS.readSeen, { v: PREFS_VERSION, ...progress }, storage);
 }

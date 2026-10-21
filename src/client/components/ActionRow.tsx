@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -215,6 +215,33 @@ export function ActionRow() {
             </button>
           ) : (
             <>
+              {/* 「!」= 阅读入口（`docs/design/50-slot-panel.md` §附）：齿轮左侧、组内 8px。
+                  只在空闲态出现——非空闲态那格被「收起」占住，两者天然互斥 */}
+              <button
+                key="read"
+                type="button"
+                className="hud-action hud-read"
+                aria-label="随机阅读"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => setComposer({ kind: 'read' })}
+              >
+                {/* 内联 SVG 书本图标（与齿轮同一套画法：`currentColor` 描边、20×20 绘制区）。
+                    可见文字只写一个 `!` 会让这颗按钮显得空（真实使用反馈） */}
+                <svg
+                  className="hud-read-icon"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  {/* 摊开的一本书：左页 2.6→9.4、右页 10.6→17.4，书脊一根竖线 */}
+                  <path d="M2.6 5.2c2.1-1.1 4.4-1.1 7.4.6 3-1.7 5.3-1.7 7.4-.6v10.2c-2.1-1.1-4.4-1.1-7.4.6-3-1.7-5.3-1.7-7.4-.6z" />
+                  <path d="M10 5.8v10.2" />
+                </svg>
+              </button>
               {/* 齿轮：菜单的开关（两条路径的差别全写在 `gearMenuProps` 里） */}
               <button
                 key="gear"

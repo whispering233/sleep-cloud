@@ -184,6 +184,18 @@ export const REPORT_DEDUP_MS = 24 * 60 * 60 * 1000;
 /** 举报行（含证据）的留存期，并入每日唤醒同批删除。 */
 export const REPORT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
+/** 类型文本（`docs/design/50-slot-panel.md` §附）单条长度上限（**trim 后**按字符计）。 */
+export const TYPE_TEXT_MAX_LEN = 200;
+
+/** 单条最多**段数**（连续空行分段）。长度与段数超限都是**丢掉那一条**，不截断。 */
+export const TYPE_TEXT_MAX_PARAS = 8;
+
+/**
+ * 每个内容分类的条目上限。同时是 `sc.read.seen` 的体积闸门：120 个 ≤ 32 字符的 id ≈ 1 KB
+ * （`docs/design/40-client-storage.md` §1.1 判据 3）。
+ */
+export const TYPE_TEXTS_PER_CATEGORY = 120;
+
 /**
  * 世界渲染的对象池大小（**按床视图计**，每张床的贴片与贴图都在同一个视图容器里）。
  * 1× 时可见范围约一屏 10 床 + 邻接缓冲，64 足够覆盖两屏抖动；**拉远到 `ZOOM_MIN` 时同屏约 190 个床位**，

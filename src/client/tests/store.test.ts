@@ -22,11 +22,15 @@ import {
   openAbout,
   selectPerson,
   setBedDirection,
+  drawReadItem,
+  ensureReadItem,
+  replayRead,
   setComposer,
   setState,
   startReport,
   subscribe,
 } from '../store';
+import type { TypeTextItem } from '../type-texts';
 
 const BED_COUNT = 114;
 
@@ -516,5 +520,62 @@ describe('举报回执', () => {
     startReport('u_other');
     selectPerson('u_third');
     expect(getState().composer).toBe('idle');
+  });
+});
+
+describe('类型文本的阅读进度', () => {
+  const ITEMS: TypeTextItem[] = [
+    { id: 'j1', text: '一' },
+    { id: 'j2', text: '二' },
+    { id: 'j3', text: '三' },
+  ];
+  const reset = (): void => setState({ readProgress: { seen: {}, current: {} } });
+
+  beforeEach(reset);
+
+  it('首次打开抽一条：见它、也记成当前条', () => {
+    const item = ensureReadItem('joke', ITEMS);
+    expect(item).not.toBeNull();
+    expect(getState().readProgress.current.joke).toBe(item?.id);
+    expect(getState().readProgress.seen.joke).toEqual([item?.id]);
+  });
+
+  it('再打开还是那条（不抽新的），直到显式抽签', () => {
+    const first = ensureReadItem('joke', ITEMS);
+    expect(ensureReadItem('joke', ITEMS)).toEqual(first);
+  });
+
+  it('当前条数据里已不存在 → 当作没有，重新抽一条', () => {
+    setState({ readProgress: { seen: { joke: ['gone'] }, current: { joke: 'gone' } } });
+    const item = ensureReadItem('joke', ITEMS);
+    expect(item).not.toBeNull();
+    expect(ITEMS.some((each) => each.id === item?.id)).toBe(true);
+  });
+
+  it('抽签不重复：抽三条正好把三条各抽一遍，第四条抽不出来', () => {
+    const drawn = [drawReadItem('joke', ITEMS), drawReadItem('joke', ITEMS), drawReadItem('joke', ITEMS)];
+    expect(new Set(drawn.map((each) => each?.id)).size).toBe(3);
+    expect(drawReadItem('joke', ITEMS)).toBeNull();
+  });
+
+  it('池里只剩当前条时不排除它（否则永远抽不出来）', () => {
+    setState({ readProgress: { seen: { joke: ['j1', 'j2'] }, current: { joke: 'j3' } } });
+    expect(replayRead('joke', ITEMS)).not.toBeNull();
+    expect(getState().readProgress.seen.joke).toHaveLength(1);
+  });
+
+  it('再看一遍：清空 seen 再抽，且不会原地不动（池长 ≥2 时排除当前条）', () => {
+    setState({ readProgress: { seen: { joke: ['j1', 'j2'] }, current: { joke: 'j2' } } });
+    const next = replayRead('joke', ITEMS);
+    expect(next?.id).not.toBe('j2');
+    expect(getState().readProgress.current.joke).toBe(next?.id);
+    expect(getState().readProgress.seen.joke).toEqual([next?.id]);
+  });
+
+  it('单个分类的进度不互相覆盖', () => {
+    drawReadItem('joke', ITEMS);
+    setState({ readProgress: { ...getState().readProgress, current: { ...getState().readProgress.current, cat2: 'x1' } } });
+    drawReadItem('joke', ITEMS);
+    expect(getState().readProgress.current.cat2).toBe('x1');
   });
 });

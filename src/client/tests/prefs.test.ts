@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
+import { TYPE_TEXTS_PER_CATEGORY } from '../../shared/constants';
 import {
   PREFS,
   readAboutSeen,
+  readProgress,
   readSound,
   readWeather,
   readZoomMode,
   writeAboutSeen,
+  writeProgress,
   writeSound,
   writeWeather,
 } from '../prefs';
@@ -178,6 +181,55 @@ describe('说明面板已读（sc.about.seen）', () => {
     expect(readAboutSeen(storage)).toHaveLength(32);
     storage.data.set(PREFS.aboutSeen, JSON.stringify({ v: 1, seen: 'y'.repeat(33) }));
     expect(readAboutSeen(storage)).toBeUndefined();
+  });
+});
+
+describe('阅读进度（sc.read.seen）', () => {
+  it('缺键 → 两边都是空映射（一条都没读过），且不因此写入一条键', () => {
+    const storage = fakeStorage();
+    expect(readProgress(storage)).toEqual({ seen: {}, current: {} });
+    expect(storage.data.has(PREFS.readSeen)).toBe(false);
+  });
+
+  it('写后读回；落盘形状是 { v: 1, seen, current }，两个字段一起落地', () => {
+    const storage = fakeStorage();
+    writeProgress({ seen: { joke: ['j1', 'j3'] }, current: { joke: 'j3' } }, storage);
+    expect(JSON.parse(storage.data.get(PREFS.readSeen) ?? '')).toEqual({
+      v: 1,
+      seen: { joke: ['j1', 'j3'] },
+      current: { joke: 'j3' },
+    });
+    expect(readProgress(storage)).toEqual({ seen: { joke: ['j1', 'j3'] }, current: { joke: 'j3' } });
+  });
+
+  it('坏 JSON / 版本不符 / 形状不对 → 回默认，且该键已被删', () => {
+    const tooMany = Array.from({ length: TYPE_TEXTS_PER_CATEGORY + 1 }, (_, i) => `j${i}`);
+    const raws = [
+      '{不是 JSON',
+      JSON.stringify({ v: 2, seen: {}, current: {} }),
+      JSON.stringify({ v: 1, seen: ['j1'], current: {} }),
+      JSON.stringify({ v: 1, seen: {}, current: { joke: 7 } }),
+      JSON.stringify({ v: 1, seen: { joke: ['j1'] }, current: { [`x`.repeat(33)]: 'j1' } }),
+      JSON.stringify({ v: 1, seen: { joke: ['y'.repeat(33)] }, current: {} }),
+      JSON.stringify({ v: 1, seen: { joke: tooMany }, current: {} }),
+    ];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.readSeen, raw);
+      expect(readProgress(storage)).toEqual({ seen: {}, current: {} });
+      expect(storage.data.has(PREFS.readSeen)).toBe(false);
+    }
+  });
+
+  it('每类正好 120 条仍收；多出来的字段不是错误（只是不读）', () => {
+    const storage = fakeStorage();
+    const ids = Array.from({ length: TYPE_TEXTS_PER_CATEGORY }, (_, i) => `j${i}`);
+    storage.data.set(
+      PREFS.readSeen,
+      JSON.stringify({ v: 1, seen: { joke: ids }, current: { joke: 'j0' }, extra: 'ignored' }),
+    );
+    expect(readProgress(storage).seen.joke).toHaveLength(TYPE_TEXTS_PER_CATEGORY);
+    expect(readProgress(storage).current.joke).toBe('j0');
   });
 });
 
