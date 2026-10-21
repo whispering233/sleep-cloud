@@ -43,6 +43,8 @@
 3. **一份库就是整个世界。** 只有一个厅、一个房间服务实例、一份私有 SQLite；不做多厅、不做跨厅协调。
 4. **布局是纯函数，不许有场景文件。** 床号 ↔ 位置、厅的区域、可走性只能来自 `src/shared/layout.ts`（前端与房间服务共用同一份）；禁止把坐标、床位数、区域尺寸散落成各处的常量或数据文件。
 
+- **公开仓库不写自用信息。** 入口域名、所属 zone、账号 ID、真实 Worker 名在文档与注释里一律写占位符（`<入口域名>`、`<入口 zone>`）；真实值只在未入库的 `wrangler.local.jsonc` 与 GitHub 的 `production` environment 里。
+
 **时间与成本**（代价最高的一类）
 
 5. **三种机制职责不重叠**：必须在未来某时刻发生的 → 持久唤醒（alarm）；只在工作中才需要的 → 内存循环；能算出来的 → **读取时推导**（睡着、睡痕、归属过期）。
@@ -154,6 +156,7 @@
 ## 开发流程（本项目）
 
 - **一次只做一张卡**，卡片在 `docs/design/tasks.md`；完成后从该文件删除（它不是历史记录）。
+- **质量门也在 CI 上跑**：推版本 tag 后 `verify` 在干净 runner 上重跑三条基线 + 版本一致性，`deploy` 再按 `/api/health` 判上线（`build.md` §4.4）。本地不过就别打 tag。
 - **改设计先改文档**：`docs/` 与代码不一致时，先改文档再改代码。**文档改完、代码未跟上期间单测会红**（协议/错误码/schema 的镜像测试），这是预期顺序，由对应卡片收口。
 - **UI 验证交 subAgent**，不要用大量截图占用主会话上下文；**响应式、触摸、软键盘类验收默认用宿主 Windows 上的 Android 模拟器**（真 Chrome + 真 IME + 触摸分发），**不是**桌面浏览器仿真手机视口——桌面仿真只是模拟器起不来时的降级，必须在结论里写明。**哪类测试该用哪个环境见 `docs/design/test.md`**（含模拟器配方与四个坑）；真手指触摸、低端机帧率、真机低亮度观感仍只能在真机上得结论。
 - **与免费额度相关的结论只看平台用量面板**与实测数据，不接受推算。
@@ -184,7 +187,7 @@ npm run typecheck
 # 位置同步观测：?debug=1 → 控制台每 10s 一行 leadMs / regressPx / posAge / tickSpan（p50/p95/max；
 #   出现倒退整行前置 !!）；判据与口径见 docs/design/30-movement-sync.md §6.2
 
-# 部署（需要平台账号凭据，见 docs/design/build.md §4）
+# 部署（应急：手工；正常发版推 tag 由 CI 完成，见 docs/design/build.md §4.4）
 npm run deploy
 
 # 设计令牌：校验与导出（0 error / 0 warning 是当前基线；改 DESIGN.md 后重新导出）
@@ -194,4 +197,4 @@ npm run tokens
 
 ## 版本与变更
 
-- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推送 → 部署 → 打标签）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
+- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推 main → 推 tag → CI 部署与 Release）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。

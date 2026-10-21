@@ -19,7 +19,7 @@
 | 单元测试 | `npm test` |
 | 类型检查 | `npm run typecheck` |
 | 设计令牌校验 / 生成 | `npm run lint:design` / `npm run tokens` |
-| 部署 | `npm run deploy` |
+| 部署（应急：本机手工） | `npm run deploy`——**正常发版由推 tag 触发 CI 自动部署**，见 §4.4 |
 
 | 目的 | 做法 |
 | :--- | :--- |
@@ -44,13 +44,15 @@
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**分包固定为三块**（`vite.config.ts` 的 `rolldownOptions.output.codeSplitting`）：`index`（React + UI 层）、`world`（世界层，创建画布时动态导入）、`phaser`（引擎单独一块）。**引擎分块是为了缓存**：引擎 chunk 的 hash 只在升级 Phaser 时变化，业务代码改动不会让老用户重下引擎（否则两者同块，改任何一行界面代码都要重下 363 KB gzip）。构建末尾那条 `(!) Some chunks are larger than 500 kB` 是**引擎自己超线**（1374 kB），不是业务代码膨胀；**刻意不调 `chunkSizeWarningLimit`**，好让这条提示继续对业务代码生效。实测产物：`index` 249 kB / gzip 79 kB、`world` 16 kB / gzip 6 kB、`phaser` 1374 kB / gzip 357 kB |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
 | 场景数据 | **没有场景文件**：床号 ↔ 位置、厅的区域、可走性由 `src/shared/layout.ts` 的纯函数现算（前端与厅服务共用同一份，见 `../design/20-layout.md` §4）。`public/` 只放素材 |
-| 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。`npm run deploy` 即是构建 + 上传 |
+| 后端产物 | 由平台的构建链自动打包（含 Hono 与房间服务类），无需手工产物。CI 里是 `npm run build` + `npx wrangler deploy`，本机应急路径合成一条 `npm run deploy` |
 
 **包体积约束**：平台单包上限 64 MiB（解压后）。Phaser + React + Hono 的量级远低于此。静态资源单文件上限 25 MiB、单版本文件数上限 20,000 个（前端资源远低于此）。
 
 **静态资源的缓存头由 `public/_headers` 给**（Workers 静态资源会解析构建产物根目录的这个文件，Vite 会把 `public/` 原样拷进 `dist/`）：`/audio/*` 是 `public, max-age=31536000, immutable`。平台默认头是 `public, max-age=0, must-revalidate` + `ETag`——那只保证「不重下」，每次进厅仍要发一次条件请求；音频是懒加载的 1.9 MB，值得免掉这一次往返。**代价**：`immutable` 下浏览器不会再来问，所以换素材必须**换文件名里的版本号**（`rain-loop.v1.wav` → `v2`）。
 
 ## 4. 部署
+
+**正常发版不在这台机器上部署**：推版本 tag 即触发 CI 自动部署（§4.4）。下面这一节是**应急路径**——CI 不可用、或要立刻在本机回滚/试探时才走。
 
 | 步骤 | 说明 |
 | :--- | :--- |
@@ -65,7 +67,7 @@
 | :--- | :--- | :--- |
 | `workers_dev` | `false` | 面板上关掉它，但 `wrangler deploy` 会按配置重新打开——**配置才是权威**，所以写进文件 |
 | `preview_urls` | `false` | 同上：版本预览 URL 也走 `workers.dev`，一起关掉 |
-| `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。路由带着 zone 名，所以**不写在入库的 `wrangler.jsonc` 里**，而写在未入库的 `wrangler.local.jsonc`（部署命令已改为 `--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
+| `routes` | 见下方「生产入口」 | 生产入口是一条**路由**（不是自定义域名）。**入库的 `wrangler.jsonc` 里那两个值是占位符**（`__ENTRY_HOST__` / `__ENTRY_ZONE__`），CI 部署前用 Environment secret 替换（§4.4）；未入库的 `wrangler.local.jsonc` 存真实值，只给本机应急部署用（`--config` 它）。要点：pattern 的 hostname 是入口域名、`zone_name` 是它所属的 zone，**必须显式写**（不写报 10082） |
 | `observability` | `enabled: true` | 打开平台日志，生产出问题就靠它（`wrangler tail` 也能看） |
 
 **典型症状：`wrangler` 报 `fetch failed`（或「Not logged in … the Cloudflare auth server could not be reached」）**
@@ -93,22 +95,6 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 `/api/me` 与 `/api/ws` 返回 500 `text/plain` 的 `Internal Server Error`，浏览器控制台只说
 `Unexpected token 'I', "Internal S"... is not valid JSON`。原因：会话密钥缺失时直接报错（绝不静默使用可猜的密钥）。
 
-### 4.3 发版（Release）
-
-一次发版 = 版本号 + CHANGELOG + 提交 + 部署 + 打标签 + 推送，**顺序固定**：
-
-| 步骤 | 动作 |
-| :--- | :--- |
-| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
-| 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design` |
-| 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
-| 4 | `npm run deploy` + §4 的冒烟检查（`GET /api/health`、打开页面、走一遍完整循环） |
-| 5 | **冒烟通过后**才 `git tag vX.Y.Z` → `git push origin vX.Y.Z` |
-
-**为什么标签排在最后**：标签是公开且难撤的产物。部署失败或冒烟不过时还没有标签，仓库里不会留下一个「标了发布但没上线」的版本；推送 `main` 则可以早做（远端是事实来源）。`release.yml` 用推送的标签建 GitHub Release，正文取自 `CHANGELOG.md` 里对应的那一段 —— 所以那一段的版本号必须与标签逐字对应。
-
-**多账号的机器先切账号**：`gh auth status` 看当前是谁，`gh auth switch` 选对推送 `origin` 与建 Release 的那个账号（`gh` 与 `wrangler` 是两套凭据，平台侧用 `npx wrangler whoami` 核对）。
-
 ### 4.2 生产入口：自定义域名或路由（默认的 `workers.dev` 不能用）
 
 部署默认给出的 `*.workers.dev` 地址在部分网络里**整个域名的 SNI 被阻断**（本机实测：同一个 Cloudflare IP，SNI 换成 `cloudflare.com` 能握手，换成 `workers.dev` 系列直接收到 TCP RST）。
@@ -121,7 +107,7 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 
 **生产入口是一条路由，不是一个自定义域名**（`wrangler deploy` 的输出会打印它）：pattern 是入口域名（对外公开的只是这个地址），`zone_name` 是它所属的 zone。
 
-**路由与 zone 不写进仓库**：它带着 zone 名，所以放在本地未入库的 `wrangler.local.jsonc` 里（`.gitignore` 兜住），`npm run deploy` 已改成 `wrangler deploy --config wrangler.local.jsonc`。自己部署时照抄那个文件的模板：
+**路由与 zone 不以明文入库**：入库的配置只放占位符 `__ENTRY_HOST__` / `__ENTRY_ZONE__`（CI 用 Environment secret 替换，见 §4.4）。真实值不进仓库：本机未入库的 `wrangler.local.jsonc` 里（`.gitignore` 兜住），`npm run deploy` 已改成 `wrangler deploy --config wrangler.local.jsonc`。另一处是 GitHub 的 `production` environment secret。自己部署时照抄那个文件的模板：
 
 ```jsonc
 "routes": [{ "pattern": "<你的入口域名>/*", "zone_name": "<该入口域名所在的 zone>" }]
@@ -135,7 +121,7 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 | :--- | :--- |
 | `{ pattern: "<入口域名>/*" }`（不写 zone） | `Can't infer zone from route, please specify zone for "…" [code: 10082]`。**更麻烦的是这是「部分更新且不回滚」**：当场把当时那条自定义域名摘掉，那个域名随后连续 **530**；修法是改回能通过 trigger 同步的写法再 `deploy` 一次 |
 | `{ …, zone_name: "<写成了另一个 zone>" }` | `Could not find zone for <写错的那个>. Make sure the domain is set up to be proxied by Cloudflare.`——那个 zone 不在本账号里（实测 `GET /zones?name=<它>` 返回空） |
-| `{ pattern: "<入口域名>/*", zone_name: "<入口域名真正所属的 zone>" }` | **通过**：`Deployed sleep-cloud triggers → <入口域名>/* (zone name: <那个 zone>)` |
+| `{ pattern: "<入口域名>/*", zone_name: "<入口域名真正所属的 zone>" }` | **通过**：`Deployed <Worker 名> triggers → <入口域名>/* (zone name: <那个 zone>)` |
 
 入口域名与它所属 zone 的**根域**都不挂 Worker。
 
@@ -160,6 +146,65 @@ NODE_OPTIONS="--no-network-family-autoselection --dns-result-order=ipv4first" wr
 HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带 `Secure`，本地 http 开发才不加。
 
 **部署对已连接用户的影响**：平台在运行时更新时会给出宽限窗口，之后进程可能终止，已建立的连接会被关闭。对应到我们的设计：关闭即进入宽限期，睡痕逻辑照常生效，用户重连后恢复到他的床边或床上。**所以部署是安全的，不需要停服公告。**
+
+### 4.3 发版（Release）
+
+一次发版 = 版本号 + CHANGELOG + 提交 + 推 tag（部署与 Release 由 CI 完成），**顺序固定**：
+
+| 步骤 | 动作 |
+| :--- | :--- |
+| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
+| 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
+| 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
+| 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
+| 5 | 全绿即完成；任一环红了的失败形态与恢复见 §4.4 |
+
+**顺序为什么从「部署在 tag 之前」改成「tag 触发一切」**：标签仍是公开且难撤的产物，但「有没有发布」的判据从「tag 是否存在」换成「Release 是否存在」——Release 只在部署与冒烟都通过后才建，所以部署失败时仓库里仍不会出现「标了发布但没上线」的版本。代价是 tag 会先存在（可删可重推），恢复方式是修好后**只重跑失败的 job**（`verify` 红要改代码，那一步只能删 tag 重推，见 §4.4），不一定要删 tag。
+
+**多账号的机器先切账号**：`gh auth status` 看当前是谁，`gh auth switch` 选对推送 `origin` 与建 Release 的那个账号（`gh` 与 `wrangler` 是两套凭据，平台侧用 `npx wrangler whoami` 核对）。
+
+### 4.4 CI 自动部署（正常发版路径）
+
+推一个版本 tag 就是一次发版。`.github/workflows/release.yml` 里三个 job 串行，任一环失败即停：
+
+带后缀的预发布 tag（`vX.Y.Z-ci` 这类）**只部署、不建 Release**：版本一致性只比对基版本 `X.Y.Z`（与 `package.json` 的 `version`、`CHANGELOG.md` 的 `## [vX.Y.Z]` 段对齐），`release` job 因 `if` 跳过。它的用途是验证部署链路本身。
+
+| job | 做什么 | 失败后 |
+| :--- | :--- | :--- |
+| `verify` | `npm ci` → `npm run tokens`（`typecheck` 与 `test` 依赖它生成的 `src/client/styles/tokens.*`）→ `npm test` → `npm run typecheck` → `npm run lint:design` → **版本一致性**：标签去掉 `v` 必须等于 `package.json` 的 `version`，且 `CHANGELOG.md` 里存在 `## [vX.Y.Z]` 那一段 | 不部署、不建 Release |
+| `deploy` | `npm ci` → `npm run build`（`assets.directory` 指向 `dist/`，而 deploy 跑在另一台 runner 上，拿不到 verify 的产物）→ 把两个占位符换成真实值 → `npx wrangler deploy` → `GET /api/health`（失败重试 3 次、间隔 10 s） | 不建 Release |
+| `release` | 用 `CHANGELOG.md` 里那一段正文建 GitHub Release | — |
+
+版本一致性放在 `verify` 而不是等 `release` 报错：那段对不上时 `release` 一定失败，排到它后面就成了「已上线但没 Release」。
+
+**凭据全在 GitHub 的 `production` environment 里**（只有 `deploy` job 声明 `environment: production`，所以只有它读得到）。仓库级 secret 一个都不放。写入后原文读不回来，只能覆盖或删除；外部 fork 的 PR 默认拿不到。
+
+| 名字 | 种类 | 内容 |
+| :--- | :--- | :--- |
+| `CLOUDFLARE_API_TOKEN` | secret | 平台 API Token，**按单个 Worker 授权**（2026-09-15 起的 per-Worker 角色，不要用旧的账号级 `Workers Scripts:Edit`）：策略一 = `Developer Platform → Individual Workers`，scope 选本项目的 Worker，勾 `Metadata Read-only` + `Content Read-only` + `Editor`（`Admin` 多一个删除能力，不给）；策略二 = zone 级 `Workers Routes:Edit`，限入口域名所属的那一个 zone；策略三 = `Zone:Read`，限同一个 zone。**两条幂区权限不能省**：per-Worker 角色管不到路由，wrangler 在 triggers 阶段会调 `GET /zones?name=…` 与 `/zones/:zone/workers/routes`。第三条不是可选项：没有她 `zone_name` 反查直接报错——而那一步发生在**新代码上传之后**（见本节末尾的失败形态）。`Editor` 不包含「新建 Worker」，本仓库的 Worker 已存在，够用 |
+| `CLOUDFLARE_ACCOUNT_ID` | secret | 账号 ID。token 属于多账号时必须显式给，否则 wrangler 报「more than one account」 |
+| `ENTRY_HOST` | secret | 入口域名的 hostname（不带 `/*`） |
+| `ENTRY_ZONE` | secret | 入口域名所属的 zone |
+
+**为什么不用 `wrangler-action`**：wrangler 已锁在 `devDependencies`，`npx wrangler deploy` 用的就是 `package-lock.json` 定的那个版本，与本地逐字相同；第三方 action 自己装的 wrangler 版本不一定一致，而这类差异最难查。
+
+**为什么 CI 不带那两个 `NODE_OPTIONS` 开关**：它们是本机网络（IPv6 无路由 + happy-eyeballs 250 ms 超时）的对策，runner 上没有这个形态。
+
+**`wrangler.local.jsonc` 与 CI 并存**：本地 `npm run deploy` 保留为应急路径，它吃真实路由、不碰占位符。**不要在本地裸跑 `wrangler deploy`**——它会先把代码传上去，再在 triggers 阶段把占位符当路由去解析。
+
+**没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。
+
+**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded <Worker 名> (5.33 sec)` → `Deployed <Worker 名> triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
+
+失败形态分两段，别弄混：
+
+| 失败发生在 | 现象 | 恢复 |
+| :--- | :--- | :--- |
+| 上传**之前**（token 缺 per-Worker `Editor`、`npm run build` 红） | tag 已存在、未上线、无 Release | 只重跑 `deploy` job（上传幂等） |
+| 上传**之后**（triggers 阶段：`Zone:Read` 缺失、10082、路由被别的 Worker 占用） | **代码已上线、无 Release** | 先补权限，再只重跑 `deploy` job |
+| `verify`（含版本一致性） | 一个都没部署 | **删 tag 重推**：`git push origin :vX.Y.Z`，修好提交后再打同名 tag 推上去；重跑同一个 job 只会同因再红 |
+
+重跑整个工作流会连 `release` 一起重跑，而 Release 已存在时会失败——那种情况删掉 Release 再推同名的新 tag 重来。
 
 ## 5. 免费额度监控（第一版必看）
 

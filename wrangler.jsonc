@@ -5,13 +5,14 @@
   "compatibility_date": "2026-10-14",
 
   // workers.dev 与 Preview URLs 一律关掉；本机开发不受影响（npm run dev 从 localhost:8787 起自动 +1 找空闲端口）。
-  // **生产入口那条路由不写在这里**——它带着 zone 名，只放在本地未入库的 `wrangler.local.jsonc`
-  // 里（见 .gitignore 与 package.json 的 deploy 脚本）。自己部署时照抄那个文件里的模板：
-  //   "routes": [{ "pattern": "<你的入口域名>/*", "zone_name": "<该入口域名所在的 zone>" }]
+  // **生产入口是一条路由，两个值都是占位符**：真实入口域名与 zone 不进仓库，CI 部署前用
+  // production environment 的 secret 替换（docs/design/build.md §4.4）；本机应急部署吃未入库的
+  // `wrangler.local.jsonc`（见 .gitignore 与 package.json 的 deploy 脚本）。
   // **zone_name 必须显式写**：不写 wrangler 推断不出来，报 `Can't infer zone from route ... [code: 10082]`。
   // 细节与踩过的坑见 docs/design/build.md §4.2。
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [{ "pattern": "__ENTRY_HOST__/*", "zone_name": "__ENTRY_ZONE__" }],
 
   // 打开后能在平台面板里看 Worker 日志（排查生产问题就靠它）
   "observability": { "enabled": true },
