@@ -16,13 +16,15 @@ import type { SnapshotMessage, UpstreamMessage } from '../../shared/protocol';
 import { writeBedCount } from '../bed-store';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
+import { recordIdentity, upsertBlock } from '../risk';
 import { freshSql, insertBed, rawRow } from './sqlite';
 
 /**
- * 生命周期事件的取值契约（`docs/design/100-log.md` §3）：`enter` / `lie` / `sleep` / `wake` / `settle` /
- * `snapshot`。断言的是**事件本身**（出口写的那一个对象），不是下游的聚合口径。
+ * 事件的取值契约（`docs/design/100-log.md` §3）：`enter` / `lie` / `sleep` / `wake` / `settle` / `snapshot` /
+ * `chat` / `censor` / `report` / `block` / `tick`。断言的是**事件本身**（出口写的那一个对象），不是下游的聚合口径。
  *
- * 这六个事件不在 §4 的四类闸门里（`reject` / `censor` / `drop` / `err`），所以不需要每个用例换一副模块图。
+ * 只有 `censor` 落在 §4 的闸门里（`reject` / `censor` / `drop` / `err`，30 条/分钟）；本文件写的 `censor`
+ * 一共几条，远不到那个额度，所以不需要每个用例换一副模块图。
  */
 class FakeSocket {
   readonly sent: string[] = [];
@@ -270,4 +272,116 @@ test('settle：一轮结算一条，wakes/traces 来自已取到的超期行，f
 
   // 两张超期床（其一张是睡痕）；外圈释放后全空 → 从第二档缩回第一档
   expect(events('settle')).toEqual([{ ev: 'settle', wakes: 2, traces: 1, from: SECOND, to: FIRST, ms: 0 }]);
+});
+
+/**
+ * 平台在关闭事件里仍会列出这一条，事件结束后才把它摘掉：假 ctx 的数组是静态的，所以手动摘。
+ * （循环该不该留，看的是事件那一刻还有没有别人活着。）
+ */
+async function closeAndRemove(hall: Hall, sockets: FakeSocket[], ws: FakeSocket): Promise<void> {
+  await hall.webSocketClose(ws as unknown as WebSocket);
+  sockets.splice(sockets.indexOf(ws), 1);
+}
+
+test('chat{len,dm} + censor{kind,n}：全局聊天记打码后那一份的长度，两个类目各一条（n 是各自的字符数）', () => {
+  const ws = new FakeSocket();
+  const hall = newHall(freshSql(), [ws]);
+
+  feed(hall, ws, roaming(NOW), { t: 'chat', text: '傻逼 www.example.com' } as UpstreamMessage);
+
+  // `len` 是真正下发的那份（18 个字符：打码后的文本与原串等长），文本本身不进日志
+  expect(events('chat')).toEqual([{ ev: 'chat', uid: 'u_me', len: 18, dm: false }]);
+  // word = 「傻逼」2 + 「www」3（这个词本身也在词表里）；contact = 整段联系方式 15（重叠的字符两边各算）
+  expect(events('censor')).toEqual([
+    { ev: 'censor', uid: 'u_me', kind: 'word', n: 5 },
+    { ev: 'censor', uid: 'u_me', kind: 'contact', n: 15 },
+  ]);
+});
+
+test('chat{dm}：私聊只在送达成功之后记一条，没命中的类目一条都不写', () => {
+  const me = new FakeSocket();
+  const peer = new FakeSocket({ ...connection('u_peer'), ready: true });
+  const hall = newHall(freshSql(), [me, peer]);
+
+  feed(hall, me, roaming(NOW), { t: 'whisper', toId: 'u_peer', text: 'vx12345678' } as UpstreamMessage);
+
+  expect(peer.sent).toHaveLength(1); // 确实发出去了才记账
+  expect(events('chat')).toEqual([{ ev: 'chat', uid: 'u_me', len: 10, dm: true }]);
+  expect(events('censor')).toEqual([{ ev: 'censor', uid: 'u_me', kind: 'contact', n: 10 }]);
+});
+
+test('report{target,dup}：第一次 created、24 小时内重复 merged，target 是被举报人', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+  const ws = new FakeSocket();
+  const sql = freshSql();
+  recordIdentity(sql, { userId: 'u_peer' }, NOW - 60_000); // 目标必须是真实存在过的身份
+  const hall = newHall(sql, [ws]);
+
+  feed(hall, ws, roaming(NOW), { t: 'report', toId: 'u_peer', reason: '刷屏' } as UpstreamMessage);
+  feed(hall, ws, roaming(NOW), { t: 'report', toId: 'u_peer', reason: '刷屏' } as UpstreamMessage);
+
+  expect(events('report')).toEqual([
+    { ev: 'report', uid: 'u_me', target: 'u_peer', dup: false },
+    { ev: 'report', uid: 'u_me', target: 'u_peer', dup: true },
+  ]);
+});
+
+test('block{until,by}：入场命中封禁记 auto，`until` 是到期时刻、永久写 0', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+
+  const sql = freshSql();
+  const untilAt = NOW + 3_600_000;
+  upsertBlock(sql, { kind: 'user', value: 'u_banned', untilAt, reason: '刷屏' }, NOW);
+  const ws = new FakeSocket(connection('u_banned'));
+  await hello(newHall(sql, [ws]), ws);
+
+  const forever = freshSql();
+  upsertBlock(forever, { kind: 'user', value: 'u_banned', untilAt: null, reason: '刷屏' }, NOW);
+  const foreverWs = new FakeSocket(connection('u_banned'));
+  await hello(newHall(forever, [foreverWs]), foreverWs);
+
+  expect(ws.closed).toEqual({ code: 1008, reason: 'blocked' }); // 路径确实跑到了封禁那一支
+  expect(events('block')).toEqual([
+    { ev: 'block', uid: 'u_banned', until: untilAt, by: 'auto' },
+    { ev: 'block', uid: 'u_banned', until: 0, by: 'auto' },
+  ]);
+});
+
+test('tick：厅里有连接时每 5 分钟一条，四个数取已读的量（`level` 由床数推出，不另读 `meta`）', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+  const socket = new FakeSocket(connection('u_me'));
+  const hall = newHall(freshSql(), [socket]);
+
+  await hello(hall, socket);
+  expect(vi.getTimerCount()).toBe(1); // 只有 `tick` 那条循环（没人走时位置节拍不建）
+
+  vi.advanceTimersByTime(5 * 60_000);
+  expect(events('tick')).toEqual([{ ev: 'tick', online: 1, used: 0, beds: FIRST, level: 0 }]);
+
+  vi.advanceTimersByTime(5 * 60_000);
+  expect(events('tick')).toHaveLength(2);
+});
+
+test('tick：最后一条连接关掉后循环被清除，之后一条都不产出', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+  const first = new FakeSocket(connection('u_a'));
+  const second = new FakeSocket(connection('u_b'));
+  const sockets = [first, second];
+  const hall = newHall(freshSql(), sockets);
+  await hello(hall, first);
+  await hello(hall, second);
+  expect(vi.getTimerCount()).toBe(1);
+
+  await closeAndRemove(hall, sockets, first);
+  expect(vi.getTimerCount()).toBe(1); // 厅里还有人：循环该留着（否则留下的人就没有 tick 了）
+
+  await closeAndRemove(hall, sockets, second);
+  expect(vi.getTimerCount()).toBe(0); // 厅空了：循环必须当场清除（硬纪律 6）
+
+  vi.advanceTimersByTime(60 * 60_000);
+  expect(events('tick')).toEqual([]);
 });

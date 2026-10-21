@@ -10,6 +10,7 @@ import {
   TICK_MS,
   UPSTREAM_RATE_PER_SEC,
 } from '../shared/constants';
+import type { MaskHits } from '../shared/content-filter';
 import type { ErrorCode } from '../shared/error-code';
 import { HALL_LEVELS, LAYOUT_VERSION, frontPointOf, isWalkable, levelIndexOfBedCount } from '../shared/layout';
 import type { Point } from '../shared/layout';
@@ -90,6 +91,12 @@ import type { OfflineOccupantRow } from './snapshot';
 type PositionUpdate = [string, number, number];
 
 /**
+ * `tick` 的拍子（`100-log.md` §3：每 5 分钟一条）：**与位置节拍的 `TICK_MS` 不是一个量**，
+ * 所以是另一条独立的内存循环，只在厅里有连接时存在。
+ */
+const TICK_LOG_MS = 5 * 60_000;
+
+/**
  * 大厅房间服务：**一个厅一个实例**（`idFromName(HALL_ID)`），自带一份私有 SQLite。
  * **厅的边界就是数据库的边界**，所有权威状态在同址，读写都是本地操作。
  *
@@ -109,6 +116,12 @@ export class Hall extends DurableObject<Env> {
   private readonly moverStartedAt = new Map<string, number>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private lastTickAt = 0;
+
+  /**
+   * `tick` 事件的内存循环（与位置节拍那条**分开**）：`hello` 成功时起、最后一条连接关闭时清除。
+   * 有循环对象就无法休眠，所以「没有连接时必须不存在」是硬要求（`AGENTS.md` 硬纪律 6）。
+   */
+  private tickLogTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
   /**
@@ -270,6 +283,8 @@ export class Hall extends DurableObject<Env> {
           const now = Date.now();
           const blocked = blockStateOf(this.ctx.storage.sql, connection, now);
           if (blocked) {
+            // 封禁命中有「某个人」做主语，所以挂 `uid`（`100-log.md` §3；连接里读得到就挂）；永久封禁的到期时刻写 0
+            log.ev('block', { uid: connection.userId, until: blocked.untilAt ?? 0, by: 'auto' });
             this.reject(ws, '5002', 'hello', blocked.untilAt);
             return;
           }
@@ -302,6 +317,8 @@ export class Hall extends DurableObject<Env> {
           this.touchLastSeen(ready.userId);
           // 唤醒后可能有别人在途（这条循环不只为我自己起）
           this.startTicking();
+          // 厅里有人了 → `tick` 那条循环开始跑（最后一条连接关闭时清除，见 `stopTickLogging`）
+          this.startTickLogging();
           // 行已恢复（或压根没在床上）；在床上的人重新排上「自动睡着」
           this.due.remove('grace', ready.userId);
           this.armAutoSleep(ready);
@@ -553,6 +570,7 @@ export class Hall extends DurableObject<Env> {
         const ts = Date.now();
         this.rememberSpeech(fresh.userId, verdict.text, ts);
         this.broadcast({ t: 'chat', id: fresh.userId, text: verdict.text, ts });
+        this.logChat(fresh.userId, verdict.text, verdict.hits, false);
         return;
       }
       case 'whisper': {
@@ -584,6 +602,7 @@ export class Hall extends DurableObject<Env> {
         if (target !== ws) this.send(target, payload);
         // 只说**送达成功**的那句：对方不在厅的私聊没发出去，那话也就没进过任何人的屏幕
         this.rememberSpeech(fresh.userId, verdict.text, ts);
+        this.logChat(fresh.userId, verdict.text, verdict.hits, true);
         return;
       }
       case 'report': {
@@ -609,7 +628,7 @@ export class Hall extends DurableObject<Env> {
           fail('4003');
           return;
         }
-        recordReport(
+        const result = recordReport(
           this.ctx.storage.sql,
           {
             reporterUserId: fresh.userId,
@@ -620,6 +639,8 @@ export class Hall extends DurableObject<Env> {
           },
           now,
         );
+        // `dup` = 这一条是 24 小时内重复举报（并进了已存在的那一行），直接取落库的返回值，不为判定再查一次
+        log.ev('report', { uid: fresh.userId, target: toId, dup: result === 'merged' });
         // `5003` 是唯一「成功用 error 报文回」的例外（否则用户会被骗「已收到」）。它**不是拒绝**，
         // 所以不走 `sendError`——那样会在 `reject` 里记一条假拒绝（`100-log.md` §3）。
         this.send(ws, JSON.stringify({ t: 'error', code: '5003' } satisfies ErrorMessage));
@@ -636,6 +657,17 @@ export class Hall extends DurableObject<Env> {
     recent.push({ text, at });
     if (recent.length > REPORT_EVIDENCE_MAX) recent.splice(0, recent.length - REPORT_EVIDENCE_MAX);
     this.speech.set(userId, recent);
+  }
+
+  /**
+   * 发出成功的聊天（`100-log.md` §3）：`chat{len,dm}` 一条——`len` 是**实际下发的那份打码后文本**的字符数
+   * （UTF-16 码元会按代理对拆开，所以用 `[...text].length`），**文本本身不进日志**；
+   * 打码命中的类目各一条 `censor{kind,n}`（两类都命中就是两条，`n` 是各类目自己的字符数，同一趟打码里数出来的）。
+   */
+  private logChat(userId: string, text: string, hits: MaskHits, dm: boolean): void {
+    log.ev('chat', { uid: userId, len: [...text].length, dm });
+    if (hits.word > 0) log.ev('censor', { uid: userId, kind: 'word', n: hits.word });
+    if (hits.contact > 0) log.ev('censor', { uid: userId, kind: 'contact', n: hits.contact });
   }
 
   /**
@@ -913,6 +945,40 @@ export class Hall extends DurableObject<Env> {
     this.tickTimer = null;
   }
 
+  /**
+   * `tick` 事件的内存循环（`100-log.md` §3）：**只在这个厅有连接时存在**。
+   * 它与位置节拍是两回事（拍子 `TICK_LOG_MS` 而不是 `TICK_MS`），所以是独立的一条——
+   * 但「没有连接就不该有循环」是同一条硬纪律（`AGENTS.md` 硬纪律 6：忘记清除会让对象整夜不休眠）。
+   */
+  private startTickLogging(): void {
+    if (this.tickLogTimer !== null) return;
+    this.tickLogTimer = setInterval(() => this.logTick(), TICK_LOG_MS);
+  }
+
+  private stopTickLogging(): void {
+    if (this.tickLogTimer === null) return;
+    clearInterval(this.tickLogTimer);
+    this.tickLogTimer = null;
+  }
+
+  /**
+   * 一条 `tick`：四个数都取**已经用到的量**，不为日志多读一次（`100-log.md` §5：288 条/天，
+   * 唯一的新增读是这一次 `COUNT`）。`level` 从同一个 `bedCount` 推，不另读 `meta`。
+   */
+  private logTick(): void {
+    try {
+      const beds = this.bedCount();
+      log.ev('tick', {
+        online: this.onlineCount(),
+        used: this.usedBeds(Date.now()),
+        beds,
+        level: levelIndexOfBedCount(beds),
+      });
+    } catch {
+      // 埋点永不打断内存循环（§1）：丢这一条日志可以，让定时器回调抛出去不行
+    }
+  }
+
   /** 对象被驱逐后重建工作集：附加数据里还有目标的，重新算一次路径（街网寻路是确定性的）。 */
   private ensureMovers(): void {
     for (const ws of this.ctx.getWebSockets()) {
@@ -1068,6 +1134,10 @@ export class Hall extends DurableObject<Env> {
     try {
       const connection = readConnection(ws);
       if (!connection?.ready) return;
+      // 最后一条连接也走了 → `tick` 那条循环必须当场消失（硬纪律 6：有循环对象就无法休眠）。
+      // 放在**所有会抛的调用之前**：下面任何一行抛了（catch 只留一条 `err`）都不会把它漏下。
+      // 被顶掉的旧连接由下面那一行返回、不走到这里，那时新连接还活着，循环该留着。
+      if (!this.hasOtherLiveConnection(ws)) this.stopTickLogging();
       this.ensureSchedule();
       // 被新连接顶掉的旧连接：状态已经归新会话了，这里再动就会把新会话的路径删掉
       if (this.socketOf(connection.userId, ws)) return;
@@ -1140,6 +1210,16 @@ export class Hall extends DurableObject<Env> {
     setBedOccupancy(this.ctx.storage.sql, bedNo, 'trace', tracedAt);
     // 床上的人断线不广播任何东西，人数降下来就发生在这一条上（宽限到期转睡痕）
     this.broadcast({ t: 'state', id: userId, state: 'trace', bedNo, online: this.onlineCount() });
+  }
+
+  /**
+   * 除了这一条（正在关闭的）之外，还有没有已握手的连接：`tick` 循环的存在条件。
+   * 关闭事件里平台仍会把这一条列在 `getWebSockets()` 里，不排除它就会把循环留住。
+   */
+  private hasOtherLiveConnection(closing: WebSocket): boolean {
+    return this.ctx
+      .getWebSockets()
+      .some((ws) => ws !== closing && readConnection(ws)?.ready === true);
   }
 
   /**

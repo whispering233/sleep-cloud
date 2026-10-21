@@ -194,14 +194,47 @@ export function detect(input: string): string | null {
   return findSpans(input, NICKNAME_WORDS)[0]?.word ?? null;
 }
 
-/** 打码入口（聊天用：全部类目 + 联系方式 / 引流）：命中替换为等长的 `*`，循环到不再命中为止，其它内容原样保留。 */
-export function mask(input: string): string {
+/** 打码命中：两个类目各自**被替换成 `*` 的字符数**（`100-log.md` §3 的 `censor{kind,n}`）。 */
+export interface MaskHits {
+  /** 词表命中（`CHAT_WORDS`）。 */
+  word: number;
+  /** 联系方式 / 引流命中（`CONTACT_PATTERNS`）。 */
+  contact: number;
+}
+
+export interface MaskResult {
+  text: string;
+  hits: MaskHits;
+}
+
+/** 一类命中区间一共盖住多少字符：类目内部已经合并过重叠，跨类目重叠的各算各的（各自都替换了那些字符）。 */
+function replacedChars(spans: readonly Span[]): number {
+  let n = 0;
+  for (const span of spans) n += span.end - span.start;
+  return n;
+}
+
+/**
+ * 打码入口（聊天用：全部类目 + 联系方式 / 引流）：命中替换为等长的 `*`，循环到不再命中为止，其它内容原样保留。
+ * **命中计数与打码是同一趟**（两个类目的区间本来就要各取一次，数的是它们自己的长度，不为了计数再打一次码）。
+ */
+export function maskDetailed(input: string): MaskResult {
+  const hits: MaskHits = { word: 0, contact: 0 };
   let out = input;
   // 上限只是防御：替换成 `*` 不会再构成新词，正常一轮就结束。
   for (let round = 0; round < 5; round += 1) {
-    const spans = mergeSpans([...findSpans(out, CHAT_WORDS), ...findContactSpans(out)]);
-    if (spans.length === 0) return out;
+    const wordSpans = findSpans(out, CHAT_WORDS);
+    const contactSpans = findContactSpans(out);
+    const spans = mergeSpans([...wordSpans, ...contactSpans]);
+    if (spans.length === 0) break;
+    hits.word += replacedChars(wordSpans);
+    hits.contact += replacedChars(contactSpans);
     out = replaceSpans(out, spans);
   }
-  return out;
+  return { text: out, hits };
+}
+
+/** 只要打码后的那一份文本（不需要计数时的入口）。 */
+export function mask(input: string): string {
+  return maskDetailed(input).text;
 }
