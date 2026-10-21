@@ -120,13 +120,13 @@
   }
 
   /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 阅读入口与齿轮，
-     中间由齿轮那一格的 `margin-inline-start: auto` 拉开；不换行、高 44px */
+     中间由右端那一组的 `margin-inline-start: auto` 拉开；高 44px。
+     **一行是硬约束（393 下排得完），折行只是 ≤320 的兜底**：什么都不收只会横向溢出，而横溢会让小人走到屏外 */
   .action-row {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--spacing-md);
-    min-height: 44px;
+    gap: 8px var(--spacing-md);
   }
 
   /* 可点击组：不参与伸缩（宽度就是按钮的宽度） */
@@ -164,16 +164,17 @@
     border-radius: var(--radius-full);
   }
 
-  /* 窄屏（≤360px）：动作行五颗胶囊的原有间距会把右端齿轮顶出屏（实测 320px 下溢出 24px）。
-     只收紧两处留白（胶囊左右 padding 12→8、组间 12→8），**不缩 44px 触击目标**、
-     也不改文案——320px 是能覆盖到的最小宽度，再窄的屏不再往下适配 */
+  /* 窄屏（≤360px）：**只收紧间距**（全行组内 / 组间都收到 4px），不缩胶囊 padding、不动 44px 触击目标。
+     实测 393 下总宽 360.9 / 可用 367；≤360 收到 4 之后 332.9 / 可用 334（余 1.1）。
+     360px 以下不再靠收紧抹平，交给上面的 `flex-wrap`：图标那组换第二行、`margin-inline-start: auto` 让它右对齐 */
   @media (max-width: 360px) {
     .action-row {
-      gap: var(--spacing-sm);
+      column-gap: var(--spacing-xs);
     }
 
-    .hud-action {
-      padding: 0 var(--spacing-sm);
+    .action-row-actions,
+    .action-row .hud-settings {
+      gap: var(--spacing-xs);
     }
   }
 
@@ -187,11 +188,9 @@
     margin-inline-start: auto;
   }
 
-  /* 阅读入口「!」：44×44 正方形（可见文字只有一个字符，不让胶囊自己变宽），
-     墨色与 `.hud-action` 一致（它是内容入口，不是齿轮那种次要入口） */
-  /* 阅读入口：44×44 正方形（只有图标）。图标吃 `neutral`（主入口，比齿轮高一档），
-     画法与齿轮同一套：`currentColor` 描边 1.5px、20×20 绘制区 */
-  .hud-read {
+  /* 阅读入口与三颗「还没做」入口：44×44 正方形（只有图标，不让胶囊自己变宽），
+     图标吃  `neutral`（主入口，比齿轮高一档）；画法与齿轮同一套：`currentColor` 描边、20×20 绘制区 */
+  .hud-icon {
     width: 44px;
     min-width: 44px;
     padding: 0;
@@ -199,9 +198,21 @@
     place-items: center;
   }
 
-  .hud-read-icon {
+  .hud-icon-glyph {
     width: 20px;
     height: 20px;
+  }
+
+  /* 我的床号：同样是 44×44 方胶囊（去掉「床号」二字后靠宽度约束把两位数 / 四位数都装得下，
+     实测内宽 42px ≤ 44）。内容一行居中：13px 等宽数字 + 方位字形 */
+  .hud-bed {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
