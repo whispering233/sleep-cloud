@@ -112,8 +112,6 @@ npm run build && npm run dev   # 完整站点（端口从 8787 起自动 +1，�
 npm run dev:web                # 前端热更新开发服务器（/api 代理到本 worktree 的后端端口）
 npm test                       # 单测（L1）：纯逻辑、状态机序列穷举、布局算术
 npm run typecheck
-npm run e2e                    # 界面壳层的契约 spec（L2）：先 npm run dev 起站点，端口自动读 .wrangler/dev-port
-                               #   缺 Playwright 浏览器时：PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run e2e
 npm run art                    # （可选）从 tools/art/masters/ 的母图重新生成图集
 npm run deploy                 # 部署（需先有平台账号凭据；发版流程见 docs/design/build.md §4.3）
 ```

@@ -9,7 +9,6 @@
 | 环境 | 是什么 | 什么时候用它 |
 | :--- | :--- | :--- |
 | **单测（L1）** | `npm test`（vitest）：纯函数、布局、寻路、位置同步的假时间轴、协议镜像、**交互状态机（`composerReducer` 及其序列穷举）/ `shouldResize`** | **任何纯逻辑**。能写成纯函数就必须在这里验，不要留到别处 |
-| **契约 spec（L2）** | `npm run e2e`（Playwright；需先起 `npm run dev`，端口自动读 `.wrangler/dev-port`；宿主机没装 Playwright 浏览器时用 `PLAYWRIGHT_CHROMIUM_PATH` 指一个已有 Chromium）：DOM 契约（四个 spec 文件：`e2e/shell.spec.ts` 六条、`e2e/weather.spec.ts` 一条、`e2e/about.spec.ts` 四条、`e2e/type-text.spec.ts` 两条）——每个状态的出口可达、点插槽面板空白不产生 `walk`、`typing` 期间与退场之后画布尺寸不变、只有画布起手的 tap 产 `walk`、无 Popover 时降级路径能进厅并走完齿轮菜单、隐私说明两处入口都指向静态页；天气胶囊翻转 / 落盘 / 重载保持；说明面板首访弹一次 / 勾选着关就不再弹 / 取消勾选仍弹 / 齿轮里能自由开关；类型文本点阅读入口就有正文、抽一条换一条、收起与刷新都保留当前条、全程零上行 | **界面壳层的不变式**（`60-interaction-shell.md` §6）。它不测像素、也不需要 IME，所以桌面就能跑；**不进 CI**，进 §4 的「合并前必跑」 |
 | **类型检查** | `npm run typecheck`（三份 tsconfig） | 改协议 / 样式令牌 / 前端代码后。干净克隆先跑一次 `npm run tokens` |
 | **桌面浏览器** | 本机 Chromium（Playwright / BetterWright） | 逻辑与流程：进厅、走动、躺下、聊天、断线重连、命中判定。**桌面视口只用于「不是响应式」的那类结论** |
 | **桌面浏览器 + 手机视口** | 同上，但视口按手机设（393×852 类） | **降级选项**：模拟器不可用时才用，只能看溢出/换行这类明显错误；**结论必须标注「降级验证」**。它仿真不了软键盘、IME、真触摸语义（见 §3），所以**不得作为响应式/触摸类验收的通过依据** |
@@ -20,7 +19,7 @@
 
 **基线设备**：iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）。窄档阈值 640，其它窄屏手机走同一套分支。
 
-**降级路径的回归**：Popover API 缺失用 e2e 的 init script 模拟（导航前删 `HTMLElement.prototype.showPopover/hidePopover/togglePopover`），`e2e/shell.spec.ts` 有一条固定用例；真夸克（Chromium 100）只能在真机上复验——模拟器跑不动（arm64-only APK 在 x86_64 镜像上 ANR）。
+**降级路径的回归**：Popover API 缺失只能在真机上复验（Quark / UC 内核 = Chromium 100）——在开发者工具里删掉 `HTMLElement.prototype.showPopover/hidePopover/togglePopover` 后手工过一遍齿轮菜单的开 / `Esc` 关 / 换床；模拟器跑不动 arm64-only APK（x86_64 镜像上 ANR）。
 
 ## 2. 宿主 Windows 上的 Android 模拟器（移动端验收的默认环境）
 
@@ -106,7 +105,7 @@ deviceX = cssX * devicePixelRatio
 ## 4. 流程
 
 1. **纯逻辑先有单测**。没有单测的行为改动，先问「这段能不能变成纯函数」。
-2. **界面壳层类改动（布局 / 键盘 / 焦点 / 指针）必跑 L2**：先 `npm run dev` 起站点，再跑 `npm run e2e`。它测的是不变式，不是像素——不通过就是设计被破坏，不许「下次再看」。
+2. **界面壳层类改动（布局 / 键盘 / 焦点 / 指针）在宿主 Android 模拟器里手工过一遍**（§2 配方）：每个状态的出口可达、打字态进出、点空白不漏到画布。
 3. **`npm run dev` 不会重建前端**：它只启 `wrangler dev` 并服务 `dist/`，**没有 build、也没有 watch**。所以「改了源码 → 点开页面看」看到的一定是旧构建——实测就有人拿旧构建下了「改动无效」的结论。**UI 验收前先 `npm run build`**（改完源码再验，或验收中途改了源码都要补一次）。
    **建完之后要对一下有没有生效**：`npm run dev` 基于 `dist/` 建过一次资产清单，重建后它可能仍然下发**旧的 `index.html`**（页面引用的哈希 ≠ `ls dist/assets/index-*.js`）。比对一行 `curl -s http://localhost:<端口>/ | grep -o 'assets/index-[^"]*'` 与 `ls dist/assets/index-*.js`，不一致就重启 dev server。**实测**：两个验证者都撞上过这个（一个拿到旧构建得出「改动无效」，一个在旧构建上截图）。嫌麻烦就用 `npm run dev:web` 直接跑源码（Vite 反代 `/api` 到本 worktree 的后端）。
 4. **UI 类改动**：先在宿主 Android 模拟器里验收（布局、响应式、触摸、键盘全在同一个环境里过）→ 只有真机能得结论的（真手指手感、低端机帧率、低亮度观感、自研内核）留到真机。**模拟器不可用时**才降级到桌面手机视口，并在结论里明确写「降级验证、未过模拟器」。

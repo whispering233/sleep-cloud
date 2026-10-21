@@ -27,10 +27,6 @@ src/client/styles/tokens.json
 coverage/
 .nyc_output/
 
-# Playwright 的测试产物（`npm run e2e` 每次都会写）
-test-results/
-playwright-report/
-
 # 类型缓存
 *.tsbuildinfo
 

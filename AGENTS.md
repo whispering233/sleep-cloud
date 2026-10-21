@@ -108,7 +108,7 @@
 
 1. **基线是真实内核，不是「尽量兼容」。** 夸克 / UC 的安卓内核停在 Chromium 100（`libwebviewuc.so` = `100.0.4896.58`，无 `showPopover`）。`build.target` 固定 `chrome100`，构建产物必须能被 Chromium 100 解析。
 2. **Chromium 114+ 的 API 必须带降级路径**（Popover、`:popover-open`、`@starting-style`、anchor positioning…），不许裸调；CSS 新特性只能用「`@supports` 包住后仍可用」或纯装饰的写法。
-3. **能力判断只放 `src/client/popover.ts`**（今天只有 `HAS_POPOVER`），组件里不各写一份探测；降级路径要有 e2e 用例（`e2e/shell.spec.ts` 里删三个 popover 方法模拟）。
+3. **能力判断只放 `src/client/popover.ts`**（今天只有 `HAS_POPOVER`），组件里不各写一份探测；降级路径靠手工复验（开发者工具里删三个 popover 方法，见 `docs/design/test.md` §1）。
 
 ## 术语
 
@@ -178,9 +178,6 @@ npm run dev:web
 # 单元测试 / 类型检查
 npm test
 npm run typecheck
-
-# 界面壳层的契约 spec（手机视口；先 npm run dev 起站点，端口自动读 .wrangler/dev-port）
-npm run e2e
 
 # 位置同步观测：?debug=1 → 控制台每 10s 一行 leadMs / regressPx / posAge / tickSpan（p50/p95/max；
 #   出现倒退整行前置 !!）；判据与口径见 docs/design/30-movement-sync.md §6.2

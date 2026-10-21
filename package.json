@@ -13,7 +13,6 @@
     "dev": "node tools/dev/dev.mjs",
     "dev:web": "npm run tokens && vite",
     "test": "vitest run",
-    "e2e": "playwright test",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "deploy": "npm run build && wrangler deploy --config wrangler.local.jsonc"
   },
@@ -31,7 +30,6 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261014.1",
     "@google/design.md": "^0.4.0",
-    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",

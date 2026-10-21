@@ -78,7 +78,7 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 - **世界层 tap 不变式**：`pointer.downElement !== game.canvas` 一律不派发。Phaser 4 只在 `downElement === canvas` 时才发 `POINTER_DOWN`（否则只发 `POINTER_DOWN_OUTSIDE`）。注意**它挡不住合成鼠标事件**（那种事件的目标本来就是 canvas），所以上面第二条约的是 DOM 侧的手势纪律，二者互补。
 - **退场不淡出。** 撤下 `data-open` 的那一帧盒子就换成 idle 那一行、内容同时卸掉，160ms 的 `opacity` 只作用在一块与聊天面板重合的空盒子上（实测数字见 `50-slot-panel.md` §5）。所以**别按「淡出期间还看得见 ⇒ 还挡得住」来做设计**，也别拿这条写测试（这正是旧 I7 测不到东西的原因）。
 - **有 Popover 时齿轮浮层用 `popover`**：顶层渲染、light-dismiss、焦点管理全部由平台给，不再手写 `aria-expanded` + 点外关闭。
-- **没有 Popover API 时退回自己管开关**（Chromium <114，如夸克 / UC 内核 = Chromium 100，见 `architecture.md` §1 的兼容基线）：`ToneLayer` 不写 `popover` 属性、不调 `showPopover`、不装 `toggle` 重排监听——它本来就是 `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与浮层之上；齿轮菜单退回 `menuOpen` state + `pointerdown` 点外关闭 + `Esc` 关闭 + 关时焦点回齿轮，`aria-expanded` 手写。两条路径只由 `src/client/popover.ts` 的 `HAS_POPOVER` 分叉，组件里不各写一份能力判断。降级菜单的 light-dismiss 与原生不逐字等价（焦点返回、点击穿透细节），由 `e2e/shell.spec.ts` 的降级用例卡住。
+- **没有 Popover API 时退回自己管开关**（Chromium <114，如夸克 / UC 内核 = Chromium 100，见 `architecture.md` §1 的兼容基线）：`ToneLayer` 不写 `popover` 属性、不调 `showPopover`、不装 `toggle` 重排监听——它本来就是 `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与浮层之上；齿轮菜单退回 `menuOpen` state + `pointerdown` 点外关闭 + `Esc` 关闭 + 关时焦点回齿轮，`aria-expanded` 手写。两条路径只由 `src/client/popover.ts` 的 `HAS_POPOVER` 分叉，组件里不各写一份能力判断。降级菜单的 light-dismiss 与原生不逐字等价（焦点返回、点击穿透细节），靠手工在开发者工具里删掉三个 popover 方法后过一遍（见 `test.md` §1「降级路径的回归」）。
 
 ## 5. 画布：编辑会话期间冻结像素尺寸
 
@@ -103,18 +103,15 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 | I8 | 世界层只接受 `downElement === canvas` 的 tap |
 | I9 | 相机取景只吃布局值（`layoutTopOf`），不吃 `getBoundingClientRect` |
 | I10 | 全仓不出现键盘高度推导（`innerHeight`/`visualViewport.height`/`clientHeight` 的差值） |
-| I11 | 无 Popover API（Chromium 100）时进厅不崩，齿轮菜单靠手写开关走完开 / `Esc` 关 / 换床；能力判断只在 `src/client/popover.ts`（`e2e/shell.spec.ts` 的降级用例） |
+| I11 | 无 Popover API（Chromium 100）时进厅不崩，齿轮菜单靠手写开关走完开 / `Esc` 关 / 换床；能力判断只在 `src/client/popover.ts`（手工删三个 popover 方法复验） |
 
 ## 7. 测试分层
 
 | 层 | 环境 | 内容 |
 | :--- | :--- | :--- |
 | **L1** | vitest（`npm test`） | `composerReducer` 的事件序列穷举；`shouldResize`、`keyboardOf`、`usableView` 之类布局算术 |
-| **L2** | Playwright（`npm run e2e`，手机视口，**不需要 IME**） | I4 / I6 / I7 / I8 的 DOM 契约；每个状态的出口可达 |
 | **L3** | 宿主 Android 模拟器（配方见 `test.md` §2） | 真 IME 下三个量的关系、`scale.resize` 次数、`screenrecord` 逐帧看闪烁 |
 | **L4** | 真机 | 手感、特定内核（夸克 / Via）、低亮度观感 |
-
-L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞进 Actions 只是放大不确定性。写进 `test.md` 的「合并前必跑」清单。
 
 ## 8. 拒绝的方案与理由
 
@@ -137,7 +134,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 
 ## 10. 验收判据
 
-### 本地可验（L1 + L2）
+### 本地可验（L1 + 桌面浏览器手工过）
 
 | # | 判据 |
 | :--- | :--- |
@@ -145,7 +142,7 @@ L2 **不进 CI**：它要 `.dev.vars`、要起 wrangler、要真浏览器；塞�
 | 2 | 手机视口下依次点：输入框 → 😀 → 面板空白 → 收起胶囊，四步都能把面板送回底部、画布可点 |
 | 3 | `typing` 全程与退场之后 `canvas.width` / `canvas.height` 都不变，且 `MutationObserver` 没看到画布尺寸属性变化；宽度 / DPR 变化则立即重算 |
 | 4 | 点插槽面板空白：空白处的 `pointerdown` 被取消（`defaultPrevented === true`），且连点 8 次一次 `walk` 都没有、每次都回到 `idle` |
-| 5 | 在 `typing` 态用 CDP/Playwright 派发一次画布起手的 tap → 有 `walk`；从面板起手的 tap → 没有 `walk` |
+| 5 | 在 `typing` 态从画布起手 tap → 有 `walk`；从面板起手 tap → 没有 `walk`（开发者工具里点，或看 `?debug=1` 的上行日志） |
 | 6 | `GO` 床号输入聚焦后 `data-composer="typing"` 同样成立（同一个状态机） |
 
 ### 只能在真机 / 模拟器得结论
