@@ -9,6 +9,7 @@ const logoutButton = document.getElementById('logout');
 const statusLine = document.getElementById('status');
 const sidebar = document.getElementById('sidebar');
 const sections = document.getElementById('sections');
+const statsStrip = document.getElementById('stats');
 
 const ipFilter = document.getElementById('ipFilter');
 const nameFilter = document.getElementById('nameFilter');
@@ -37,6 +38,14 @@ const drawerTitle = document.getElementById('drawerTitle');
 const drawerBody = document.getElementById('drawerBody');
 const drawerClose = document.getElementById('drawerClose');
 const toastLine = document.getElementById('toast');
+
+/** 概览四条口径（`110-admin-console.md` §2）：顺序固定，数字在进视图与写操作后重拉。 */
+const METRICS = [
+  ['online', '在线'],
+  ['ownedBeds', '有主床'],
+  ['blocks', '封禁记录'],
+  ['reports24h', '近 24 小时被举报'],
+];
 
 /** 每页的起始游标（第 0 页是 `null`）：上一页靠它回退，下一页靠响应里的 `next` 推进。 */
 let identityCursors = [null];
@@ -87,6 +96,7 @@ function showLoggedIn(loggedIn) {
   logoutButton.hidden = !loggedIn;
   sidebar.hidden = !loggedIn;
   sections.hidden = !loggedIn;
+  if (!loggedIn) statsStrip.hidden = true;
   if (!loggedIn && drawer.open) drawer.close();
 }
 
@@ -376,12 +386,37 @@ async function loadAudit(index) {
   render(auditRows, data.items, auditRow, 7);
 }
 
-/** 写操作之后重置三个游标并重读黑名单：封禁表单只在黑名单视图里，其他视图下次进入会重拉。 */
+/** 概览：与当前视图并发拉，失败静默保持隐藏（不把假 0 当事实）。 */
+async function loadStats() {
+  const res = await dataFetch('/api/admin/stats');
+  if (!res || !res.ok) return;
+  let stats;
+  try {
+    stats = await res.json();
+  } catch {
+    return;
+  }
+  statsStrip.replaceChildren(
+    ...METRICS.map(([key, label]) => {
+      const card = document.createElement('div');
+      card.className = 'metric';
+      const value = document.createElement('strong');
+      value.textContent = typeof stats[key] === 'number' ? String(stats[key]) : '—';
+      const caption = document.createElement('span');
+      caption.textContent = label;
+      card.append(value, caption);
+      return card;
+    }),
+  );
+  statsStrip.hidden = false;
+}
+
+/** 写操作之后重置三个游标、重读黑名单与概览：其他视图下次进入会重拉。 */
 async function refreshAfterWrite() {
   identityCursors = [null];
   auditCursors = [null];
   reportCursors = [null];
-  await loadBlocks();
+  await Promise.all([loadBlocks(), loadStats()]);
 }
 
 /** 封 IP 之前先按该 IP 反查计数：`affected` 要等封完才知道，而连坐不能一键静默发生。 */
@@ -497,7 +532,8 @@ async function renderView() {
   const name = currentView();
   if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
   showView(name);
-  await VIEWS[name].load();
+  // 概览与当前视图并发：统计失败不该把列表也挡在门外（`loadStats` 自己吞掉错误）。
+  await Promise.all([VIEWS[name].load(), loadStats()]);
 }
 
 async function enterApp() {

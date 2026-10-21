@@ -9,7 +9,7 @@ vi.mock('cloudflare:workers', () => ({
   },
 }));
 
-import { HALL_ID } from '../../shared/constants';
+import { BED_OWNERSHIP_TTL_MS, HALL_ID, REPORT_DEDUP_MS } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
 import { recordReport } from '../report';
@@ -503,4 +503,41 @@ test('按被举报人折叠：合计次数与举报人数对得上，次数多�
   expect(body).not.toHaveProperty('next');
   // `limit` 照旧生效（默认 50、上限 100）
   expect((await reportTargetsOf(hall, '?limit=1')).items.map((item) => item.target.userId)).toEqual(['u_heavy']);
+});
+
+interface StatsBody {
+  online: number;
+  ownedBeds: number;
+  blocks: number;
+  reports24h: number;
+}
+
+const statsOf = async (hall: Hall): Promise<StatsBody> =>
+  (await (await adminGet(hall, '/admin/stats')).json()) as StatsBody;
+
+test('统计卡空库：四个 0（页面拿到的是数字，不是 undefined）', async () => {
+  const { hall } = newHall();
+  expect(await statsOf(hall)).toEqual({ online: 0, ownedBeds: 0, blocks: 0, reports24h: 0 });
+});
+
+test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时被举报人数', async () => {
+  const socket = new FakeSocket(liveConnection('u_live'));
+  const { hall, sql } = newHall([socket]);
+
+  insertBed(sql, 0, { state: 'empty', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW });
+  // 归属过期 1ms：读时算无主，不进 `ownedBeds`
+  insertBed(sql, 1, { state: 'empty', ownerUserId: 'u_b', lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS - 1, updatedAt: NOW });
+  // 只有占用、没有主：不是「有主床」
+  insertBed(sql, 2, { state: 'lying', updatedAt: NOW });
+
+  upsertBlock(sql, { kind: 'user', value: 'u_perm', untilAt: null, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'ip', value: '1.1.1.1', untilAt: NOW + 1_000, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'ip', value: '2.2.2.2', untilAt: NOW - 1_000, reason: '刷屏' }, NOW);
+
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
+  // 刚好早过 24 小时窗口：同一个人再被举报，不重复计
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_old', reason: '刷屏', evidence: [] }, NOW - REPORT_DEDUP_MS - 1);
+
+  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 1 });
 });

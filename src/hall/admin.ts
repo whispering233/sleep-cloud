@@ -1,10 +1,11 @@
 import { displayBedNoOf } from '../shared/layout';
 import * as log from '../shared/log';
-import { findOwnedBed } from './bed-store';
-import { listReports, listReportTargets } from './report';
+import { findOwnedBed, countOwnedBeds } from './bed-store';
+import { countRecentReportTargets, listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
 import {
   blockDetailOf,
+  countActiveBlocks,
   countIdentitiesFor,
   findIdentity,
   hasBlock,
@@ -294,6 +295,9 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
   if (resource === 'audit' && second === undefined && request.method === 'GET') {
     return auditPage(url, ctx);
   }
+  if (resource === 'stats' && second === undefined && request.method === 'GET') {
+    return json(statsView(ctx));
+  }
   if (resource === 'reports' && second === 'targets' && request.method === 'GET') {
     return reportTargetsPage(url, ctx);
   }
@@ -301,4 +305,15 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
     return reportsPage(url, ctx);
   }
   return notFound();
+}
+
+/** 概览四条口径（`docs/design/110-admin-console.md` §2）：`online` 直接读内存连接集合，其余各一条聚合。 */
+function statsView(ctx: AdminContext): Record<string, number> {
+  const now = Date.now();
+  return {
+    online: ctx.live.length,
+    ownedBeds: countOwnedBeds(ctx.sql, now),
+    blocks: countActiveBlocks(ctx.sql, now),
+    reports24h: countRecentReportTargets(ctx.sql, now),
+  };
 }

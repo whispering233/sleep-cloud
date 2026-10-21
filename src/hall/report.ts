@@ -134,6 +134,13 @@ interface RawReportTargetRow {
   reason: string;
 }
 
+/** 统计卡（`110-admin-console.md` §2）：近 24 小时被举报的人数（按 `target_user_id` 去重）。 */
+export function countRecentReportTargets(sql: SqlStorage, now: number): number {
+  return sql
+    .exec<{ n: number }>('SELECT COUNT(DISTINCT target_user_id) AS n FROM report WHERE last_at >= ?', now - REPORT_DEDUP_MS)
+    .one().n;
+}
+
 /**
  * 被举报人折叠（`docs/api/30-api-admin.md` §5.7）：封禁是「对一个人」的动作，
  * 而明细按举报行排序，中间这一跳不折叠就得靠人脑数。**不分页**——排序键不是主键，游标会漏行。

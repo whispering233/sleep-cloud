@@ -398,6 +398,19 @@ export function usedBedCount(sql: SqlStorage, now: number): number {
 }
 
 /**
+ * 后台统计卡（`110-admin-console.md` §2）：有主且归属未过期的床数。
+ * 只数 `owner_user_id`，睡痕 / 临时占用不算「有主」。
+ */
+export function countOwnedBeds(sql: SqlStorage, now: number): number {
+  return sql
+    .exec<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM bed WHERE owner_user_id IS NOT NULL AND last_seen_at >= ?',
+      now - BED_OWNERSHIP_TTL_MS,
+    )
+    .one().n;
+}
+
+/**
  * 编号最小的**可认领床**（出生点用，见 `10-hall-runtime.md` §9）：无行 = 无主空床，过期归属也算无主。
  * 一次读取全部床位行（几百行量级）后线性找空缺——比逐床号查一次库便宜得多。
  */

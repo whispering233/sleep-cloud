@@ -5,12 +5,6 @@
 > 契约与预算的唯一权威是 `100-log.md`：卡片里出现的字段名、阈值、闸门都必须与它逐字一致，不一致就改代码不改文档。
 
 
-## 卡 2 · 统计卡：`GET /api/admin/stats` + 概览
-
-- **范围**：`src/hall/admin.ts` 加只读路由；`src/worker/admin.ts` 加转发；`src/shared/constants.ts` 不加新常量（口径引用 `BED_OWNERSHIP_TTL_MS`）；服务端按 `110-admin-console.md` §2 四条口径各一条 SQL；页面概览按视图挂载/切换重拉（`Promise.all` 三视图并发，`needsStats`），不轮询；四个数字与口径说明；`.metric` 样式。
-- **验收**：新增单测覆盖四条口径（无主/过期有主/未过期有主、永久封禁/过期封禁/未封禁、近 24 小时举报计数、`online = live.length`）；`npm test`、`npm run typecheck` 绿；`ui-verifier` 复核统计卡出现于每个视图顶部、数字随封禁/举报变化（造一条测试数据）。
-- **不碰**：`/identities` / `/blocks` / `/audit` / `/reports` 契约；票据/缓存/会话；前端客户端。
-- **依赖**：卡 1 的壳（概览容器）。
 
 ## 卡 3 · 反馈服务端：表 + 协议 + 5004/4004 + 每日上限 + 90 天清理
 
