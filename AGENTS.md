@@ -184,7 +184,7 @@ npm run typecheck
 # 位置同步观测：?debug=1 → 控制台每 10s 一行 leadMs / regressPx / posAge / tickSpan（p50/p95/max；
 #   出现倒退整行前置 !!）；判据与口径见 docs/design/30-movement-sync.md §6.2
 
-# 部署（需要平台账号凭据，见 docs/design/build.md §4）
+# 部署（应急：手工；正常发版推 tag 由 CI 完成，见 docs/design/build.md §4.4）
 npm run deploy
 
 # 设计令牌：校验与导出（0 error / 0 warning 是当前基线；改 DESIGN.md 后重新导出）
@@ -194,4 +194,4 @@ npm run tokens
 
 ## 版本与变更
 
-- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推送 → 部署 → 打标签）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
+- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推 main → 推 tag → CI 部署与 Release）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。

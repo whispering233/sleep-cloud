@@ -1,5 +1,6 @@
-# GitHub Release 工作流（E6，adarkroom 模式照搬）：
-# push 版本 tag（v*）时，从根 CHANGELOG.md 按 tag 版本段创建 GitHub Release。
+# CI 自动部署：push 版本 tag（v*）→ 质量门（verify）→ 部署 + 冒烟（deploy）→ GitHub Release（release）。
+# 三个 job 串行（needs 链），任一环失败即停：所以「有没有发布」的判据是 Release 是否存在，
+# 部署失败时仓库里不会出现「标了发布但没上线」的版本。设计见 docs/design/build.md §4.3、§4.4。
 # 依赖根级 CHANGELOG.md 存在（调度方维护，勿在此创建）。
 name: Release
 
@@ -8,14 +9,111 @@ on:
     tags:
       - "v*"
 
+# 同一个 ref 只跑一条流水线；部署不可中断，所以不取消进行中的那条。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  # 质量门：三条基线 + 版本一致性。凭据一个都不用。
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # typecheck 与 test 依赖生成物 src/client/styles/tokens.*（干净克隆里没有）
+      - run: npm ci
+      - run: npm run tokens
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint:design
+      # 版本一致性：标签去掉 v 必须等于 package.json 的 version，且 CHANGELOG.md 里有 ## [vX.Y.Z] 段。
+      # 放在 verify 而不是等 release 报错：那段对不上时 release 一定失败，排到它后面就成了「已上线但没 Release」。
+      - name: 版本一致性
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v$tag 与 package.json 的 version $version 不一致"
+            exit 1
+          fi
+          if ! grep -q "^## \[v$tag\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 缺少 ## [v$tag] 版本段"
+            exit 1
+          fi
+
+  # 部署：占位符换成真实入口（值只在 production environment 里），再探 /api/health 冒烟。
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # 静态资源要 ./dist（wrangler.jsonc 的 assets.directory）；verify 的产物不过机器，所以这里自己构建
+      - run: npm run build
+      - name: 替换入口占位符
+        env:
+          ENTRY_HOST: ${{ secrets.ENTRY_HOST }}
+          ENTRY_ZONE: ${{ secrets.ENTRY_ZONE }}
+        run: |
+          set -euo pipefail
+          # 空 secret 会产出 "pattern": "/*"，让 wrangler 报一条看不懂的错；宁可在这里就红
+          if [ -z "${ENTRY_HOST}" ] || [ -z "${ENTRY_ZONE}" ]; then
+            echo "::error::ENTRY_HOST / ENTRY_ZONE 两个 environment secret 都必须有值"
+            exit 1
+          fi
+          sed -i "s|__ENTRY_HOST__|${ENTRY_HOST}|; s|__ENTRY_ZONE__|${ENTRY_ZONE}|" wrangler.jsonc
+          if grep -q '__ENTRY_' wrangler.jsonc; then
+            echo "::error::占位符未被替换完，检查 sed 与 secret 值"
+            exit 1
+          fi
+      # 不用第三方 wrangler-action：npx 用的就是 package-lock.json 定的那个版本，与本地逐字相同。
+      # 也不带本机的那两个 NODE_OPTIONS 开关：它们是这台机器网络（IPv6 无路由 + happy-eyeballs 250 ms）的对策。
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # 冒烟：/api/health 返回 2xx 才算上线；失败重试 3 次、间隔 10 s
+      - name: 冒烟 /api/health
+        env:
+          ENTRY_HOST: ${{ secrets.ENTRY_HOST }}
+        run: |
+          set -u
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 20 "https://${ENTRY_HOST}/api/health" -o /dev/null; then
+              echo "冒烟通过：https://${ENTRY_HOST}/api/health"
+              exit 0
+            fi
+            echo "第 $attempt 次探活失败，10 s 后重试"
+            sleep 10
+          done
+          echo "::error::https://${ENTRY_HOST}/api/health 连续 3 次失败"
+          exit 1
+
+  # 发布：用 CHANGELOG.md 里 tag 对应的那段正文建 GitHub Release。
+  release:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
       # 读取 CHANGELOG.md 中匹配 tag（vX.Y.Z）的版本段，创建 GitHub Release
-      #（action 自带 contents: write 权限，与 jobs.permissions 叠加声明保持一致）
       - uses: hermannm/release-from-changelog@v0.2.6

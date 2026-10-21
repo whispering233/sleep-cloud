@@ -11,6 +11,7 @@
 
 ### Changed
 
+- **发版改为推 tag 触发 CI 自动部署**：`.github/workflows/release.yml` 改成三段串行——三条基线（`npm test` / `typecheck` / `lint:design`，先跑 `npm run tokens` 生成构造产物）+ 版本一致性 → 部署 → `GET /api/health` 冒烟 → 建 GitHub Release，任一环失败就不建 Release。凭据只在 GitHub 的 `production` environment 里。`wrangler.jsonc` 的生产路由值改为占位符、由 CI 注入；本地 `npm run deploy` 保留为应急路径（`docs/design/build.md` §4.3、§4.4）
 - **内容过滤手工表补词**：`tools/words/curated.txt` 由 39 条增至 111 条，词库 25,376 条（外来 25,265 + 手工 111）。手工表同时进昵称检测与聊天打码，新增条目对两处都生效。改词表后需重跑 `npm run words` 并部署 |
 
 ## [v0.0.7] - 2026-10-21 — 说明面板与类型文本：词库 2.5 万、雨声独立、举报落到后台
