@@ -133,10 +133,12 @@ describe('校验', () => {
     ).toEqual([]);
   });
 
-  it('段落切分：空行分段、段内换行保留、空白段丢弃', () => {
+  it('行切分：单换行与连续换行都分行、空白行丢弃', () => {
     expect(paragraphsOf('甲\n\n乙')).toEqual(['甲', '乙']);
-    expect(paragraphsOf('甲\n乙')).toEqual(['甲\n乙']);
+    expect(paragraphsOf('甲\n乙')).toEqual(['甲', '乙']);
+    expect(paragraphsOf('甲\n\n\n乙')).toEqual(['甲', '乙']);
     expect(paragraphsOf('  甲  \n\n  \n\n 乙 ')).toEqual(['甲', '乙']);
+    expect(paragraphsOf('甲\r\n乙')).toEqual(['甲', '乙']);
     expect(paragraphsOf(' \n\n  ')).toEqual([]);
   });
 });

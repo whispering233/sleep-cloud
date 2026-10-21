@@ -26,12 +26,15 @@ function isShortString(value: unknown, maxLen: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLen;
 }
 
-/** 段落切分：连续空行分段，段内单个换行保留（渲染侧靠 `white-space: pre-line`）。 */
+/**
+ * 切成要显示的行：**任意一个或连续的换行都分一次**——数据包里 `\n` 与 `\n\n` 混用，两者都是「换一行」。
+ * 每行 trim、空行丢弃；每行在面板里是一个 `<p>`，所以**每行都会首行缩进**（`docs/design/50-slot-panel.md` §附）。
+ */
 export function paragraphsOf(text: string): string[] {
   return text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0);
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 function parseItems(raw: unknown[]): TypeTextItem[] {

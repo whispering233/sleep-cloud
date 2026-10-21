@@ -189,10 +189,19 @@
 
   /* 阅读入口「!」：44×44 正方形（可见文字只有一个字符，不让胶囊自己变宽），
      墨色与 `.hud-action` 一致（它是内容入口，不是齿轮那种次要入口） */
+  /* 阅读入口：44×44 正方形（只有图标）。图标吃 `neutral`（主入口，比齿轮高一档），
+     画法与齿轮同一套：`currentColor` 描边 1.5px、20×20 绘制区 */
   .hud-read {
     width: 44px;
     min-width: 44px;
     padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .hud-read-icon {
+    width: 20px;
+    height: 20px;
   }
 
   /* 齿轮按钮：与 `.hud-action` 同一套描边胶囊外观，但里面只有一个图标，所以是 44×44 的正方形。
@@ -420,12 +429,11 @@
     letter-spacing: var(--tracking-reading);
   }
 
-  /* 每段首行缩进；段内硬换行靠 `white-space: pre-line`（`paragraphsOf` 已把空行切开）。
-     段间空一行：`1.7em` 正好是这个字号下的一个行高（行高写死 1.7，见上） */
+  /* 每行是一个 `<p>`（`paragraphsOf` 把任何换行都切开），所以**每行都首行缩进**；
+     行间空一整行：`1.7em` 正好是这个字号下的一个行高（行高写死 1.7，见上） */
   .type-text-body p {
     margin: 0;
     text-indent: 2em;
-    white-space: pre-line;
   }
 
   .type-text-body p + p {
