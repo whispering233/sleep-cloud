@@ -153,7 +153,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 | 步骤 | 动作 |
 | :--- | :--- |
-| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期> — <主题>` 之下，并留一个空的 `[Unreleased]` 段 |
+| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期>` 之下，并留一个空的 `[Unreleased]` 段 |
 | 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
 | 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
 | 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
