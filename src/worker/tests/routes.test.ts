@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { HALL_ID } from '../../shared/constants';
 import { LAYOUT_VERSION } from '../../shared/layout';
@@ -70,6 +70,13 @@ const currentSession = async (env: Env, cookie: string) => (await body(await get
 /** `/api/ws` 转发给厅的那份身份头（假房间服务把它原样回成 JSON）。 */
 const forwardedHeaders = async (env: Env, cookie: string): Promise<Record<string, string>> =>
   ((await (await get('/api/ws', env, cookie)).json()) as { forwarded: Record<string, string> }).forwarded;
+
+/** 日志出口写的是 `console.log(一个对象)`（`shared/log.ts` 的 `write`）：按 `ev` 挑出这一类事件。 */
+const events = (name: string): Array<Record<string, unknown>> =>
+  vi
+    .mocked(console.log)
+    .mock.calls.map((call) => call[0] as Record<string, unknown>)
+    .filter((row) => row.ev === name);
 
 /** 写会话的接口都会重签 cookie（会话是无状态的），后续请求要用新的那一份。 */
 async function postSession(path: string, env: Env, cookie: string, payload: unknown) {
@@ -286,6 +293,19 @@ describe('WebSocket 升级', () => {
     const res = await app.request('/api/ws', { headers: { cookie, 'x-sleep-ip': '9.9.9.9' } }, env);
 
     expect((((await res.json()) as { forwarded: Record<string, string> }).forwarded).ip).toBe('');
+  });
+
+  it('拒绝升级时在服务端留一条 reject 日志（「浏览器没把会话留住」的唯一痕迹）', async () => {
+    const env = makeEnv();
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const res = await body(await app.request('/api/ws', {}, env));
+
+      expect(res.code).toBe('1001');
+      expect(events('reject')).toEqual([{ ev: 'reject', code: '1001', intent: 'hello' }]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('未自述 → 1002；未设昵称 → 1003（都不升级连接）', async () => {

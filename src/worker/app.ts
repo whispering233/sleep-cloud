@@ -148,9 +148,18 @@ app.post('/api/appearance', async (c) => {
  */
 app.get('/api/ws', async (c) => {
   const session = await readExistingSession(c);
-  if (!session) return fail(c, '1001');
-  if (!session.ageConfirmed) return fail(c, '1002');
-  if (!session.nickname) return fail(c, '1003');
+  if (!session) {
+    log.ev('reject', { code: '1001', intent: 'hello' });
+    return fail(c, '1001');
+  }
+  if (!session.ageConfirmed) {
+    log.ev('reject', { code: '1002', intent: 'hello' });
+    return fail(c, '1002');
+  }
+  if (!session.nickname) {
+    log.ev('reject', { code: '1003', intent: 'hello' });
+    return fail(c, '1003');
+  }
 
   // 身份由 Worker 依据验签后的会话写入；客户端伪造的同名头会被这里覆盖
   const forwarded = new Request(c.req.raw);
