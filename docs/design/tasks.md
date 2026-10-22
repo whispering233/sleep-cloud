@@ -40,20 +40,4 @@
 
 ---
 
-## K4 黑名单 / 审计显示昵称
-
-**契约**：`../api/30-api-admin.md` §5.3 末段与 §5.5（`nickname` 读时现补，`kind = "ip"` 恒 `null`；**不存快照**）。
-
-- 服务端 `src/hall/admin.ts`：`blocksPage`（现在是 `listBlocks` 直接返回）与 `auditPage` 给每行补 `nickname`：`kind === 'user'` 时 `findIdentity(sql, value)?.nickname ?? null`，否则 `null`。
-- 前端 `public/admin.js`：`blockRow` 与 `auditRow` 的「值」格——`kind === 'user'` 时用 `partyLink({ userId: value, nickname })`，否则保持 `cell(value)`。
-- **不做**：不写快照、不改 schema、不给 `ip` 行编一个「该 IP 名下几个人」的数字。
-
-**验收**（全部通过才算完成）
-
-1. `npm test` 新增 2 条（`src/hall/tests/admin-api.test.ts`）：黑名单与审计列表里 `user` 行的 `nickname` 现补、身份过期后为 `null`、`ip` 行恒 `null`。
-2. `npm run typecheck` 通过。
-3. `node --check public/admin.js` 通过。
-
----
-
-（本批只剩 K2 / K3 / K4 三张静态页卡片。）
+（本批只剩 K2 / K3 两张静态页卡片。）

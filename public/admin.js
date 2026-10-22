@@ -186,13 +186,18 @@ function feedbackRow(item) {
   return tr;
 }
 
+/** 黑名单 / 审计的「值」格（§5.3、§5.5）：`user` 行显示昵称并能点开抽屉；`ip` 行只是字面量（不编「该 IP 名下几个人」）。 */
+function valueCell(item) {
+  return item.kind === 'user' ? partyLink({ userId: item.value, nickname: item.nickname }) : cell(item.value);
+}
+
 function auditRow(item) {
   const tr = document.createElement('tr');
   tr.append(
     cell(fmtTime(item.at)),
     cell(item.action),
     cell(item.kind),
-    cell(item.value),
+    valueCell(item),
     cell(fmtUntil(item.untilAt)),
     cell(item.reason ?? '—'),
     cell(item.actor),
@@ -204,7 +209,7 @@ function blockRow(item) {
   const tr = document.createElement('tr');
   tr.append(
     cell(item.kind),
-    cell(item.value),
+    valueCell(item),
     cell(fmtUntil(item.untilAt)),
     cell(item.reason),
     cell(fmtTime(item.createdAt)),

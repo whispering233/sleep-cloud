@@ -269,12 +269,26 @@ function reportTargetsPage(url: URL, ctx: AdminContext): Response {
   });
 }
 
+/** 封禁 / 审计里「值」那一格对应的人（§5.3、§5.5）：`kind = 'ip'` 或身份已被 90 天清空 → `null`。**不存快照**。 */
+function nicknameOf(sql: SqlStorage, kind: BlockKind, value: string): string | null {
+  return kind === 'user' ? (findIdentity(sql, value)?.nickname ?? null) : null;
+}
+
+function blocksPage(ctx: AdminContext): Response {
+  return json({
+    items: listBlocks(ctx.sql).map((row) => ({ ...row, nickname: nicknameOf(ctx.sql, row.kind, row.value) })),
+  });
+}
+
 function auditPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const rows = listAudit(ctx.sql, limit + 1, cursorOf(url, 'before'));
   const items = rows.slice(0, limit);
   const last: AuditRecord | undefined = items.at(-1);
-  return json({ items, next: rows.length > limit && last ? { before: last.id } : null });
+  return json({
+    items: items.map((row) => ({ ...row, nickname: nicknameOf(ctx.sql, row.kind, row.value) })),
+    next: rows.length > limit && last ? { before: last.id } : null,
+  });
 }
 
 /** 数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
@@ -302,7 +316,7 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
     return second === undefined ? identitiesPage(url, ctx) : identityDetail(second, ctx);
   }
   if (resource === 'blocks') {
-    if (second === undefined && request.method === 'GET') return json({ items: listBlocks(ctx.sql) });
+    if (second === undefined && request.method === 'GET') return blocksPage(ctx);
     if (second === undefined && request.method === 'POST') return createBlock(request, ctx);
     if (second !== undefined && third !== undefined && request.method === 'DELETE') {
       return deleteBlock(second, third, ctx);

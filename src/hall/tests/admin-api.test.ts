@@ -9,12 +9,12 @@ vi.mock('cloudflare:workers', () => ({
   },
 }));
 
-import { BED_OWNERSHIP_TTL_MS, HALL_ID, REPORT_DEDUP_MS } from '../../shared/constants';
+import { BED_OWNERSHIP_TTL_MS, HALL_ID, IDENTITY_FORGET_MS, REPORT_DEDUP_MS } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
 import { recordFeedback } from '../feedback';
 import { recordReport } from '../report';
-import { listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
+import { forgetStaleSources, listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
 import { freshSql, insertBed } from './sqlite';
 
 /** 假 socket：后台上只用到这里的三件事（附加数据、关闭、就绪态）。 */
@@ -106,7 +106,17 @@ interface AuditItem {
   value: string;
   untilAt: number | null;
   reason: string | null;
+  nickname: string | null;
   actor: string;
+}
+
+interface BlockItem {
+  kind: string;
+  value: string;
+  untilAt: number | null;
+  reason: string;
+  createdAt: number;
+  nickname: string | null;
 }
 
 interface ReportItem {
@@ -149,6 +159,8 @@ function adminSend(hall: Hall, path: string, method: string, body?: unknown): Pr
 const pageOf = async (res: Response): Promise<Page> => (await res.json()) as Page;
 const auditsOf = async (hall: Hall): Promise<AuditItem[]> =>
   ((await (await adminGet(hall, '/admin/audit')).json()) as { items: AuditItem[] }).items;
+const blocksOf = async (hall: Hall): Promise<BlockItem[]> =>
+  ((await (await adminGet(hall, '/admin/blocks')).json()) as { items: BlockItem[] }).items;
 
 test('没有内部头的 `/admin/*` 一律 404（客户端到不了厅对象，这里是显式拒绝）', async () => {
   const { hall } = newHall();
@@ -351,6 +363,22 @@ test('每个写操作都写一条审计：action / kind / value / actor=admin，
   expect(items[0]).toMatchObject({ kind: 'ip', value: '1.1.1.1' });
 });
 
+test('黑名单列表：`user` 行的昵称读时现补，过了留存期与 `ip` 行都是 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_live', nickname: '夜猫子' }, NOW);
+  recordIdentity(sql, { userId: 'u_gone', nickname: '早睡' }, NOW - IDENTITY_FORGET_MS - 1);
+  forgetStaleSources(sql, NOW);
+  upsertBlock(sql, { kind: 'user', value: 'u_live', untilAt: null, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'user', value: 'u_gone', untilAt: null, reason: '刷屏' }, NOW + 1);
+  upsertBlock(sql, { kind: 'ip', value: '1.1.1.1', untilAt: null, reason: '整段刷屏' }, NOW + 2);
+
+  expect((await blocksOf(hall)).map(({ kind, value, nickname }) => ({ kind, value, nickname }))).toEqual([
+    { kind: 'ip', value: '1.1.1.1', nickname: null },
+    { kind: 'user', value: 'u_gone', nickname: null },
+    { kind: 'user', value: 'u_live', nickname: '夜猫子' },
+  ]);
+});
+
 test('身份详情：不存在 → 404；存在时给同网络的其他身份与该身份的审计', async () => {
   const { hall, sql } = newHall();
   recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
@@ -434,6 +462,22 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
   ).json()) as { items: AuditItem[]; next: { before: number } | null };
   expect(second.items).toHaveLength(1);
   expect(second.next).toBeNull();
+});
+
+test('审计列表：`user` 行的昵称读时现补，过了留存期与 `ip` 行都是 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_live', nickname: '夜猫子' }, NOW);
+  recordIdentity(sql, { userId: 'u_gone', nickname: '早睡' }, NOW - IDENTITY_FORGET_MS - 1);
+  forgetStaleSources(sql, NOW);
+  writeAudit(sql, { action: 'block', kind: 'user', value: 'u_live', untilAt: null, reason: '刷屏' }, NOW);
+  writeAudit(sql, { action: 'block', kind: 'user', value: 'u_gone', untilAt: null, reason: '刷屏' }, NOW + 1);
+  writeAudit(sql, { action: 'block', kind: 'ip', value: '1.1.1.1', untilAt: null, reason: '整段刷屏' }, NOW + 2);
+
+  expect((await auditsOf(hall)).map(({ kind, value, nickname }) => ({ kind, value, nickname }))).toEqual([
+    { kind: 'ip', value: '1.1.1.1', nickname: null },
+    { kind: 'user', value: 'u_gone', nickname: null },
+    { kind: 'user', value: 'u_live', nickname: '夜猫子' },
+  ]);
 });
 
 interface FeedbackItem {
