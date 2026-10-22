@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, openGames, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openFeedback, openGames, openLot, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -28,16 +28,17 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 };
 
 /**
- * 右端两颗**还没做功能**的入口（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
+ * 动作行右端的三颗**图标入口**（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
  * 图形是设计给的 24 × 24 绘制区 SVG（`stroke-width 1.6`）——按钮里按 20×20 渲染，所以描边写 `1.8`，
  * 视觉上才等于 20 绘制区上的 `1.5px`（与书本 / 齿轮同一套画法）。
- * 先上界面、后接功能：点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
+ * **求签与游戏接通了功能**（拉起来签页 `docs/design/110-lot.md` / 拉起游戏页 `docs/design/110-games-page.md`）；
+ * 睡不着留言板先上界面、后接功能：点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
  */
-const PLACEHOLDER_ENTRIES = [
+const ICON_ENTRIES = [
   {
     key: 'board',
     label: '睡不着留言板',
-    notice: '睡不着留言板 · 还没做',
+    on: () => showNotice('睡不着留言板 · 还没做'),
     paths: (
       <>
         <rect x="3" y="5" width="18" height="14.6" rx="2.2" />
@@ -50,7 +51,7 @@ const PLACEHOLDER_ENTRIES = [
   {
     key: 'fortune',
     label: '求签',
-    notice: '求签 · 还没做',
+    on: openLot,
     paths: (
       <>
         <path d="M5.9 9.8v6.6c0 2.3 2.7 3.5 6.1 3.5s6.1-1.2 6.1-3.5V9.8" />
@@ -60,11 +61,24 @@ const PLACEHOLDER_ENTRIES = [
       </>
     ),
   },
+  {
+    key: 'game',
+    label: '游戏',
+    on: () => openGames(),
+    paths: (
+      <>
+        <path d="M8.3 7.2h7.4c2.5 0 4.6 1.9 4.9 4.4l.5 4c.2 1.9-2.1 3.1-3.5 1.7l-2.1-2.2H8.5l-2.1 2.2c-1.4 1.4-3.7.2-3.5-1.7l.5-4C3.7 9.1 5.8 7.2 8.3 7.2Z" />
+        <path d="M7.3 10v3.8M5.4 11.9h3.8" />
+        <circle cx="16.2" cy="11.5" r="1" />
+        <circle cx="18" cy="13.4" r="1" />
+      </>
+    ),
+  },
 ] as const;
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **关于失眠云** / 版本号 / 隐私说明；
+ * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那一组换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
@@ -244,16 +258,16 @@ export function ActionRow() {
             </button>
           ) : (
             <>
-              {/* 两颗「还没做」的入口（睡不着留言板 / 求签）：组内 8px、均在阅读入口左侧。
+              {/* 三颗图标入口（睡不着留言板 / 求签 / 游戏）：组内 8px、均在阅读入口左侧。
                   独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理（免得被 React 原地复用 / 聚焦换位） */}
-              {PLACEHOLDER_ENTRIES.map((entry) => (
+              {ICON_ENTRIES.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
                   className="hud-action hud-icon"
                   aria-label={entry.label}
                   onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => showNotice(entry.notice)}
+                  onClick={entry.on}
                 >
                   <svg
                     className="hud-icon-glyph"
@@ -269,32 +283,6 @@ export function ActionRow() {
                   </svg>
                 </button>
               ))}
-              {/* 游戏（`docs/design/110-games-page.md` §2）：打开整屏游戏页，**不发任何上行**。
-                  与「还没做」那两颗同一套 44×44 图标胶囊；独立 `key` + `pointerdown` 拦默认行为同上 */}
-              <button
-                key="game"
-                type="button"
-                className="hud-action hud-icon"
-                aria-label="游戏"
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={() => openGames()}
-              >
-                <svg
-                  className="hud-icon-glyph"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  aria-hidden="true"
-                >
-                  <path d="M8.3 7.2h7.4c2.5 0 4.6 1.9 4.9 4.4l.5 4c.2 1.9-2.1 3.1-3.5 1.7l-2.1-2.2H8.5l-2.1 2.2c-1.4 1.4-3.7.2-3.5-1.7l.5-4C3.7 9.1 5.8 7.2 8.3 7.2Z" />
-                  <path d="M7.3 10v3.8M5.4 11.9h3.8" />
-                  <circle cx="16.2" cy="11.5" r="1" />
-                  <circle cx="18" cy="13.4" r="1" />
-                </svg>
-              </button>
               {/* 阅读入口（`docs/design/50-slot-panel.md` §附）：齿轮左侧第二颗。
                   只在空闲态出现——非空闲态那格被「收起」占住，两者天然互斥 */}
               <button
@@ -443,6 +431,23 @@ export function ActionRow() {
                           }}
                         >
                           {soundLabel(view.sound)}
+                        </button>
+                        {/* 「反馈与建议」：进 `feedback` 会话，插槽面板换成反馈表单
+                            （`docs/design/50-slot-panel.md` §附）。点它关浮层。
+                            独立 `key` + `pointerdown` 拦默认行为：与「关于失眠云」那颗同理 */}
+                        <button
+                          key="feedback"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            closeMenu();
+                            // 等浮层关完再进 feedback：`hidePopover()` 的焦点归还会在提交之后
+                            // 把焦点抢回齿轮，下一帧的焦点对账就会把刚开的面板当成「焦点跑到面板外」
+                            window.setTimeout(openFeedback, 0);
+                          }}
+                        >
+                          反馈与建议
                         </button>
                         {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
                             点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。

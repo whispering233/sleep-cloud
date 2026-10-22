@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   AUTO_SLEEP_MS,
   CHAT_MAX_LEN,
+  FEEDBACK_MAX_LEN,
   GRACE_MS,
   HALL_ID,
   REPORT_EVIDENCE_MAX,
@@ -61,6 +62,7 @@ import {
 } from './connection';
 import type { ConnectionState } from './connection';
 import { nextDailyWakeAt, previousDailyWakeAt, shouldSettleDaily } from './daily';
+import { purgeExpiredFeedback, recordFeedback } from './feedback';
 import { graceVerdict } from './grace';
 import { isHallFull, nextLevelCapacity, previousLevelCapacity } from './level-rules';
 import { advanceMover } from '../shared/movement';
@@ -76,6 +78,8 @@ import {
   BED_INDEX_SQL,
   BED_TABLE_SQL,
   BLOCK_TABLE_SQL,
+  FEEDBACK_INDEX_SQL,
+  FEEDBACK_TABLE_SQL,
   IDENTITY_INDEX_SQL,
   IDENTITY_TABLE_SQL,
   META_TABLE_SQL,
@@ -168,6 +172,8 @@ export class Hall extends DurableObject<Env> {
     sql.exec(ADMIN_AUDIT_TABLE_SQL);
     sql.exec(REPORT_TABLE_SQL);
     for (const statement of REPORT_INDEX_SQL) sql.exec(statement);
+    sql.exec(FEEDBACK_TABLE_SQL);
+    for (const statement of FEEDBACK_INDEX_SQL) sql.exec(statement);
   }
 
   /** 当前床位数（读 `meta` + 内存缓存）。 */
@@ -493,10 +499,10 @@ export class Hall extends DurableObject<Env> {
     }
 
     if (!gate.allowed) {
-      // 被限流：不写附件（省一次写入），也不刷新任何状态。`report` 超额**静默丢弃**
-      // （`docs/api/20-api-ws.md` §4.9）：客户端已经本地置灰防连点，回一个 `4002` 只会多一次可见噪音。
+      // 被限流：不写附件（省一次写入），也不刷新任何状态。`report` / `feedback` 超额**静默丢弃**
+      // （`docs/api/20-api-ws.md` §7）：客户端已经本地置灰防连点，回一个 `4002` 只会多一次可见噪音。
       log.drop({ kind: 'limit' });
-      if (message.t !== 'report') fail('4002');
+      if (message.t !== 'report' && message.t !== 'feedback') fail('4002');
       return;
     }
     const fresh: ConnectionState = { ...connection, lastInputAt: now, rate: gate.window };
@@ -662,6 +668,26 @@ export class Hall extends DurableObject<Env> {
         // `5003` 是唯一「成功用 error 报文回」的例外（否则用户会被骗「已收到」）。它**不是拒绝**，
         // 所以不走 `sendError`——那样会在 `reject` 里记一条假拒绝（`100-log.md` §3）。
         this.send(ws, JSON.stringify({ t: 'error', code: '5003' } satisfies ErrorMessage));
+        return;
+      }
+      case 'feedback': {
+        // 校验顺序：空 → `4003`、超长 → `4001`、配额 → `4004`（`docs/api/20-api-ws.md` §4.10）。
+        // 三条都可见：用户要知道是「没写」「太长」还是「今天不能再发」。
+        const text = typeof message.text === 'string' ? message.text.trim() : '';
+        if (!text) {
+          fail('4003');
+          return;
+        }
+        if ([...text].length > FEEDBACK_MAX_LEN) {
+          fail('4001');
+          return;
+        }
+        if (recordFeedback(this.ctx.storage.sql, fresh.userId, text, now) === 'quota') {
+          fail('4004');
+          return;
+        }
+        // `5004` 与 `5003` 同类：成功用 `error` 报文回，客户端据此退场并确认；**不进 `reject`**。
+        this.send(ws, JSON.stringify({ t: 'error', code: '5004' } satisfies ErrorMessage));
         return;
       }
       default:
@@ -1386,6 +1412,7 @@ export class Hall extends DurableObject<Env> {
     purgeExpiredBlocks(sql, now);
     purgeExpiredAudit(sql, now);
     purgeExpiredReports(sql, now);
+    purgeExpiredFeedback(sql, now);
     // 发言缓冲是厅的内存量（不是持久状态）：每日清一次，别让不再说话的人一直占着
     this.speech.clear();
 

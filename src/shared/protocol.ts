@@ -168,6 +168,12 @@ interface UpstreamPayloads {
    * 落库（含 24 小时内并入重复）后回 `5003`；空事由 / 举报自己 → `4003`，超长 → `4001`。
    */
   report: { toId: string; reason: string };
+  /**
+   * 一条反馈 / 建议。**不要求联系方式和回复**：落 `feedback` 表（`user_id` + 正文 + 时刻），
+   * 不走内容过滤（只有运维看得到）。成功回 `5004`（唯一的确认信号）；空 → `4003`、超长 → `4001`、
+   * 同一身份滚动 24 小时超过 `FEEDBACK_DAILY_MAX` → `4004`（可见）。
+   */
+  feedback: { text: string };
 }
 
 export type UpstreamType = keyof UpstreamPayloads;
@@ -189,6 +195,7 @@ export const UPSTREAM_TYPES = [
   'chat',
   'whisper',
   'report',
+  'feedback',
 ] as const satisfies readonly UpstreamType[];
 
 /** 运行时可枚举的下行类型名（顺序与 `docs/api/20-api-ws.md` §4 表格一致）。 */

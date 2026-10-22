@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import { readDoc, tableRows } from '../../shared/tests/doc';
 import { TYPE_TEXTS_PER_CATEGORY } from '../../shared/constants';
+import { LOT_POOL_SIZE } from '../lots';
 import {
   PREFS,
   readAboutSeen,
+  readLot,
   readProgress,
   readSound,
   readWeather,
   readZoomMode,
   writeAboutSeen,
+  writeLot,
   writeProgress,
   writeSound,
   writeWeather,
@@ -277,6 +280,41 @@ describe('雨声偏好（sc.sound）', () => {
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
     }
+  });
+});
+
+describe('求签（`sc.lot`，`docs/design/110-lot.md` §3）', () => {
+  it('缺键 → `undefined`（= 今天没求过）', () => {
+    expect(readLot(fakeStorage())).toBeUndefined();
+  });
+
+  it('写下的值原样读回，形状是 `{v, date, no}`', () => {
+    const storage = fakeStorage();
+    writeLot({ date: '2026-10-22', no: 7 }, storage);
+    expect(JSON.parse(storage.data.get(PREFS.lot) ?? '')).toEqual({ v: 1, date: '2026-10-22', no: 7 });
+    expect(readLot(storage)).toEqual({ date: '2026-10-22', no: 7 });
+  });
+
+  it('`no` 越界 / 非整数 / `date` 形状不符 → 删键 + 当没求过（坏值唯一后果就是再求一次）', () => {
+    const raws = [
+      JSON.stringify({ v: 1, date: '2026-10-22', no: LOT_POOL_SIZE }),
+      JSON.stringify({ v: 1, date: '2026-10-22', no: 1.5 }),
+      JSON.stringify({ v: 1, date: '2026/10/22', no: 7 }),
+      JSON.stringify({ v: 1, date: '2026-10-22' }),
+    ];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.lot, raw);
+      expect(readLot(storage)).toBeUndefined();
+      expect(storage.data.has(PREFS.lot)).toBe(false);
+    }
+  });
+
+  it('版本不符 → 删键 + 当没求过（不写迁移代码）', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.lot, JSON.stringify({ v: 2, date: '2026-10-22', no: 7 }));
+    expect(readLot(storage)).toBeUndefined();
+    expect(storage.data.has(PREFS.lot)).toBe(false);
   });
 });
 

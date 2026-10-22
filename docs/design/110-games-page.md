@@ -66,7 +66,7 @@ export interface GameCtx {
 
 | 让什么 | 怎么做 |
 | :--- | :--- |
-| 世界 | `WorldHandle.pause()` → Phaser `game.loop.sleep()`；`resume()` → `game.loop.wake(true)`（`seamless` 为真，避免醒来第一帧吃一个巨大的 `delta`）。**位置与状态一个字节都不改**：暂停的是渲染循环，不是人 |
+| 世界 | 走**同一套整屏页挂起**：`App.tsx` 的 `covered`（入场层 / 说明面板 / 游戏页）→ `setWorldSuspended(true)` → Phaser `game.loop.sleep()`，恢复时 `resetDelta()` + `wake()`。游戏页**不另造一对 pause/resume**：两套机制会各自记一份暂停态，醒来时先醒的是哪一份就成了运气。**位置与状态一个字节都不改**：暂停的是渲染循环，不是人 |
 | 大厅音频 | 进页面 `suspendHall()`、退出 `resumeHall()`——雨声不与游戏声叠着响。不建 `AudioContext`（本来没建就什么都不做）、不改用户偏好、不共用 context、不做统一总开关 |
 | 封禁 / 被顶替 | `5002` 与带语义的 close（`blocked` / `replaced`）到达时**强制关掉游戏页**：整屏页会把提示条和入场层盖住，那一瞬间人以为自己被封了却看不到原因 |
 

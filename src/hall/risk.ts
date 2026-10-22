@@ -262,6 +262,11 @@ export function listAuditFor(sql: SqlStorage, kind: BlockKind, value: string, li
     .map(toAudit);
 }
 
+/** 统计卡（`120-admin-console.md` §2）：当前生效的封禁条数——永久 + 未到期，过期行不算。 */
+export function countActiveBlocks(sql: SqlStorage, now: number): number {
+  return sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM block WHERE until_at IS NULL OR until_at > ?', now).one().n;
+}
+
 /** 这条封禁是否已经存在（`created: false` = 覆盖了既有的一条，见 §5.3）。 */
 export function hasBlock(sql: SqlStorage, kind: BlockKind, value: string): boolean {
   return sql.exec('SELECT 1 FROM block WHERE kind = ? AND value = ?', kind, value).toArray().length > 0;

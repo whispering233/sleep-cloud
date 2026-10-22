@@ -393,6 +393,13 @@
     opacity: 1;
     transform: none;
     visibility: visible;
+    /* 打开时 `visibility` **不参与过渡**：它是离散属性，带 160ms 的话计算值要到下一帧才翻成 visible，
+       而 `autoFocus` 发生在 commit 里——浏览器按当时的计算值判定「不可聚焦」，焦点落回 body，
+       下一帧的焦点对账就把刚打开的表单当成「焦点在面板外」退场（实测反馈面板只存在 1 帧）。
+       关闭方向仍走基类的 160ms：退场期间保持 visible 才点得到，也不会把点击漏给画布 */
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out;
   }
 
   /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：两列、每条一整个 44px 描边胶囊。
@@ -557,7 +564,7 @@
 
   /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉）。
      三栏：名字 `flex-[3]`（窄屏省略号）/ 竖线 / 「举报」`flex-[1]`，× 在最右。
-     举报按钮和名字共用一行、自带文案：纯文字不当按钮用，但这一行里它是唯一的动作，所以靠对比区分 */
+     两颗动作都是描边胶囊（硬纪律 26：可点击的才画成描边胶囊）：举报同 `.hud-action`、× 同 `.hud-settings-button` */
   .whisper-target {
     display: flex;
     align-items: center;
@@ -589,17 +596,19 @@
     background-color: var(--color-claimed);
   }
 
-  /* 举报按钮：44px 触摸目标、无明显底色（这一行已经够重了）。回过执后 disabled 置灰成「已举报」 */
+  /* 举报按钮：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
+     回过执后 disabled 置灰成「已举报」 */
   .whisper-target-report {
     flex: 1 1 0;
     min-height: 44px;
-    padding: 0 var(--spacing-xs);
+    padding: 0 var(--spacing-md);
     color: var(--color-neutral);
     background-color: transparent;
     font-family: var(--font-label);
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
-    border: 0;
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
   }
 
   .whisper-target-report:disabled {
@@ -607,30 +616,96 @@
     opacity: 0.6;
   }
 
+  /* 清除选中：44×44 圆胶囊（`radius-full` 在 44px 见方上被夹成 22px = 圆），同 `.hud-settings-button`。
+     × 字形吃 `title` 档：13px 的字在 44px 的框里显得空 */
   .whisper-target-clear {
-    min-width: 44px;
-    min-height: 44px;
+    width: 44px;
+    height: 44px;
     margin-inline-start: auto;
+    padding: 0;
     color: var(--color-neutral-muted);
     background-color: transparent;
-    font-size: var(--text-label);
-    border: 0;
+    font-size: var(--text-title);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
   }
 
   /* 举报表单（插槽面板的第三个内容源，`docs/design/50-slot-panel.md` §4）：
      顶对齐、纵向排。事由框吃 `.input-field` 的字号（≥16px，避免聚焦时页面缩放）与墨色，
      只覆盖高度：多行、可滚，按钮永远在它下方——面板贴着 HUD，键盘弹起也盖不到 */
-  .report-form {
+  .report-form,
+  .feedback-form {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
     padding: var(--spacing-md);
   }
 
-  .report-reason {
+  .report-reason,
+  .feedback-text {
     flex: 0 0 auto;
     min-height: 96px;
     resize: none;
+  }
+
+  /* 反馈表单的告知与字数：弱提示一行 + 计数贴右，字色只降一档，不抢正文 */
+  .feedback-note {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  .feedback-meta {
+    display: flex;
+    justify-content: flex-end;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  /* 接近上限才变色：平时它只是计数，不该抢正文的注意力 */
+  .feedback-count[data-near] {
+    color: var(--color-neutral);
+  }
+
+  .feedback-count[data-full] {
+    font-weight: 600;
+  }
+
+  .feedback-link {
+    margin-inline-start: var(--spacing-xs);
+    color: var(--color-neutral);
+    text-decoration: underline;
+  }
+
+  /* 可恢复失败（配额 / 超长 / 空）：一行可见错误，内容原样留着 */
+  .feedback-error {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    font-weight: 600;
+  }
+
+  .feedback-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+
+  .feedback-cancel {
+    min-height: 44px;
+    padding: 0 var(--spacing-md);
+    color: var(--color-neutral-muted);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    border: 0;
   }
 
   /* 表情切换键：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
@@ -1056,6 +1131,193 @@
   /* 图集的帧是背景图，行内元素吃不到宽高（`sprites/frames.css` 只给 width/height/background-position） */
   .appearance-preview {
     display: block;
+  }
+
+  /* ——— 求签页（复用入场层那套壳与卡片，只补签筒、签与结果卡；`docs/design/110-lot.md`） ——— */
+
+  /* 卡片内容居中：签筒、四句诗、解签都该像一张签一样立在中轴 */
+  .lot-sheet {
+    justify-items: center;
+    text-align: center;
+  }
+
+  /* **顶对齐，不是垂直居中**（覆盖 `.entry-overlay` 的 `place-items: center`）：这一页的内容高度会随状态变
+     （签文本体只在有签时出现、「今日已求」小字与出口只在 revealed 出现），居中会让卡片在这两处各上跳一次
+     （实测 revealed 那一帧上跳 43.6px）。顶对齐后三个状态共用一个锚点 */
+  .lot-overlay {
+    align-items: start;
+  }
+
+  .lot-stage {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    align-items: end;
+    /* 筒高 64 + 升 56 = 120：签从筒里升到正好贴着这一块的上沿，不会越过卡片上沿、也不压标题。
+       这一块**始终占着**（签筒不按态挂卸） */
+    min-height: 120px;
+  }
+
+  .lot-tube {
+    width: 64px;
+    height: 64px;
+    color: var(--color-neutral);
+    /* 晃动的支点在下沿：签筒是立着的，不是绕中心转 */
+    transform-origin: 50% 100%;
+  }
+
+  /* 升起的那支签：一根细签，纯装饰（内容在下面那张卡里）。
+     静止时整根**落在签筒里**（下沿 8px、高 56 → 8…64 正好是筒身），升 56px 后正好升到 64…120；
+     两个位置都在 `lot-stage` 之内，所以它既不出上沿、也不会停在标题上 */
+  .lot-stick {
+    position: absolute;
+    bottom: 8px;
+    width: 3px;
+    height: 56px;
+    background-color: var(--color-neutral);
+    border-radius: var(--radius-full);
+    opacity: 0;
+  }
+
+  .lot-hint {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+  }
+
+  .lot-sign {
+    display: grid;
+    gap: var(--spacing-xs);
+    justify-items: center;
+  }
+
+  .lot-level {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  /* 签题：`label` 档（与页标题「求签」同面但不抢它——一张签的名字靠字重与字距立住） */
+  .lot-title {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  /* 四句一句一行：不问宽度，按句断行 */
+  .lot-poem {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    color: var(--color-neutral);
+    font-size: var(--text-reading);
+    letter-spacing: var(--tracking-reading);
+    line-height: 1.7;
+  }
+
+  .lot-reading {
+    margin: 0;
+    color: var(--color-neutral);
+    font-size: var(--text-reading);
+    letter-spacing: var(--tracking-reading);
+    line-height: 1.7;
+  }
+
+  .lot-good {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  /* 摇 520 → 起 380 → 出 300（合计 1.2 s，`config.md` §5）。三段靠 `animation-delay` 串，
+     不用 JS 排时序：到点即终态（`both` 填满），跳过的唯一入口是 click + `animationend` */
+  @keyframes lot-tube-shake {
+    0%,
+    100% {
+      opacity: 1;
+      transform: rotate(0deg);
+    }
+
+    20% {
+      transform: rotate(-3deg);
+    }
+
+    40% {
+      transform: rotate(3deg);
+    }
+
+    60% {
+      transform: rotate(-3deg);
+    }
+
+    80% {
+      transform: rotate(3deg);
+    }
+  }
+
+  /* 签抽出来之后筒身淡到 0.25：它退成背景，签与卡在上面 */
+  .lot-tube-dim {
+    opacity: 0.25;
+  }
+
+  @keyframes lot-stick-rise {
+    0% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+
+    40% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(-56px);
+    }
+  }
+
+  @keyframes lot-sign-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .lot-tube-shake {
+    animation: lot-tube-shake 520ms ease-in-out both;
+  }
+
+  .lot-stick-rise {
+    animation: lot-stick-rise 380ms 520ms ease-out both;
+  }
+
+  /* `both` + 延迟：签还在摇时卡片已在底下等待，只到 900ms 才淡入 */
+  .lot-sign-in {
+    animation: lot-sign-in 300ms 900ms ease-out both;
+  }
+
+  /* 减动效：三段压到 0.01ms（`animationend` 照旧会来，`Toast` 同一套做法） */
+  @media (prefers-reduced-motion: reduce) {
+    .lot-tube-shake,
+    .lot-stick-rise,
+    .lot-sign-in {
+      animation-duration: 0.01ms;
+      animation-delay: 0ms;
+    }
   }
 
   /* ——— 提示条：只对可恢复错误出现，几秒后自行消失 ——— */

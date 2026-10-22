@@ -7,6 +7,8 @@ import {
   BED_INDEX_SQL,
   BED_TABLE_SQL,
   BLOCK_TABLE_SQL,
+  FEEDBACK_INDEX_SQL,
+  FEEDBACK_TABLE_SQL,
   IDENTITY_INDEX_SQL,
   IDENTITY_TABLE_SQL,
   META_TABLE_SQL,
@@ -31,6 +33,8 @@ export function freshSql(): SqlStorage {
   db.exec(ADMIN_AUDIT_TABLE_SQL);
   db.exec(REPORT_TABLE_SQL);
   for (const statement of REPORT_INDEX_SQL) db.exec(statement);
+  db.exec(FEEDBACK_TABLE_SQL);
+  for (const statement of FEEDBACK_INDEX_SQL) db.exec(statement);
 
   return {
     exec: (query: string, ...bindings: unknown[]) => {

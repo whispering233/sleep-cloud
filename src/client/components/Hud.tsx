@@ -22,8 +22,8 @@ export function useHudView(): HudView {
 }
 
 /**
- * 顶部的极简信息条，**只放显示性信息**：`在线 n` / `空床 n` / `延迟 n ms` / `缩放 0.75×`，左对齐、单行
- * （`docs/ui/DESIGN.md` 的 `hud` 行）。可点击组（床号 / `GO`）与右端那一组图标**不在这里**
+ * 顶部的极简信息条，**只放显示性信息**：`在线 n` / `空床 n` / `延迟 n ms` / `缩放 0.75×` / `今日宜 睡觉好梦`，
+ * 左对齐、单行（`docs/ui/DESIGN.md` 的 `hud` 行）。可点击组（床号 / `GO`）与右端那一组图标**不在这里**
  * ——它们住在 `chat-panel` 的动作行（见 `ActionRow`）。
  *
  * 「延迟」**常驻**——没有样本时显示 `—`；样本来自聊天回投与**按需探活的 `pong`**（所以回到前台 /
@@ -57,6 +57,9 @@ export function Hud() {
         <span>
           缩放 <span className="hud-numeric">{zoomShortLabel(view.zoomMode)}</span>
         </span>
+        {/* 今日宜：**固定一句、常驻**，不读签也不随签变（`docs/design/110-lot.md` §6）。
+            它只描述这个厅的基调，与求签页抽到哪一支无关，所以住 HUD、不住页面 */}
+        <span>今日宜 睡觉好梦</span>
       </div>
     </header>
   );

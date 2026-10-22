@@ -30,6 +30,7 @@ describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
       'chat',
       'whisper',
       'report',
+      'feedback',
     ]);
     expect([...UPSTREAM_TYPES]).toEqual(docUpstream);
   });

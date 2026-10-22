@@ -12,6 +12,7 @@ import { ActionRow } from './ActionRow';
 import { ConnectionBanner } from './ConnectionBanner';
 import { PrimaryAction } from './PrimaryAction';
 import { QuickPhrases } from './QuickPhrases';
+import { FeedbackForm } from './FeedbackForm';
 import { ReportForm } from './ReportForm';
 import { SlotPanel } from './SlotPanel';
 import { TextInput } from './TextInput';
@@ -41,8 +42,10 @@ interface PanelView {
   reportTo?: string;
   /** 选中对象已在本次会话内举报过：私聊行那颗按钮置灰成「已举报」 */
   reported: boolean;
-  /** 面板上那行常驻弱提示（`5003` 回执）：盖过草稿长度提示，常驻到下一次操作 */
+  /** 面板上那行常驻弱提示（`5003` / `5004` 回执）：盖过草稿长度提示，常驻到下一次操作 */
   chatHint?: string;
+  /** 反馈表单里的可见错误（`4001` / `4003` / `4004`）：就地显示，不退场 */
+  feedbackError?: string;
   /** 类型文本的阅读进度（`reading` 态才有用；抽签改的就是它） */
   readProgress: ClientState['readProgress'];
 }
@@ -57,6 +60,7 @@ function viewOf(state: ClientState): PanelView {
     reportTo: state.pendingReportTo,
     reported: state.selectedId !== undefined && state.reportedIds.has(state.selectedId),
     chatHint: state.chatHint,
+    feedbackError: state.feedbackError,
     readProgress: state.readProgress,
   };
 }
@@ -69,6 +73,7 @@ const sameView = (a: PanelView, b: PanelView): boolean =>
   a.reportTo === b.reportTo &&
   a.reported === b.reported &&
   a.chatHint === b.chatHint &&
+  a.feedbackError === b.feedbackError &&
   // 阅读进度是**整体替换**的对象：只有抽签 / 再看一遍才换身份，所以比引用就够
   a.readProgress === b.readProgress;
 
@@ -119,8 +124,9 @@ export function ChatPanel() {
         <ConnectionBanner />
 
         {/* 私聊目标行：查不到名字就不渲染（目标离开时选中已被清掉，这里只是兜底）。
-            三栏：名字 / 竖线 / 「举报」；× 在最右。举报按钮自带文案（纯文字不当按钮用），
-            `pointerdown` 里 `preventDefault()` 保住焦点、独立的 `key` 避开 React 原地复用（硬纪律 35） */}
+            三栏：名字 / 竖线 / 「举报」；× 在最右。两颗动作都是描边胶囊（`.hud-action` 家族，
+            × 同 `.hud-settings-button`，见硬纪律 26）；举报在 `pointerdown` 里 `preventDefault()` 保住焦点，
+            两颗各带独立的 `key` 避开 React 原地复用（硬纪律 35） */}
         {selectedId !== undefined && targetName !== undefined && (
           <div className="whisper-target">
             <span className="whisper-target-name">{`私聊 ${targetName}`}</span>
@@ -225,10 +231,12 @@ export function ChatPanel() {
         </form>
       </section>
 
-      {/* 插槽面板在网格第 3 行（打字态铺满到屏底）。三个内容互斥：举报表单 > 类型文本 > 快捷用语
-          （前者们都没有可编辑控件，退场只能靠那颗「收起」，`docs/design/50-slot-panel.md` §4） */}
+      {/* 插槽面板在网格第 3 行（打字态铺满到屏底）。内容互斥：反馈表单 > 举报表单 > 类型文本 > 快捷用语
+          （类型文本没有可编辑控件，退场只能靠那颗「收起」，`docs/design/50-slot-panel.md` §4） */}
       <SlotPanel active={view.composer !== 'idle'} onBlank={exitComposer}>
-        {view.composer === 'report' ? (
+        {view.composer === 'feedback' ? (
+          <FeedbackForm error={view.feedbackError} />
+        ) : view.composer === 'report' ? (
           <ReportForm toId={view.reportTo} />
         ) : view.composer === 'reading' ? (
           <TypeTextPanel progress={view.readProgress} />

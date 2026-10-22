@@ -7,9 +7,12 @@ import type { ZoomMode } from './zoom';
  * （世界层是懒加载块，入场层不该等它下载完）。
  */
 let world: WorldHandle | undefined;
+/** 最后一次请求的暂停态：世界层是懒加载块，注册可能晚于 App 的 effect。 */
+let suspended = false;
 
 export function setWorldHandle(handle: WorldHandle | undefined): void {
   world = handle;
+  handle?.setSuspended(suspended);
 }
 
 /** 相机跳到我的床。世界层还没起来（入场层期间）时什么都不做。 */
@@ -31,14 +34,10 @@ export function setZoomMode(mode: ZoomMode): void {
 }
 
 /**
- * 让位（游戏页开着时）：停掉世界层的渲染循环。**位置与状态一个字节都不改**，人还站在厅里。
- * 世界层还没起来时什么都不做（同上面几条）。
+ * 整屏页（入场层 / 说明面板 / 游戏页）盖住世界时整帧停渲染。请求先记在模块级，世界层起来时再补上——
+ * 入场层不该等它下载完，所以 App 的 effect 可能比世界层先跑。**位置与状态一个字节都不改**，人还站在厅里。
  */
-export function pauseWorld(): void {
-  world?.pause();
-}
-
-/** 回到大厅时恢复渲染循环（`wake(true)`，不吃暂停期间累积的 `delta`）。 */
-export function resumeWorld(): void {
-  world?.resume();
+export function setWorldSuspended(next: boolean): void {
+  suspended = next;
+  world?.setSuspended(next);
 }

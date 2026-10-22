@@ -5,729 +5,196 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>失眠云 · 后台</title>
     <!-- 运维面：不加载前台 React、不连 WebSocket、不引用 DESIGN.md 的令牌（见 docs/api/30-api-admin.md §1）。 -->
-    <style>
-      :root {
-        color-scheme: light dark;
-        --line: #9aa2ad;
-        --muted: #5c6570;
-        --bad: #b3261e;
-      }
-      body {
-        margin: 0;
-        padding: 24px 16px;
-        font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
-      }
-      main {
-        max-width: 960px;
-        margin: 0 auto;
-      }
-      h1 {
-        font-size: 20px;
-        margin: 0 0 16px;
-      }
-      h2 {
-        font-size: 17px;
-        margin: 32px 0 12px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
-      }
-      h3 {
-        font-size: 15px;
-        margin: 20px 0 8px;
-      }
-      label {
-        display: block;
-        margin: 0 0 6px;
-      }
-      input,
-      select,
-      button {
-        font: inherit;
-        min-height: 44px;
-        box-sizing: border-box;
-      }
-      input,
-      select {
-        padding: 8px 12px;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-      }
-      button {
-        padding: 8px 20px;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        background: transparent;
-        cursor: pointer;
-      }
-      button:disabled {
-        cursor: default;
-        opacity: 0.6;
-      }
-      .bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: end;
-        margin-block: 12px;
-      }
-      .bar input {
-        width: 200px;
-      }
-      .pager {
-        display: flex;
-        gap: 8px;
-        margin-block: 8px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-      }
-      th,
-      td {
-        padding: 6px 8px;
-        border-bottom: 1px solid var(--line);
-        text-align: left;
-        vertical-align: top;
-        word-break: break-all;
-      }
-      th {
-        font-weight: 600;
-        color: var(--muted);
-      }
-      #status {
-        min-height: 1.5em;
-        margin: 0;
-        color: var(--muted);
-      }
-      #status[data-tone='bad'] {
-        color: var(--bad);
-      }
-      [hidden] {
-        display: none !important;
-      }
-    </style>
+    <link rel="stylesheet" href="admin.css" />
+    <script src="admin.js" defer></script>
   </head>
   <body>
-    <main>
-      <h1>失眠云 · 后台</h1>
+    <div class="app">
+      <aside id="sidebar" hidden>
+        <p class="brand">失眠云 · 后台</p>
+        <nav>
+          <a href="#identities">台账</a>
+          <a href="#blocks">黑名单</a>
+          <a href="#audit">审计</a>
+          <a href="#reports">举报</a>
+          <a href="#feedback">反馈</a>
+        </nav>
+      </aside>
 
-      <form id="login">
-        <div id="tokenField">
-          <label for="token">后台令牌</label>
-          <input id="token" name="token" type="password" autocomplete="current-password" required />
-        </div>
-        <div class="bar">
-          <button type="submit">登录</button>
+      <main>
+        <div class="head">
+          <h1>失眠云 · 后台</h1>
           <button type="button" id="logout" hidden>登出</button>
         </div>
-      </form>
 
-      <p id="status" role="status"></p>
-
-      <div id="sections" hidden>
-        <section>
-          <h2>台账</h2>
+        <form id="login">
+          <div id="tokenField">
+            <label for="token">后台令牌</label>
+            <input id="token" name="token" type="password" autocomplete="current-password" required />
+          </div>
           <div class="bar">
-            <label for="ipFilter">按 IP 反查<input id="ipFilter" placeholder="1.2.3.4" autocomplete="off" /></label>
-            <label for="nameFilter">按昵称搜<input id="nameFilter" placeholder="名字的一部分" autocomplete="off" /></label>
-            <button type="button" id="ipSearch">搜索</button>
-            <button type="button" id="ipClear">清除</button>
+            <button type="submit">登录</button>
           </div>
-          <div class="pager">
-            <button type="button" id="identitiesPrev" disabled>上一页</button>
-            <button type="button" id="identitiesNext" disabled>下一页</button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>身份</th>
-                <th>昵称</th>
-                <th>最近出现</th>
-                <th>IP</th>
-                <th>国家</th>
-                <th>床号</th>
-                <th>在线</th>
-                <th>封禁</th>
-              </tr>
-            </thead>
-            <tbody id="identities"></tbody>
-          </table>
-        </section>
+        </form>
 
-        <section>
-          <h2>黑名单</h2>
-          <form id="blockForm">
+        <p id="status" role="status"></p>
+
+        <div id="stats" class="stats" aria-label="概览" hidden></div>
+
+        <div id="sections" hidden>
+          <section id="view-identities">
+            <h2>台账</h2>
             <div class="bar">
-              <label for="blockKind">维度<select id="blockKind"><option value="user">user</option><option value="ip">ip</option></select></label>
-              <label for="blockValue">值<input id="blockValue" required autocomplete="off" /></label>
-              <label for="blockMinutes">时长（分钟，留空 = 永久）<input id="blockMinutes" type="number" min="1" inputmode="numeric" /></label>
-              <label for="blockReason">原因<input id="blockReason" required maxlength="64" autocomplete="off" /></label>
-              <button type="submit">封禁</button>
+              <label for="ipFilter">按 IP 反查<input id="ipFilter" placeholder="1.2.3.4" autocomplete="off" /></label>
+              <label for="nameFilter">按昵称搜<input id="nameFilter" placeholder="名字的一部分" autocomplete="off" /></label>
+              <button type="button" id="ipSearch">搜索</button>
+              <button type="button" id="ipClear">清除</button>
             </div>
-          </form>
-          <table>
-            <thead>
-              <tr>
-                <th>维度</th>
-                <th>值</th>
-                <th>到期</th>
-                <th>原因</th>
-                <th>创建</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="blocks"></tbody>
-          </table>
-        </section>
+            <div class="pager">
+              <button type="button" id="identitiesPrev" disabled>上一页</button>
+              <button type="button" id="identitiesNext" disabled>下一页</button>
+            </div>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>身份</th>
+                  <th>昵称</th>
+                  <th>最近出现</th>
+                  <th>IP</th>
+                  <th>国家</th>
+                  <th>床号</th>
+                  <th>在线</th>
+                  <th>封禁</th>
+                </tr>
+              </thead>
+              <tbody id="identities"></tbody>
+            </table>
+            </div>
+          </section>
 
-        <section>
-          <h2>审计</h2>
-          <div class="pager">
-            <button type="button" id="auditPrev" disabled>上一页</button>
-            <button type="button" id="auditNext" disabled>下一页</button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>动作</th>
-                <th>维度</th>
-                <th>值</th>
-                <th>到期</th>
-                <th>原因</th>
-                <th>操作者</th>
-              </tr>
-            </thead>
-            <tbody id="audit"></tbody>
-          </table>
-        </section>
+          <section id="view-blocks" hidden>
+            <h2>黑名单</h2>
+            <form id="blockForm">
+              <div class="bar">
+                <label for="blockKind">维度<select id="blockKind"><option value="user">user</option><option value="ip">ip</option></select></label>
+                <label for="blockValue">值<input id="blockValue" required autocomplete="off" /></label>
+                <label for="blockMinutes">时长（分钟，留空 = 永久）<input id="blockMinutes" type="number" min="1" inputmode="numeric" /></label>
+                <label for="blockReason">原因<input id="blockReason" required maxlength="64" autocomplete="off" /></label>
+                <button type="submit">封禁</button>
+              </div>
+            </form>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>维度</th>
+                  <th>值</th>
+                  <th>到期</th>
+                  <th>原因</th>
+                  <th>创建</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="blocks"></tbody>
+            </table>
+            </div>
+          </section>
 
-        <section>
-          <h2>举报</h2>
-          <h3>按被举报人</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>被举报人</th>
-                <th>次数</th>
-                <th>举报人数</th>
-                <th>最近一次</th>
-                <th>最近事由</th>
-              </tr>
-            </thead>
-            <tbody id="reportTargets"></tbody>
-          </table>
-          <h3>明细</h3>
-          <div class="pager">
-            <button type="button" id="reportsPrev" disabled>上一页</button>
-            <button type="button" id="reportsNext" disabled>下一页</button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>次数</th>
-                <th>举报人</th>
-                <th>被举报人</th>
-                <th>事由</th>
-                <th>证据</th>
-              </tr>
-            </thead>
-            <tbody id="reports"></tbody>
-          </table>
-        </section>
+          <section id="view-audit" hidden>
+            <h2>审计</h2>
+            <div class="pager">
+              <button type="button" id="auditPrev" disabled>上一页</button>
+              <button type="button" id="auditNext" disabled>下一页</button>
+            </div>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>动作</th>
+                  <th>维度</th>
+                  <th>值</th>
+                  <th>到期</th>
+                  <th>原因</th>
+                  <th>操作者</th>
+                </tr>
+              </thead>
+              <tbody id="audit"></tbody>
+            </table>
+            </div>
+          </section>
+
+          <section id="view-reports" hidden>
+            <h2>举报</h2>
+            <h3>按被举报人</h3>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>被举报人</th>
+                  <th>次数</th>
+                  <th>举报人数</th>
+                  <th>最近一次</th>
+                  <th>最近事由</th>
+                </tr>
+              </thead>
+              <tbody id="reportTargets"></tbody>
+            </table>
+            </div>
+            <h3>明细</h3>
+            <div class="pager">
+              <button type="button" id="reportsPrev" disabled>上一页</button>
+              <button type="button" id="reportsNext" disabled>下一页</button>
+            </div>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>次数</th>
+                  <th>举报人</th>
+                  <th>被举报人</th>
+                  <th>事由</th>
+                  <th>证据</th>
+                </tr>
+              </thead>
+              <tbody id="reports"></tbody>
+            </table>
+            </div>
+          </section>
+
+          <section id="view-feedback" hidden>
+            <h2>反馈</h2>
+            <div class="pager">
+              <button type="button" id="feedbackPrev" disabled>上一页</button>
+              <button type="button" id="feedbackNext" disabled>下一页</button>
+            </div>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>昵称</th>
+                  <th>内容</th>
+                </tr>
+              </thead>
+              <tbody id="feedback"></tbody>
+            </table>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <dialog id="drawer" aria-labelledby="drawerTitle">
+      <div class="drawer-head">
+        <h2 id="drawerTitle">台账详情</h2>
+        <button type="button" id="drawerClose">关闭</button>
       </div>
-    </main>
+      <div id="drawerBody"></div>
+    </dialog>
 
-    <script>
-      const PAGE = 50;
-      /** 「封 IP 之前的连坐确认」最多反查 10 页（1000 条）：确认框只用量级，不值得把整张台账搬一遍。 */
-      const COUNT_PAGES = 10;
-
-      const loginForm = document.getElementById('login');
-      const tokenField = document.getElementById('tokenField');
-      const tokenInput = document.getElementById('token');
-      const logoutButton = document.getElementById('logout');
-      const statusLine = document.getElementById('status');
-      const sections = document.getElementById('sections');
-
-      const ipFilter = document.getElementById('ipFilter');
-      const nameFilter = document.getElementById('nameFilter');
-      const identityRows = document.getElementById('identities');
-      const identitiesPrev = document.getElementById('identitiesPrev');
-      const identitiesNext = document.getElementById('identitiesNext');
-
-      const blockForm = document.getElementById('blockForm');
-      const blockKind = document.getElementById('blockKind');
-      const blockValue = document.getElementById('blockValue');
-      const blockMinutes = document.getElementById('blockMinutes');
-      const blockReason = document.getElementById('blockReason');
-      const blockRows = document.getElementById('blocks');
-
-      const auditRows = document.getElementById('audit');
-      const auditPrev = document.getElementById('auditPrev');
-      const auditNext = document.getElementById('auditNext');
-
-      const reportRows = document.getElementById('reports');
-      const reportTargetRows = document.getElementById('reportTargets');
-      const reportsPrev = document.getElementById('reportsPrev');
-      const reportsNext = document.getElementById('reportsNext');
-
-      /** 每页的起始游标（第 0 页是 `null`）：上一页靠它回退，下一页靠响应里的 `next` 推进。 */
-      let identityCursors = [null];
-      let identityIndex = 0;
-      let auditCursors = [null];
-      let auditIndex = 0;
-      let reportCursors = [null];
-      let reportIndex = 0;
-
-      /** 未授权只有 401、超限 429：后台接口不套 `{code,msg,data}`，所以按 HTTP 状态码分支。 */
-      function say(text, bad) {
-        statusLine.textContent = text;
-        statusLine.dataset.tone = bad ? 'bad' : '';
-      }
-
-      function showLoggedIn(loggedIn) {
-        tokenField.hidden = loggedIn;
-        loginForm.querySelector('button[type="submit"]').hidden = loggedIn;
-        logoutButton.hidden = !loggedIn;
-        sections.hidden = !loggedIn;
-      }
-
-      async function post(path, body) {
-        return fetch(path, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: body === undefined ? {} : { 'content-type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body),
-        });
-      }
-
-      /** 受保护的数据接口统一走这里：401 = cookie 过期，退回登录态。 */
-      async function dataFetch(path, options) {
-        let res;
-        try {
-          res = await fetch(path, { credentials: 'same-origin', ...options });
-        } catch {
-          say('无法连接服务器。', true);
-          return null;
-        }
-        if (res.status === 401) {
-          showLoggedIn(false);
-          say('登录已过期，请重新登录。', true);
-          return null;
-        }
-        return res;
-      }
-
-      const fmtTime = (ms) => (ms === null || ms === undefined ? '—' : new Date(ms).toLocaleString());
-      const fmtUntil = (ms) => (ms === null || ms === undefined ? '永久' : new Date(ms).toLocaleString());
-
-      function cell(text) {
-        const td = document.createElement('td');
-        td.textContent = text;
-        return td;
-      }
-
-      function render(tbody, rows, build, columns) {
-        if (rows.length === 0) {
-          const tr = document.createElement('tr');
-          const td = cell('（空）');
-          td.colSpan = columns;
-          tr.append(td);
-          tbody.replaceChildren(tr);
-          return;
-        }
-        tbody.replaceChildren(...rows.map(build));
-      }
-
-      function blockText(block) {
-        if (!block) return '—';
-        const until = block.untilAt === null ? '永久' : `到 ${new Date(block.untilAt).toLocaleString()}`;
-        return `${block.kind} · ${until} · ${block.reason}`;
-      }
-
-      function identityRow(item) {
-        const tr = document.createElement('tr');
-        tr.append(
-          cell(item.userId),
-          cell(item.nickname ?? '—'),
-          cell(fmtTime(item.lastSeenAt)),
-          cell(item.lastIp ?? '—'),
-          cell(item.lastCountry ?? '—'),
-          cell(item.bedNo === null ? '—' : String(item.bedNo)),
-          cell(item.online ? '是' : '—'),
-          cell(blockText(item.block)),
-        );
-        return tr;
-      }
-
-      function auditRow(item) {
-        const tr = document.createElement('tr');
-        tr.append(
-          cell(fmtTime(item.at)),
-          cell(item.action),
-          cell(item.kind),
-          cell(item.value),
-          cell(fmtUntil(item.untilAt)),
-          cell(item.reason ?? '—'),
-          cell(item.actor),
-        );
-        return tr;
-      }
-
-      function blockRow(item) {
-        const tr = document.createElement('tr');
-        tr.append(
-          cell(item.kind),
-          cell(item.value),
-          cell(fmtUntil(item.untilAt)),
-          cell(item.reason),
-          cell(fmtTime(item.createdAt)),
-        );
-        const action = document.createElement('td');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = '解封';
-        button.addEventListener('click', () => unblock(item.kind, item.value));
-        action.append(button);
-        tr.append(action);
-        return tr;
-      }
-
-      const partyText = (party) =>
-        party.nickname === null ? party.userId : `${party.nickname} · ${party.userId}`;
-
-      /** 台账详情（§5.2）：展开时现读一次，封禁仍然只在黑名单那一处。 */
-      async function loadIdentityDetail(userId, box) {
-        const res = await dataFetch(`/api/admin/identities/${encodeURIComponent(userId)}`);
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`台账详情读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        const lines = [
-          `最近出现：${fmtTime(data.lastSeenAt)}`,
-          `IP：${data.lastIp ?? '—'} · 国家：${data.lastCountry ?? '—'}`,
-          `床号：${data.bedNo === null ? '—' : data.bedNo} · 在线：${data.online ? '是' : '—'}`,
-          `封禁：${blockText(data.block)}`,
-          `同网络的其他身份（${data.ipHistory.length}）：`,
-          ...data.ipHistory.map(
-            (peer) => `　${peer.userId} · 最近 ${fmtTime(peer.lastSeenAt)} · ${blockText(peer.block)}`,
-          ),
-          `该身份的审计（${data.audit.length}）：`,
-          ...data.audit.map(
-            (entry) =>
-              `　${fmtTime(entry.at)} ${entry.action} ${entry.kind} ${entry.value} ` +
-              `${entry.untilAt === null ? '' : `到 ${fmtTime(entry.untilAt)} `}${entry.reason ?? ''}`,
-          ),
-        ];
-        box.replaceChildren(...lines.map((line) => htmlLine(line)));
-      }
-
-      function htmlLine(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div;
-      }
-
-      function partyDetail(party) {
-        const details = document.createElement('details');
-        const summary = document.createElement('summary');
-        summary.textContent = partyText(party);
-        const box = document.createElement('div');
-        details.append(summary, box);
-        let loaded = false;
-        details.addEventListener('toggle', () => {
-          if (!details.open || loaded) return;
-          loaded = true;
-          void loadIdentityDetail(party.userId, box);
-        });
-        return details;
-      }
-
-      function reportRow(item) {
-        const tr = document.createElement('tr');
-        const target = document.createElement('td');
-        target.append(partyDetail(item.target));
-        const evidence = document.createElement('td');
-        evidence.append(
-          ...(item.evidence.length === 0
-            ? [htmlLine('—')]
-            : item.evidence.map((entry) => htmlLine(`${fmtTime(entry.at)} ${entry.text}`))),
-        );
-        tr.append(
-          cell(fmtTime(item.lastAt)),
-          cell(String(item.count)),
-          cell(partyText(item.reporter)),
-          target,
-          cell(item.reason),
-          evidence,
-        );
-        return tr;
-      }
-
-      /** 按被举报人（§5.7）：无分页（响应里没有 `next`），一次读完全部折叠行。 */
-      async function loadReportTargets() {
-        const res = await dataFetch('/api/admin/reports/targets');
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`按被举报人读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        render(reportTargetRows, data.items, reportTargetRow, 5);
-      }
-
-      function reportTargetRow(item) {
-        const tr = document.createElement('tr');
-        const target = document.createElement('td');
-        // 被举报人仍是 `<details>`：点开就是台账详情，封禁只在那一处（§5.2）
-        target.append(partyDetail(item.target));
-        tr.append(
-          target,
-          cell(String(item.count)),
-          cell(String(item.reporters)),
-          cell(fmtTime(item.lastAt)),
-          cell(item.reason),
-        );
-        return tr;
-      }
-
-      async function loadReports(index) {
-        const cursor = reportCursors[index] ?? null;
-        const params = new URLSearchParams({ limit: String(PAGE) });
-        if (cursor) params.set('before', String(cursor.before));
-
-        const res = await dataFetch(`/api/admin/reports?${params.toString()}`);
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`举报读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        reportIndex = index;
-        if (data.next) reportCursors[index + 1] = data.next;
-        reportsPrev.disabled = index === 0;
-        reportsNext.disabled = !data.next;
-        render(reportRows, data.items, reportRow, 6);
-      }
-
-      async function loadIdentities(index) {
-        const cursor = identityCursors[index] ?? null;
-        const params = new URLSearchParams({ limit: String(PAGE) });
-        const ip = ipFilter.value.trim();
-        if (ip) params.set('ip', ip);
-        const name = nameFilter.value.trim();
-        if (name) params.set('name', name);
-        if (cursor) {
-          params.set('before', String(cursor.before));
-          params.set('beforeId', cursor.beforeId);
-        }
-
-        const res = await dataFetch(`/api/admin/identities?${params.toString()}`);
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`台账读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        identityIndex = index;
-        if (data.next) identityCursors[index + 1] = data.next;
-        identitiesPrev.disabled = index === 0;
-        identitiesNext.disabled = !data.next;
-        render(identityRows, data.items, identityRow, 8);
-      }
-
-      async function loadBlocks() {
-        const res = await dataFetch('/api/admin/blocks');
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`黑名单读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        render(blockRows, data.items, blockRow, 6);
-      }
-
-      async function loadAudit(index) {
-        const cursor = auditCursors[index] ?? null;
-        const params = new URLSearchParams({ limit: String(PAGE) });
-        if (cursor) params.set('before', String(cursor.before));
-
-        const res = await dataFetch(`/api/admin/audit?${params.toString()}`);
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`审计读取失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        auditIndex = index;
-        if (data.next) auditCursors[index + 1] = data.next;
-        auditPrev.disabled = index === 0;
-        auditNext.disabled = !data.next;
-        render(auditRows, data.items, auditRow, 7);
-      }
-
-      /** 写操作之后三个区都要重读：当前页的「在线 / 封禁」列变了，审计也多了一条。 */
-      async function refreshAfterWrite() {
-        identityCursors = [null];
-        auditCursors = [null];
-        await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0)]);
-      }
-
-      /** 封 IP 之前先按该 IP 反查计数：`affected` 要等封完才知道，而连坐不能一键静默发生。 */
-      async function countIdentitiesByIp(ip) {
-        let count = 0;
-        let cursor = null;
-        for (let page = 0; page < COUNT_PAGES; page += 1) {
-          const params = new URLSearchParams({ ip, limit: '100' });
-          if (cursor) {
-            params.set('before', String(cursor.before));
-            params.set('beforeId', cursor.beforeId);
-          }
-          const res = await dataFetch(`/api/admin/identities?${params.toString()}`);
-          if (!res || res.status !== 200) return null;
-          const data = await res.json();
-          count += data.items.length;
-          if (!data.next) return { count, capped: false };
-          cursor = data.next;
-        }
-        return { count, capped: true };
-      }
-
-      async function unblock(kind, value) {
-        const res = await dataFetch(`/api/admin/blocks/${kind}/${encodeURIComponent(value)}`, { method: 'DELETE' });
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`解封失败（${res.status}）。`, true);
-          return;
-        }
-        const data = await res.json();
-        say(data.removed ? `已解封 ${kind} ${value}。` : `${kind} ${value} 本来就不在黑名单里（审计已记）。`);
-        await refreshAfterWrite();
-      }
-
-      blockForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const kind = blockKind.value;
-        const value = blockValue.value.trim();
-        const reason = blockReason.value.trim();
-        const minutes = blockMinutes.value.trim();
-        if (!value || !reason) {
-          say('值和原因都必须填。', true);
-          return;
-        }
-        // 只收整数分钟：`0.5` 会被 `Date.now() + 30000` 读成「封 30 秒」，与输入框的含义不符
-        if (minutes && !(Number.isInteger(Number(minutes)) && Number(minutes) > 0)) {
-          say('时长要么留空（永久），要么填大于 0 的整数分钟。', true);
-          return;
-        }
-
-        let affectedText = `即将封禁身份 ${value}`;
-        if (kind === 'ip') {
-          const counted = await countIdentitiesByIp(value);
-          if (!counted) {
-            say('反查失败，未提交。', true);
-            return;
-          }
-          const n = counted.capped ? `${counted.count}+` : String(counted.count);
-          affectedText = `即将封禁 IP ${value}：这个 IP 名下记录过 ${n} 个身份`;
-        }
-        const untilText = minutes ? `${minutes} 分钟后到期` : '永久';
-        if (!confirm(`${affectedText}。\n时长：${untilText}\n原因：${reason}\n\n继续？`)) return;
-
-        const untilAt = minutes ? Date.now() + Number(minutes) * 60_000 : null;
-        const res = await dataFetch('/api/admin/blocks', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ kind, value, untilAt, reason }),
-        });
-        if (!res) return;
-        if (res.status !== 200) {
-          say(`封禁失败（${res.status}）：参数非法？`, true);
-          return;
-        }
-        const data = await res.json();
-        say(
-          `已封禁 ${data.block.kind} ${data.block.value}（${data.created ? '新增' : '覆盖既有'}） · ` +
-            `影响身份 ${data.affected.identities} · 在线 ${data.affected.online}`,
-        );
-        blockForm.reset();
-        await refreshAfterWrite();
-      });
-
-      document.getElementById('ipSearch').addEventListener('click', () => {
-        identityCursors = [null];
-        void loadIdentities(0);
-      });
-      document.getElementById('ipClear').addEventListener('click', () => {
-        ipFilter.value = '';
-        nameFilter.value = '';
-        identityCursors = [null];
-        void loadIdentities(0);
-      });
-      identitiesPrev.addEventListener('click', () => void loadIdentities(identityIndex - 1));
-      identitiesNext.addEventListener('click', () => void loadIdentities(identityIndex + 1));
-      auditPrev.addEventListener('click', () => void loadAudit(auditIndex - 1));
-      auditNext.addEventListener('click', () => void loadAudit(auditIndex + 1));
-      reportsPrev.addEventListener('click', () => void loadReports(reportIndex - 1));
-      reportsNext.addEventListener('click', () => void loadReports(reportIndex + 1));
-
-      loginForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const button = loginForm.querySelector('button[type="submit"]');
-        button.disabled = true;
-        try {
-          const res = await post('/api/admin/login', { token: tokenInput.value });
-          if (res.status === 200) {
-            tokenInput.value = '';
-            showLoggedIn(true);
-            say('已登录。');
-            identityCursors = [null];
-            auditCursors = [null];
-            reportCursors = [null];
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
-          } else if (res.status === 429) {
-            say('尝试次数过多，请等一分钟再试。', true);
-          } else {
-            say('令牌不对。', true);
-          }
-        } catch {
-          say('请求失败，请检查网络。', true);
-        } finally {
-          button.disabled = false;
-        }
-      });
-
-      logoutButton.addEventListener('click', async () => {
-        await post('/api/admin/logout');
-        showLoggedIn(false);
-        identityRows.replaceChildren();
-        blockRows.replaceChildren();
-        auditRows.replaceChildren();
-        reportRows.replaceChildren();
-        reportTargetRows.replaceChildren();
-        say('已登出。');
-      });
-
-      /** 刷新后还登着吗：受保护的 `/api/admin/me` 是最好的判据（cookie 未过期就 200）。 */
-      async function syncState() {
-        try {
-          const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
-          showLoggedIn(res.status === 200);
-          if (res.status === 200) {
-            say('已登录。');
-            await Promise.all([loadBlocks(), loadIdentities(0), loadAudit(0), loadReports(0), loadReportTargets()]);
-          }
-        } catch {
-          say('无法连接服务器。', true);
-        }
-      }
-
-      syncState();
-    </script>
+    <p id="toast" role="status" aria-live="polite" hidden></p>
   </body>
 </html>

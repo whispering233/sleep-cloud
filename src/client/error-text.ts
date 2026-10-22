@@ -51,9 +51,11 @@ export const ERROR_TEXT: Record<Exclude<ErrorCode, '0'>, string | undefined> = {
   '4001': '消息太长了',
   '4002': undefined,
   '4003': undefined,
+  '4004': '今天已经提过很多次了，明天再来',
   '5001': '你暂时不能发言',
   '5002': BLOCKED_TEXT,
   '5003': '已收到你的反馈',
+  '5004': '已收到你的反馈',
   '9001': ERROR_FALLBACK_TEXT,
   '9002': '大厅暂时进不去，稍后再试',
 };

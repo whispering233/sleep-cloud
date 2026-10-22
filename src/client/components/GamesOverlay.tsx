@@ -6,7 +6,6 @@ import { createGameHost } from '../games/host';
 import type { GameHost } from '../games/host';
 import { GAMES } from '../games/registry';
 import { closeGames, subscribe } from '../store';
-import { pauseWorld, resumeWorld } from '../world-handle';
 import { PrimaryAction } from './PrimaryAction';
 
 /**
@@ -33,15 +32,13 @@ export function GamesOverlay() {
     leaveRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // 让位（§5）：这一页盖着大厅的整段时间里大厅不必推进——世界层只停渲染循环（**位置与状态一个字节都不改**），
-  // 雨声一起挂起（没建 context 就什么都不做、不改偏好）。卸载时成对恢复：`wake(true)` 不吃暂停期间累积的 `delta`
+  // 让位（§5）：世界层的整帧停渲染由 `App.tsx` 的 `covered` 一处管（游戏页也计入那一块，同入场层 / 说明面板），
+  // 所以这里只管雨声（没建 context 就什么都不做、不改偏好）。
   // 在场状态跟着这一页的生死走（§6）：进 / 出**各一次**，不随后续任何重渲染重发
   useEffect(() => {
-    pauseWorld();
     suspendHall();
     sendAct('game');
     return () => {
-      resumeWorld();
       resumeHall();
       sendAct('hall');
     };

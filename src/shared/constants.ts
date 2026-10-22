@@ -184,6 +184,15 @@ export const REPORT_DEDUP_MS = 24 * 60 * 60 * 1000;
 /** 举报行（含证据）的留存期，并入每日唤醒同批删除。 */
 export const REPORT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
+/** 反馈正文上限（**trim 后**按字符计）：空 → `4003`、超长 → `4001`。 */
+export const FEEDBACK_MAX_LEN = 500;
+
+/** 同一身份滚动 24 小时内的反馈条数上限：超出回 `4004`（可见），与 5 条/秒的静默限流分开。 */
+export const FEEDBACK_DAILY_MAX = 5;
+
+/** 反馈行（含正文）的留存期，并入每日唤醒同批删除。 */
+export const FEEDBACK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
 /** 类型文本（`docs/design/50-slot-panel.md` §附）单条长度上限（**trim 后**按字符计）。 */
 export const TYPE_TEXT_MAX_LEN = 200;
 

@@ -95,10 +95,8 @@ export interface WorldHandle {
   focusBed(bedNo: number): void;
   /** 设世界缩放档位（齿轮浮层的「缩放」二级选出来的；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
-  /** 让位（游戏页盖着时）：停掉渲染循环，**位置与状态一个字节都不改**。 */
-  pause(): void;
-  /** 恢复渲染循环。`wake(true)` 是 seamless，免得醒来第一帧吃一个巨大的 `delta`。 */
-  resume(): void;
+  /** 整屏页（入场层 / 说明面板 / 游戏页）盖住世界时整帧停渲染；恢复时重锚，否则醒来第一帧的 delta 是「暂停了多久」。 */
+  setSuspended(next: boolean): void;
 }
 
 /**
@@ -1085,6 +1083,9 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     scene: [scene, new WeatherScene()],
   });
 
+  // 幂等守卫留在世界层：DOM 界面只转发状态，重复的同一状态不该打乱 `resetDelta()` 之后的 FPS 统计
+  let suspended = false;
+
   return {
     destroy(): void {
       game.destroy(true);
@@ -1098,11 +1099,28 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     setZoomMode(mode: ZoomMode): void {
       scene.setZoomMode(mode);
     },
-    pause(): void {
-      game.loop.sleep();
-    },
-    resume(): void {
-      game.loop.wake(true);
+    setSuspended(next: boolean): void {
+      if (next === suspended) return;
+      suspended = next;
+
+      if (next) {
+        // loop 还没起来时 `sleep()` 是空操作（首次创建时任在 boot 中途，贴图是异步加载的），
+        // 所以搭上第一帧的尾巴再睡；醒来前又盖上的情况由 `suspended` 兜住
+        if (!game.loop.running) {
+          game.events.once(Phaser.Core.Events.POST_STEP, () => {
+            if (suspended) game.loop.sleep();
+          });
+          return;
+        }
+        game.loop.sleep();
+        return;
+      }
+
+      // `started` 仍为 false = 从未跑过（也就没停过），且此时 `wake()` 会在 `callback` 设上之前就重启 rAF
+      if (!game.loop.started) return;
+      // 顺序不能反：`wake()` 不清 `lastTime`，先 `resetDelta()` 才不会让首帧 delta 是暂停的整段时间
+      game.loop.resetDelta();
+      game.loop.wake();
     },
   };
 }

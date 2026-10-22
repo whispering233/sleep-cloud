@@ -9,6 +9,7 @@ import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
 import { GamesOverlay } from './components/GamesOverlay';
 import { Hud } from './components/Hud';
+import { LotOverlay } from './components/LotOverlay';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
@@ -16,6 +17,7 @@ import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
 import { getState, setComposer, subscribe } from './store';
 import type { AboutSource } from './store';
+import { setWorldSuspended } from './world-handle';
 import { connectHall } from './ws';
 
 /**
@@ -32,6 +34,8 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState<AboutSource | null>(() => getState().aboutOpen);
   /** 游戏页：与说明面板同一种「整屏页开关」，也只看 store 那一个字段 */
   const [gamesOpen, setGamesOpen] = useState(() => getState().gamesOpen);
+  /** 求签页开着（`docs/design/110-lot.md` §2）：页面自己的三态不住 store，只有开关在这里 */
+  const [lotOpen, setLotOpen] = useState(() => getState().lotOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,11 +51,13 @@ export function App() {
     };
   }, []);
 
-  // 说明面板的开关只改 store 那一个字段（`aboutOpen`）：App 只负责按它选页面态
+  // 说明面板与求签页的开关只改 store 那一个字段（`aboutOpen` / `lotOpen`）：App 只负责按它选页面态
   useEffect(() => {
     setAboutOpen(getState().aboutOpen);
+    setLotOpen(getState().lotOpen);
     return subscribe((state) => {
       setAboutOpen((prev) => (prev === state.aboutOpen ? prev : state.aboutOpen));
+      setLotOpen((prev) => (prev === state.lotOpen ? prev : state.lotOpen));
     });
   }, []);
 
@@ -64,6 +70,11 @@ export function App() {
   }, []);
 
   const layoutVersion = session?.layoutVersion;
+  /**
+   * 有一块不透明的整屏页盖着世界（入场层 / 说明面板 / 游戏页）：世界层整帧停渲染
+   * （`60-interaction-shell.md` §5.2、`110-games-page.md` §5）。求签页不在内——它是薄薄一层盖着可见的世界
+   */
+  const covered = session !== null && (!entered || aboutOpen !== null || gamesOpen);
 
   // 软键盘：只把「视觉视口被 pan 了多少」写到 `.app-shell` 的 transform 上（不改尺寸，见 `./keyboard.ts`）
   useEffect(() => {
@@ -76,6 +87,11 @@ export function App() {
     const shell = shellRef.current;
     return shell ? trackComposerFocus(shell) : undefined;
   }, []);
+
+  // 整屏页期间世界整帧停：那块 2.7 Mpx 画布谁也看不见，却照旧吃满合成与 WebGL 的预算
+  useEffect(() => {
+    setWorldSuspended(covered);
+  }, [covered]);
 
   // 断线也退场：那一刻没有可发的东西，界面先把世界还给人。只在**转入** `offline` 那一次过状态机
   // （位置节拍每秒十次，每次都比一遍是白费）
@@ -139,6 +155,10 @@ export function App() {
           }}
         />
       ) : null}
+
+      {/* 求签页：挂在入场层之后、`tone-layer` 之前——三档减光照旧盖得住它，不造第二套明暗语义
+          （`docs/design/110-lot.md` §3） */}
+      {entered && lotOpen ? <LotOverlay /> : null}
 
       {/* 三档减光：入场层不参与档位，所以只挂在 `entered` 之后 */}
       {entered ? <ToneLayer /> : null}
