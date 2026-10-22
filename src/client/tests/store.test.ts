@@ -8,6 +8,8 @@ import {
   applyBed,
   applyChat,
   applyError,
+  applyFeedbackFailure,
+  applyFeedbackReceipt,
   applyJoin,
   applyLeave,
   applyPos,
@@ -16,10 +18,12 @@ import {
   applySnapshot,
   applyState,
   applyWhisper,
+  clearFeedbackError,
   clearSelection,
   closeAbout,
   getState,
   openAbout,
+  openFeedback,
   selectPerson,
   setBedDirection,
   drawReadItem,
@@ -455,6 +459,40 @@ describe('说明面板', () => {
     expect(getState().aboutOpen).toBeNull();
     expect(notified).toBe(2);
     off();
+  });
+});
+
+describe('反馈与建议', () => {
+  beforeEach(() => {
+    applySnapshot(snapshot());
+    setComposer({ kind: 'exit' });
+    setState({ chatHint: undefined, feedbackError: undefined });
+  });
+
+  it('齿轮入口进 feedback 会话，不要求选中任何人', () => {
+    openFeedback();
+    expect(getState().composer).toBe('feedback');
+    expect(getState().selectedId).toBeUndefined();
+  });
+
+  it('5004 回执：那行话常驻、不置灰任何人', () => {
+    openFeedback();
+    applyFeedbackReceipt();
+    expect(getState().chatHint).toBe('已收到你的反馈');
+    expect(getState().reportedIds.size).toBe(0);
+  });
+
+  it('可恢复失败就地显示，清错误与退场各清一次', () => {
+    openFeedback();
+    applyFeedbackFailure('4004');
+    expect(getState().feedbackError).toBe('今天已经提过很多次了，明天再来');
+    clearFeedbackError();
+    expect(getState().feedbackError).toBeUndefined();
+
+    applyFeedbackFailure('4001');
+    setComposer({ kind: 'exit' });
+    expect(getState().composer).toBe('idle');
+    expect(getState().feedbackError).toBeUndefined();
   });
 });
 

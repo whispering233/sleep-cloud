@@ -24,6 +24,8 @@ import {
   applyJoin,
   applyLeave,
   applyPos,
+  applyFeedbackFailure,
+  applyFeedbackReceipt,
   applyReportReceipt,
   applyResize,
   applySnapshot,
@@ -155,6 +157,15 @@ export function sendWhisper(toId: string, text: string): boolean {
 export function sendReport(toId: string, reason: string): boolean {
   const s = live();
   return s ? sendRaw(s, { t: 'report', toId, reason }) : false;
+}
+
+/**
+ * 反馈与建议：正文规则（trim 后 1~500 字、同一身份滚动 24 小时 5 条）由服务端判定。
+ * 回执是 `5004`（`docs/api/20-api-ws.md` §4.10）；超额 / 被限流都没有回执时，出口是「收起」。
+ */
+export function sendFeedback(text: string): boolean {
+  const s = live();
+  return s ? sendRaw(s, { t: 'feedback', text }) : false;
 }
 
 /** 躺到某张床上：走过去 + 躺下是服务端的一条复合意图。 */
@@ -440,6 +451,17 @@ function handleMessage(s: Session, event: MessageEvent): void {
       if (message.code === '5003') {
         exitComposer();
         applyReportReceipt();
+        return;
+      }
+      // 反馈回执（`5004`）：与 `5003` 同一出口（退场 + 一行确认），区别只是没有对象可置灰
+      if (message.code === '5004') {
+        exitComposer();
+        applyFeedbackReceipt();
+        return;
+      }
+      // 反馈的可恢复失败：就地显示在表单里（保留已写内容），既不退场也不弹瞬时提示
+      if (getState().composer === 'feedback' && (message.code === '4001' || message.code === '4003' || message.code === '4004')) {
+        applyFeedbackFailure(message.code);
         return;
       }
       applyError(message.code);

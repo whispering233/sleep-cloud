@@ -166,10 +166,15 @@ export interface ClientState {
   /** 已收到回执的举报对象（**本次会话内有效**）：私聊行那颗按钮据此变成「已举报」并置灰 */
   reportedIds: Set<string>;
   /**
-   * 面板上那行常驻弱提示（今天只有 `5003` 回执一个来源）：**常驻到下一次操作**。
+   * 面板上那行常驻弱提示（`5003` / `5004` 两个回执来源）：**常驻到下一次操作**。
    * 不挂定时器——与气泡同一理由：内存定时器会让页面无法休眠（硬纪律 6）。
    */
   chatHint?: string;
+  /**
+   * 反馈表单里的那行可见错误（`4001` / `4003` / `4004`）：**就地显示、保留已写内容**，
+   * 不走瞬时提示条（`docs/design/120-feedback.md` §3）。退场即消失。
+   */
+  feedbackError?: string;
 }
 
 const emptyState = (): ClientState => ({
@@ -295,6 +300,34 @@ export function applyReportReceipt(): void {
 }
 
 /**
+ * 齿轮里的「反馈与建议」：进 `feedback` 态，插槽面板换成反馈表单
+ * （`docs/design/50-slot-panel.md` §附）。与 `reading` 一样**不需要选中对象**。
+ */
+export function openFeedback(): void {
+  if (state.feedbackError !== undefined) setState({ feedbackError: undefined });
+  setComposer({ kind: 'feedback' });
+}
+
+/** 提交中清掉上一轮错误：错误行只在服务端回话之后出现。 */
+export function clearFeedbackError(): void {
+  if (state.feedbackError === undefined) return;
+  setState({ feedbackError: undefined });
+}
+
+/** 反馈的可恢复失败（配额 / 超长 / 空）：表单里显示一行，内容原样留着。 */
+export function applyFeedbackFailure(code: '4001' | '4003' | '4004'): void {
+  setState({ feedbackError: errorTextFor(code) });
+}
+
+/**
+ * 反馈落库回执（`5004`）：只有那行确认文案，**不置灰任何按钮**——反馈没有对象、也不限这一条。
+ * 退场归 `exitComposer()`（与 `5003` 同一出口）。
+ */
+export function applyFeedbackReceipt(): void {
+  setState({ chatHint: errorTextFor('5004') });
+}
+
+/**
  * 我的床的方位（世界层每帧算一次）：**同值不写**。位置节拍每 100 ms 来一次，
  * 每次写都会通知所有订阅者——显示条与动作行的「不因位置节拍重渲染」就靠这道守卫。
  */
@@ -314,7 +347,11 @@ export function setComposer(event: ComposerEvent): void {
   const next = composerReducer(state.composer, event);
   if (next === state.composer) return;
   // 进新会话 = 「下一次操作」：上一单的举报回执那行话让位；退场（回 idle）时保留它
-  setState({ composer: next, ...(next === 'idle' ? {} : { chatHint: undefined }) });
+  setState({
+    composer: next,
+    ...(next === 'idle' ? {} : { chatHint: undefined }),
+    ...(next === 'feedback' ? {} : { feedbackError: undefined }),
+  });
 }
 
 /**
