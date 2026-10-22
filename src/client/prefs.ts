@@ -1,4 +1,6 @@
 import { TYPE_TEXTS_PER_CATEGORY, ZOOM_TIERS } from '../shared/constants';
+import { LOT_POOL_SIZE } from './lots';
+import type { StoredLot } from './lots';
 import type { ZoomMode } from './zoom';
 
 /**
@@ -16,6 +18,7 @@ export const PREFS = {
   sound: 'sc.sound',
   aboutSeen: 'sc.about.seen',
   readSeen: 'sc.read.seen',
+  lot: 'sc.lot',
 } as const;
 
 export type PrefKey = (typeof PREFS)[keyof typeof PREFS];
@@ -262,4 +265,35 @@ export function readProgress(storage?: PrefStorage): ReadProgress {
 /** 写 `sc.read.seen`：`seen` 与 `current` **一次写落**，不出现「当前条写了、seen 没写」的中间态。 */
 export function writeProgress(progress: ReadProgress, storage?: PrefStorage): void {
   writePref(PREFS.readSeen, { v: PREFS_VERSION, ...progress }, storage);
+}
+
+/** `sc.lot` 的日期形状（`docs/design/40-client-storage.md` §3）：**只查形状、不查它是不是真日期**。 */
+const LOT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+type StoredLotValue = StoredLot & { v: number };
+
+/** 白名单：`date` 申日期形状 + `no` 是签库下标（越界 = 签库换过内容，判废）。 */
+function isStoredLot(value: unknown): value is StoredLotValue {
+  if (typeof value !== 'object' || value === null) return false;
+  const { date, no } = value as { date?: unknown; no?: unknown };
+  return (
+    typeof date === 'string' &&
+    LOT_DATE_PATTERN.test(date) &&
+    typeof no === 'number' &&
+    Number.isInteger(no) &&
+    no >= 0 &&
+    no < LOT_POOL_SIZE
+  );
+}
+
+/** 读 `sc.lot`：缺键 / 坏值 / 版本不符一律回 `undefined`（= 今天没求过，那就再求一次）。 */
+export function readLot(storage?: PrefStorage): StoredLot | undefined {
+  const value = readPref<StoredLotValue | undefined>(PREFS.lot, isStoredLot, undefined, storage);
+  // `v` 只属于存储层：调用点拿到的永远是 `StoredLot` 声明的那两个字段
+  return value === undefined ? undefined : { date: value.date, no: value.no };
+}
+
+/** 写 `sc.lot`：在点「求签」那一刻写（不是动画结束），否则跳过动画 / 中途关页会重复抽。 */
+export function writeLot(lot: StoredLot, storage?: PrefStorage): void {
+  writePref(PREFS.lot, { v: PREFS_VERSION, ...lot }, storage);
 }

@@ -8,6 +8,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
 import { Hud } from './components/Hud';
+import { LotOverlay } from './components/LotOverlay';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
@@ -29,6 +30,8 @@ export function App() {
   const [entered, setEntered] = useState(false);
   /** 说明面板：`null` = 关着，否则是打开的原因（自动 / 手动） */
   const [aboutOpen, setAboutOpen] = useState<AboutSource | null>(() => getState().aboutOpen);
+  /** 求签页开着（`docs/design/110-lot.md` §2）：页面自己的三态不住 store，只有开关在这里 */
+  const [lotOpen, setLotOpen] = useState(() => getState().lotOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,11 +47,13 @@ export function App() {
     };
   }, []);
 
-  // 说明面板的开关只改 store 那一个字段（`aboutOpen`）：App 只负责按它选页面态
+  // 说明面板与求签页的开关只改 store 那一个字段（`aboutOpen` / `lotOpen`）：App 只负责按它选页面态
   useEffect(() => {
     setAboutOpen(getState().aboutOpen);
+    setLotOpen(getState().lotOpen);
     return subscribe((state) => {
       setAboutOpen((prev) => (prev === state.aboutOpen ? prev : state.aboutOpen));
+      setLotOpen((prev) => (prev === state.lotOpen ? prev : state.lotOpen));
     });
   }, []);
 
@@ -124,6 +129,10 @@ export function App() {
           }}
         />
       ) : null}
+
+      {/* 求签页：挂在入场层之后、`tone-layer` 之前——三档减光照旧盖得住它，不造第二套明暗语义
+          （`docs/design/110-lot.md` §3） */}
+      {entered && lotOpen ? <LotOverlay /> : null}
 
       {/* 三档减光：入场层不参与档位，所以只挂在 `entered` 之后 */}
       {entered ? <ToneLayer /> : null}
