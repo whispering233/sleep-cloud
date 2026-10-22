@@ -61,7 +61,9 @@ npm run dev                                               # 项目仍跑在 WSL 
 
 `forward` 的端口绑在**宿主 Windows 的 127.0.0.1** 上，WSL 里连不上（`curl 127.0.0.1:9222` refused）。所以驱动脚本跑在 Windows 侧（`/mnt/c/Program Files/nodejs/node.exe <脚本>`，Node ≥ 22 自带 `WebSocket`），或者用 `/mnt/c/Windows/System32/curl.exe` 读 `/json/list`。
 
-**用 `adb shell input tap` 点按钮前先换算坐标**：tap 吃的是**设备像素**，页内 `getBoundingClientRect()` 是**视口 CSS 像素**，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。
+**点按钮不要用 `adb shell input tap`：它不合成 `click`。** 实测（API 37 / Chrome 145）：`pointerdown` / `pointerup` / `touchstart` / `touchend` 都会到，`click` 永远是 0，按 120ms 也一样；拿两颗临时按钮做过隔离实验（一颗在 `pointerdown` 里 `preventDefault()`、一颗没有），**两颗都收不到 `click`**，所以这与硬纪律 35 的 `preventDefault()` 无关，是注入方式的问题。改为走 CDP 的 `Input.dispatchTouchEvent`（`touchStart` → 停 70ms → `touchEnd`，坐标是 **CSS 像素**）就有 `click`。
+
+**`Input.dispatchTouchEvent` 用 CSS 像素，`input tap` 用设备像素**：页内 `getBoundingClientRect()` 是视口 CSS 像素，tap 吃的是设备像素，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。要发 pointer/touch 事件（测手势）时仍可用 tap，换算如下：
 
 ```text
 deviceY = (cssY + (screen.height - innerHeight)) * devicePixelRatio
