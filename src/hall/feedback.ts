@@ -32,3 +32,32 @@ export function recordFeedback(sql: SqlStorage, userId: string, text: string, no
 export function purgeExpiredFeedback(sql: SqlStorage, now: number): void {
   sql.exec('DELETE FROM feedback WHERE created_at < ?', now - FEEDBACK_TTL_MS);
 }
+
+/** 后台列表的一行：正文原样返回（换行由界面用 `white-space: pre-wrap` 保留）；昵称读时补。 */
+export interface FeedbackRow {
+  id: number;
+  userId: string;
+  nickname: string | null;
+  text: string;
+  createdAt: number;
+}
+
+/**
+ * 倒序一页（`docs/api/30-api-admin.md` §5.8）：按 `id` 游标，`limit + 1` 用来判断还有没有下一页。
+ * 昵称走身份表的联接；台账行被留存清理之后昵称就是 `null`，正文仍在（两张表分别到期）。
+ */
+export function listFeedback(sql: SqlStorage, limit: number, before?: number): FeedbackRow[] {
+  const rows = sql
+    .exec<{ id: number; user_id: string; nickname: string | null; text: string; created_at: number }>(
+      `SELECT f.id, f.user_id, i.nickname, f.text, f.created_at
+         FROM feedback f LEFT JOIN identity i ON i.user_id = f.user_id
+        WHERE ? IS NULL OR f.id < ?
+        ORDER BY f.id DESC
+        LIMIT ?`,
+      before ?? null,
+      before ?? null,
+      limit,
+    )
+    .toArray();
+  return rows.map((row) => ({ id: row.id, userId: row.user_id, nickname: row.nickname, text: row.text, createdAt: row.created_at }));
+}

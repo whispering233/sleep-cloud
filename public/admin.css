@@ -318,3 +318,9 @@ dialog::backdrop {
     padding: 16px;
   }
 }
+
+/* 反馈正文：保留用户输入的换行，长串不撑破表格。 */
+.feedback-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

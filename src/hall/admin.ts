@@ -1,6 +1,7 @@
 import { displayBedNoOf } from '../shared/layout';
 import * as log from '../shared/log';
 import { findOwnedBed, countOwnedBeds } from './bed-store';
+import { listFeedback } from './feedback';
 import { countRecentReportTargets, listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
 import {
@@ -219,6 +220,19 @@ function partyOf(sql: SqlStorage, userId: string): { userId: string; nickname: s
   return { userId, nickname: findIdentity(sql, userId)?.nickname ?? null };
 }
 
+/** 反馈列表（§5.8）：只读、按 `id` 倒序；正文不渲染 `userId`（界面用昵称，删了身份就显示「未知」）。 */
+function feedbackPage(url: URL, ctx: AdminContext): Response {
+  const limit = limitOf(url);
+  const before = cursorOf(url, 'before');
+  const rows = listFeedback(ctx.sql, limit + 1, before);
+  const items = rows.slice(0, limit);
+  const last = items.at(-1);
+  return json({
+    items: items.map((row) => ({ id: row.id, createdAt: row.createdAt, userId: row.userId, nickname: row.nickname, text: row.text })),
+    next: rows.length > limit && last ? { before: last.id } : null,
+  });
+}
+
 function reportsPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const before = cursorOf(url, 'before');
@@ -303,6 +317,9 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
   }
   if (resource === 'reports' && second === undefined && request.method === 'GET') {
     return reportsPage(url, ctx);
+  }
+  if (resource === 'feedback' && second === undefined && request.method === 'GET') {
+    return feedbackPage(url, ctx);
   }
   return notFound();
 }

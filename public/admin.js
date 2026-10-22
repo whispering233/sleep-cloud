@@ -33,6 +33,10 @@ const reportTargetRows = document.getElementById('reportTargets');
 const reportsPrev = document.getElementById('reportsPrev');
 const reportsNext = document.getElementById('reportsNext');
 
+const feedbackRows = document.getElementById('feedback');
+const feedbackPrev = document.getElementById('feedbackPrev');
+const feedbackNext = document.getElementById('feedbackNext');
+
 const drawer = document.getElementById('drawer');
 const drawerTitle = document.getElementById('drawerTitle');
 const drawerBody = document.getElementById('drawerBody');
@@ -54,6 +58,8 @@ let auditCursors = [null];
 let auditIndex = 0;
 let reportCursors = [null];
 let reportIndex = 0;
+let feedbackCursors = [null];
+let feedbackIndex = 0;
 
 /**
  * 四个视图各自加载、各自翻页；切视图只重拉当前视图（`110-admin-console.md` §3）。
@@ -64,6 +70,7 @@ const VIEWS = {
   blocks: { section: document.getElementById('view-blocks'), load: loadBlocks },
   audit: { section: document.getElementById('view-audit'), load: () => loadAudit(auditIndex) },
   reports: { section: document.getElementById('view-reports'), load: loadReportsView },
+  feedback: { section: document.getElementById('view-feedback'), load: () => loadFeedback(feedbackIndex) },
 };
 
 function currentView() {
@@ -166,6 +173,15 @@ function identityRow(item) {
     cell(item.online ? '是' : '—'),
     cell(blockText(item.block)),
   );
+  return tr;
+}
+
+function feedbackRow(item) {
+  const tr = document.createElement('tr');
+  const body = document.createElement('td');
+  body.className = 'feedback-body';
+  body.textContent = item.text;
+  tr.append(cell(fmtTime(item.createdAt)), cell(item.nickname ?? '—'), body);
   return tr;
 }
 
@@ -328,6 +344,26 @@ async function loadReports(index) {
   reportsPrev.disabled = index === 0;
   reportsNext.disabled = !data.next;
   render(reportRows, data.items, reportRow, 6);
+}
+
+/** 反馈列表（`110-admin-console.md` §2.1）：按 `id` 倒序、只读；正文保留换行，不显示 `userId`。 */
+async function loadFeedback(index) {
+  const cursor = feedbackCursors[index] ?? null;
+  const params = new URLSearchParams({ limit: String(PAGE) });
+  if (cursor) params.set('before', String(cursor.before));
+
+  const res = await dataFetch(`/api/admin/feedback?${params.toString()}`);
+  if (!res) return;
+  if (res.status !== 200) {
+    say(`反馈读取失败（${res.status}）。`, true);
+    return;
+  }
+  const data = await res.json();
+  feedbackIndex = index;
+  if (data.next) feedbackCursors[index + 1] = data.next;
+  feedbackPrev.disabled = index === 0;
+  feedbackNext.disabled = !data.next;
+  render(feedbackRows, data.items, feedbackRow, 3);
 }
 
 async function loadIdentities(index) {
@@ -552,6 +588,7 @@ loginForm.addEventListener('submit', async (event) => {
       identityCursors = [null];
       auditCursors = [null];
       reportCursors = [null];
+      feedbackCursors = [null];
       say('已登录。');
       await enterApp();
     } else if (res.status === 429) {
@@ -574,6 +611,7 @@ logoutButton.addEventListener('click', async () => {
   auditRows.replaceChildren();
   reportRows.replaceChildren();
   reportTargetRows.replaceChildren();
+  feedbackRows.replaceChildren();
   say('已登出。');
 });
 

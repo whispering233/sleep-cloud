@@ -12,6 +12,7 @@ vi.mock('cloudflare:workers', () => ({
 import { BED_OWNERSHIP_TTL_MS, HALL_ID, REPORT_DEDUP_MS } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
+import { recordFeedback } from '../feedback';
 import { recordReport } from '../report';
 import { listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
 import { freshSql, insertBed } from './sqlite';
@@ -408,6 +409,14 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
   expect(second.next).toBeNull();
 });
 
+interface FeedbackItem {
+  id: number;
+  createdAt: number;
+  userId: string;
+  nickname: string | null;
+  text: string;
+}
+
 const reportsOf = async (hall: Hall, query = ''): Promise<ReportPage> =>
   (await (await adminGet(hall, `/admin/reports${query}`)).json()) as ReportPage;
 
@@ -465,6 +474,45 @@ test('举报分页：id 倒序，before 排他，两页合起来不重不漏', a
 
   const ids = [...first.items, ...second.items].map((item) => item.id);
   expect(ids).toEqual([3, 2, 1]);
+});
+
+const feedbackOf = async (hall: Hall, query = ''): Promise<{ items: FeedbackItem[]; next: { before: number } | null }> =>
+  (await (await adminGet(hall, `/admin/feedback${query}`)).json()) as {
+    items: FeedbackItem[];
+    next: { before: number } | null;
+  };
+
+test('反馈列表：空表、字段与昵称读时补（删了身份就是 null），正文原样含换行', async () => {
+  const { hall, sql } = newHall();
+  expect(await feedbackOf(hall)).toEqual({ items: [], next: null });
+
+  recordIdentity(sql, { userId: 'u_known', nickname: '夜猫子' }, NOW);
+  recordFeedback(sql, 'u_known', '第一行\n第二行', NOW);
+  recordFeedback(sql, 'u_gone', '没有台账的行', NOW);
+
+  const page = await feedbackOf(hall);
+  expect(page.items).toEqual([
+    { id: 2, createdAt: NOW, userId: 'u_gone', nickname: null, text: '没有台账的行' },
+    { id: 1, createdAt: NOW, userId: 'u_known', nickname: '夜猫子', text: '第一行\n第二行' },
+  ]);
+  expect(page.next).toBeNull();
+});
+
+test('反馈分页：id 倒序、before 排他；limit 夹到 100', async () => {
+  const { hall, sql } = newHall();
+  for (const text of ['一', '二', '三']) recordFeedback(sql, 'u_a', text, NOW);
+
+  const first = await feedbackOf(hall, '?limit=2');
+  expect(first.items.map((item) => item.text)).toEqual(['三', '二']);
+  expect(first.next).toEqual({ before: first.items[1]?.id });
+
+  const second = await feedbackOf(hall, `?limit=2&before=${first.next?.before}`);
+  expect(second.items.map((item) => item.text)).toEqual(['一']);
+  expect(second.next).toBeNull();
+
+  const clamped = await feedbackOf(hall, '?limit=999');
+  expect(clamped.items).toHaveLength(3);
+  expect(clamped.next).toBeNull();
 });
 
 const reportTargetsOf = async (hall: Hall, query = ''): Promise<{ items: ReportTargetItem[] }> =>

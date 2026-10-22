@@ -157,5 +157,6 @@ admin.get('/audit', forward);
 admin.get('/stats', forward);
 admin.get('/reports', forward);
 admin.get('/reports/targets', forward);
+admin.get('/feedback', forward);
 
 export default admin;
