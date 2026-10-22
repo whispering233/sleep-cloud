@@ -15,6 +15,7 @@ import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
 import { getState, setComposer, subscribe } from './store';
 import type { AboutSource } from './store';
+import { setWorldSuspended } from './world-handle';
 import { connectHall } from './ws';
 
 /**
@@ -53,6 +54,8 @@ export function App() {
   }, []);
 
   const layoutVersion = session?.layoutVersion;
+  /** 有一块不透明的整屏页盖着世界（入场层 / 说明面板）：世界层整帧停渲染（`60-interaction-shell.md` §5.2） */
+  const covered = session !== null && (!entered || aboutOpen !== null);
 
   // 软键盘：只把「视觉视口被 pan 了多少」写到 `.app-shell` 的 transform 上（不改尺寸，见 `./keyboard.ts`）
   useEffect(() => {
@@ -65,6 +68,11 @@ export function App() {
     const shell = shellRef.current;
     return shell ? trackComposerFocus(shell) : undefined;
   }, []);
+
+  // 整屏页期间世界整帧停：那块 2.7 Mpx 画布谁也看不见，却照旧吃满合成与 WebGL 的预算
+  useEffect(() => {
+    setWorldSuspended(covered);
+  }, [covered]);
 
   // 断线也退场：那一刻没有可发的东西，界面先把世界还给人。只在**转入** `offline` 那一次过状态机
   // （位置节拍每秒十次，每次都比一遍是白费）

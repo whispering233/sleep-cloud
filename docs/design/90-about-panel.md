@@ -84,7 +84,7 @@ intro：浏览器打开就是一个睡眠大厅：每个人有一张属于自己
 
 - **世界走画布，界面走 DOM**（硬纪律 16）：这是文档面板，全部是 DOM。
 - **复用入场层那套壳**：`.entry-overlay`（不透明底 `outside` + 安全区内边距 + 自己可滚）+ `.entry-card` + `.entry-title` + `.action-primary`；新增的只有正文段落与小节列表两三个类。同一屏、同一批用户、同一套排版，再造第二套只会让两屏不一致。
-- **不进 `.app-shell` 的网格**：它不是常驻面板，是**覆盖整屏的临时层**（`position: fixed; inset: 0`），因此不参与 Grid 两态、不做相机坐标补偿（`60-interaction-shell.md` §3）。
+- **不进 `.app-shell` 的网格**：它不是常驻面板，是**覆盖整屏的临时层**（`position: absolute; inset: 0`，锚在本身是 `fixed; inset: 0` 的 `.app-shell` 上），因此不参与 Grid 两态、不做相机坐标补偿（`60-interaction-shell.md` §3）。
 - **层级**：世界层与聊天面板之上、`tone-layer` 之下——三档减光照旧整屏连续（连它一起减光），与世界同向。
 - **打开前先退打字态**：齿轮里的入口只在空闲态可达，但打开前仍统一走 `exitComposer()`（`60-interaction-shell.md` §2 的出口唯一），避免以后多一个入口时各自为政。
 - **焦点给「知道了」，但不许它把面板滚到底**：`.entry-overlay` 自己可滚，而默认的聚焦会把目标滚进视野——内容一长，面板就直接从最下面打开、标题与介绍全在顶上被跳过。所以**聚焦必须带 `preventScroll`**（`focus({ preventScroll: true })`），面板永远从第一行开始展示。这不是美观问题：它是「长内容能不能读」的前提。

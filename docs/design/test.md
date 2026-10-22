@@ -77,12 +77,15 @@ deviceX = cssX * devicePixelRatio
 "$ADB" shell wm density 480
 ```
 
-**四个坑，都实测踩过**：
+**七个坑，都实测踩过**：
 
 1. **页面不在前台就没有 60fps**。标签被切到后台时 `document.visibilityState === 'hidden'`，rAF 被节流到 30fps（实测 `{fps:28~31, vis:'hidden'}`）。量帧率前先 `Page.bringToFront`，量完顺手读一次 `visibilityState` 确认是 `visible`——**别把后台节流当成性能问题**。
 2. **`adb reverse` / `adb forward` 会沉默失效**。模拟器重启或 Chrome 被清数据后，`reverse --list` / `forward --list` 仍显示映射，但页面打不开。重跑一次即恢复；**排查顺序是「先重跑这两条」而不是先怀疑服务端**。
 3. **渲染进程会崩溃循环**，表现为整页空白：`logcat` 里是 `chromium: Child process died (type=6)` 反复出现，`Runtime.evaluate` 全部超时、而 `Page.captureScreenshot` 仍能出图。`am force-stop` 与 `pm clear` 都**救不回来**，只能 `"$ADB" emu kill` 重启模拟器。
 4. **可视证据要走 `screenrecord`**。`Page.captureScreenshot` 与 `Page.startScreencast` 在合成器层会对同帧去重（实测连拍 10 张 md5 全同、screencast 收到 0 帧），抓不到「面板已撤、画布已清」那一瞬间。改用设备侧录屏再逐帧解：`"$ADB" shell screenrecord --bit-rate 16000000 /sdcard/r.mp4` → `ffmpeg -i r.mp4 -vf fps=60 f%03d.jpg`。
+5. **宿主盘没空间就起不来**：AVD 启动直接 `FATAL | Your device does not have enough disk space to run avd`（新建 AVD 要 12 GB 以上空闲，启动也要几个 GB）。先 `df -h /mnt/c` 看宿主盘，再怀疑配置。
+6. **`-gpu guest`（SwiftShader）上大画布可能整块黑**：draw 调用照旧在跑，`screencap` 里世界区域却是纯黑——**不是「世界没起来」**。它只适合放大帧成本（复现覆盖期的卡顿），**不能用来判「画面是否可见 / 是否回归」**；判可见性要用 `-gpu host` 或桌面浏览器。
+7. **CDP 注入的 init script 只在同一个连接里有效**：`Page.addScriptToEvaluateOnNewDocument` + `Page.reload` + `Runtime.evaluate` 必须在**同一个 WebSocket 连接**里完成（`test.md` §2 那段脚本要写成一条连到底的脚本）。分成两次连接就会拿到一个不存在的 `window.__probe`，看起来像「页面根本没渲染」。
 
 **并行：一个 worktree 一台 AVD。** 同名 AVD 不能并行起第二个实例（`userdata-qemu.img` 被锁），而「借别人的模拟器看」会让本地存储、Chrome 登录态、`adb reverse` 串在一起 —— 那样的结论不算数。自己起一台：把 `~/.android/avd/<旧名字>.avd/config.ini` 复制到新目录（**只复制 config.ini**，几个 GB 的 userdata 由首次启动自己生成），再写一份 `<新名字>.ini`，然后 `-avd <新名字> -port 5556 -no-snapshot-load`。`adb reverse` / `forward` 是**按设备**的，每条命令都带 `-s emulator-<端口>`；CDP 的 forward 端口也各用各的（如 9333），否则两台模拟器的调试口互相顶掉。新 AVD 第一次打开 Chrome 会有首运屏（「Stay signed out」→「No thanks」），点完后才到页面。
 

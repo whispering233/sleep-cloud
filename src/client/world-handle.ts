@@ -7,9 +7,12 @@ import type { ZoomMode } from './zoom';
  * （世界层是懒加载块，入场层不该等它下载完）。
  */
 let world: WorldHandle | undefined;
+/** 最后一次请求的暂停态：世界层是懒加载块，注册可能晚于 App 的 effect。 */
+let suspended = false;
 
 export function setWorldHandle(handle: WorldHandle | undefined): void {
   world = handle;
+  handle?.setSuspended(suspended);
 }
 
 /** 相机跳到我的床。世界层还没起来（入场层期间）时什么都不做。 */
@@ -28,4 +31,13 @@ export function focusBed(bedNo: number): void {
  */
 export function setZoomMode(mode: ZoomMode): void {
   world?.setZoomMode(mode);
+}
+
+/**
+ * 整屏页（入场层 / 说明面板）盖住世界时整帧停渲染。请求先记在模块级，世界层起来时再补上——
+ * 入场层不该等它下载完，所以 App 的 effect 可能比世界层先跑。
+ */
+export function setWorldSuspended(next: boolean): void {
+  suspended = next;
+  world?.setSuspended(next);
 }
