@@ -73,7 +73,7 @@ games/
 | 为什么要两个文件 | `meta` 必须能被列表读到而**不载入游戏代码**；同一个文件里既写 `meta` 又写 `mount`，扫描它就得侵蚀懒加载 |
 | 没有中心表 | 没有手写的条目数组、没有 `registry.json`。加一个游戏 = 加一个文件夹 |
 | 只支持子文件夹 | 单文件游戏没法把 `meta` 与 `mount` 分开（要么被打进首屏，要么旁挂一个 JSON = 还是两个文件，只是散着），所以只有一种形态 |
-| 守护 | 两条单测：①每个 `games/<id>/` 都有 `meta.ts` + `index.ts`、`meta` 三字段齐；②`games/**` 里除同目录相对 import 外**零项目 import** |
+| 守护 | 两条单测：①每个 `games/<id>/` 都有 `meta.ts` + `index.ts`、`meta` 三字段齐；②`games/**` 里除同目录相对 import 外**零运行时项目 import** |
 | 构建期 | 不做代码生成、不挂 npm script：扫描是 Vite 在构建期展开的，产物仍是普通 chunk |
 
 ### 4.2 模块与上下文
@@ -100,6 +100,8 @@ export interface GameCtx {
 **游戏自己负责**：往 `el` 里放 `canvas`（`canvas.width = base.w * dpr`，CSS 宽高 = `base.w/h`）或 SVG / DOM；自己的 `requestAnimationFrame` 与定时器；**在自己的手势里**建 / `resume()` 它的 `AudioContext`——点列表那一刻的手势不算（中间隔着 `await import`，Safari 已判定解锁失效）。
 
 **禁止**：`import` 任何项目模块（`store` / `ws` / `world` / `audio` / `prefs`…）；发任何上行；读本地存储；读网络。这一条让每个游戏都能独立删除，改大厅不会连带改游戏。
+
+**唯一例外是 `import type`**：游戏要吃到 `GameModule` / `GameCtx` 这两张契约，只能从 `src/client/games/types.ts` 引，且必须写成 `import type`（`verbatimModuleSyntax` 下产物里一行不剩，不构成运行时依赖）。复制一份契约到 `games/` 不在选项里——那就是两份契约，改一份忘一份比耦合更贵。守护单测按「运行时 import 为零」判。
 
 **基准尺寸**：条目自己声明，**贴近手机上可用区域的比例**（393×852 竖屏下可用区约 377×776 ≈ 1:2）。`1:1` 的方形会在上下各留近 190px 背景，像一张被裁窄的海报；`16:9` 会被缩到 377×212，基本没法玩，只有确实需要横向视野的条目才用，并因此自动标上「横屏更好」。
 
