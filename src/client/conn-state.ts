@@ -12,10 +12,11 @@ import { PROBE_TIMEOUT_MS, RECONNECT_BACKOFF_MS } from '../shared/constants';
 export type Connection = 'connecting' | 'online' | 'offline' | 'halted';
 
 /**
- * 停住的三种原因（`close` 的 `reason` 语义，见 `docs/api/20-api-ws.md` §5.1.1）：
- * `blocked` = 命中封禁、`replaced` = 同一身份在别处打开了新连接、`stale` = 布局版本不符。
+ * 停住的四种原因（`close` 的 `reason` 语义，见 `docs/api/20-api-ws.md` §5.1.1）：
+ * `blocked` = 命中封禁、`replaced` = 同一身份在别处打开了新连接、`stale` = 布局版本不符、
+ * `full` = 厅满（`2002`，握手时因竞态命中）。
  */
-export type HaltReason = 'blocked' | 'replaced' | 'stale';
+export type HaltReason = 'blocked' | 'replaced' | 'stale' | 'full';
 
 export interface ConnState {
   connection: Connection;
@@ -51,6 +52,7 @@ export function haltReasonOf(reason: string): HaltReason | undefined {
   if (reason === 'blocked') return 'blocked';
   if (reason === 'replaced') return 'replaced';
   if (reason === '2003') return 'stale';
+  if (reason === '2002') return 'full';
   return undefined;
 }
 

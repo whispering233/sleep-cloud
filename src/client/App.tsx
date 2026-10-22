@@ -6,7 +6,6 @@ import { setSound as setSoundAudio } from './audio';
 import { AboutOverlay } from './components/AboutOverlay';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
-import type { EntryBlock } from './components/EntryOverlay';
 import { GamesOverlay } from './components/GamesOverlay';
 import { Hud } from './components/Hud';
 import { LotOverlay } from './components/LotOverlay';
@@ -14,6 +13,8 @@ import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
 import { coversWorld } from './covered';
+import { entryVerdictOf } from './entry-guard';
+import type { EntryBlock } from './entry-guard';
 import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
 import { getState, setComposer, subscribe } from './store';
@@ -28,7 +29,7 @@ import { connectHall } from './ws';
 export function App() {
   const shellRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<SessionView | null>(null);
-  /** 入场前的拦截（`/api/me` 的 `2002` 厅满 / `5002` 封禁）：不让人建连再被踢 */
+  /** 入场前的拦截（`/api/me` 的 `2002` 厅满 / `5002` 封禁 / 会话没留住）：不让人建连再被踢 */
   const [entryBlock, setEntryBlock] = useState<EntryBlock | undefined>(undefined);
   const [entered, setEntered] = useState(false);
   /** 说明面板：`null` = 关着，否则是打开的原因（自动 / 手动） */
@@ -150,9 +151,15 @@ export function App() {
         <EntryOverlay
           session={session}
           block={entryBlock}
-          onDone={(next) => {
-            setSession(next);
-            setEntered(true);
+          onDone={async (next) => {
+            // 建连前复核一次身份有没有留住（`docs/api/10-api-http.md` §2.1 第 6 步）：
+            // `/api/ws` 只认 cookie，而它的失败前端看不出原因，只会在退避里无限重连。
+            // 复核自己断网了不是「身份没留住」：`catch` 成 `undefined` 交给判据走「不拦」
+            const check = await loadSession().catch(() => undefined);
+            const verdict = entryVerdictOf(next, check);
+            setSession(verdict.session);
+            if (verdict.block) setEntryBlock(verdict.block);
+            else setEntered(true);
           }}
         />
       ) : null}

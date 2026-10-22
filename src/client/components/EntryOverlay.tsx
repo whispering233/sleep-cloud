@@ -1,4 +1,5 @@
 import type { SessionView } from '../../shared/http-api';
+import type { EntryBlock } from '../entry-guard';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
 import { APPEARANCES } from '../../shared/protocol';
 import type { Appearance } from '../../shared/protocol';
@@ -23,13 +24,10 @@ const APPEARANCE_LABEL: Record<Appearance, string> = { boy: '侧边短发', girl
 
 export interface EntryOverlayProps {
   session: SessionView;
-  /** 入场前的拦截（`/api/me` 的码）：厅满（`2002`）或封禁（`5002`，带到期时间） */
+  /** 入场前的拦截（`/api/me` 的码）：厅满（`2002`）、封禁（`5002`，带到期时间）或会话没留住（`no-session`） */
   block?: EntryBlock;
   onDone: (session: SessionView) => void;
 }
-
-/** 入场前的两种拦截：厅满只剩最小档也满了；封禁带 `untilAt`（`null` = 永久）。 */
-export type EntryBlock = { code: '2002' } | { code: '5002'; untilAt: number | null };
 
 /**
  * 入场层：18 岁自述 + 昵称 + 形象二选一。**每次进入大厅前都出现**；会话已完善时它是「预填 + 一键继续」。
@@ -51,7 +49,9 @@ export function EntryOverlay({ session, block, onDone }: EntryOverlayProps) {
       ? undefined
       : block.code === '2002'
         ? errorText('2002')
-        : blockedTextFor(block.untilAt, Date.now());
+        : block.code === '5002'
+          ? blockedTextFor(block.untilAt, Date.now())
+          : '浏览器没有保存你的信息，允许保存网站数据后刷新，或换一个浏览器';
 
   /** 把一次写入的结果落到会话上：`1001` 表示会话被换新（静默）。 */
   const runStep = async (
