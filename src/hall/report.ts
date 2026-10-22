@@ -168,7 +168,13 @@ export function listReportTargets(sql: SqlStorage, limit: number): ReportTargetR
     }));
 }
 
-/** 90 天清理（并入每日唤醒，不新开唤醒）：只删过期行，没被举报过的文本从来就不在库里。 */
+/**
+ * 90 天清理（并入每日唤醒，不新开唤醒）：两个时钟，先清证据再删行。
+ * `evidence` 按 `created_at`（首次举报）过期，行与 `count` 按 `last_at`（最后一次举报）过期——
+ * 只按 `last_at` 删会让一直被重复举报的对把第 0 天的原话无限期留在库里。
+ */
 export function purgeExpiredReports(sql: SqlStorage, now: number): void {
-  sql.exec('DELETE FROM report WHERE last_at < ?', now - REPORT_TTL_MS);
+  const cutoff = now - REPORT_TTL_MS;
+  sql.exec("UPDATE report SET evidence = '[]' WHERE created_at < ? AND evidence <> '[]'", cutoff);
+  sql.exec('DELETE FROM report WHERE last_at < ?', cutoff);
 }

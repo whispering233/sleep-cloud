@@ -56,21 +56,6 @@
 
 ---
 
-## K5 举报证据按首次举报 90 天过期
-
-**契约**：`../design/70-privacy-risk.md` §7（两个时钟）、`../db/schema.md` §4.4 与 §7、`public/privacy.html` 第 4 条。
-
-- `src/hall/report.ts` `purgeExpiredReports`：先 `UPDATE report SET evidence = '[]' WHERE created_at < ? AND evidence <> '[]'`，再执行原来的 `DELETE FROM report WHERE last_at < ?`。
-- `report.test.ts`：改现有 `purgeExpiredReports` 那一条（它现在断言「证据随行一起删」）；新增一条「同一对被重复举报刷新 `last_at` 后，证据仍按 `created_at` 过期，行与 `count` 都还在」。
-- **不做**：不改合并逻辑（`recordReport` 仍然保留第一次的事由与证据）；不改 `REPORT_TTL_MS`。
-
-**验收**（全部通过才算完成）
-
-1. `npm test` 通过（含上面两条）。
-2. `npm run typecheck` 通过。
-
----
-
 ## K6 统计卡「近 24 小时举报」改回行数
 
 **契约**：`../api/30-api-admin.md` §5.8 与 `120-admin-console.md` §3（口径是**行数**，不是被举报人数）。
