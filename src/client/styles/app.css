@@ -954,11 +954,6 @@
     line-height: var(--text-body--line-height);
   }
 
-  .about-section {
-    display: grid;
-    gap: var(--spacing-xs);
-  }
-
   .about-heading {
     margin: 0;
     color: var(--color-neutral);
@@ -967,6 +962,9 @@
     font-weight: var(--font-weight-label);
     letter-spacing: var(--tracking-label);
     line-height: var(--text-label--line-height);
+    /* 标题与它下面那块贴紧（一档 `xs`），而块与块之间是 `.entry-card` 统一给的 `md`：
+       不补回这 8px，标题就会漂在上一段与自己的列表正中，分组感消失 */
+    margin-block-end: calc(var(--spacing-xs) - var(--spacing-md));
   }
 
   .about-items {
@@ -984,6 +982,14 @@
   .about-items li::before {
     content: '·';
     margin-inline-end: var(--spacing-xs);
+  }
+
+  /* 行内链接：与正文同字号 + 显式下划线（preflight 把 `<a>` 的下划线继承成了 `inherit`）；
+     作者可以把整条 URL 当标签，`anywhere` 保证窄屏不溢出卡片。行内链接不受 44px 胶囊那条约束 */
+  .about-link {
+    color: inherit;
+    text-decoration: underline;
+    overflow-wrap: anywhere;
   }
 
   /* ——— 游戏页（第三种「临时整屏页」：壳 / 卡片 / 标题复用入场层那套，只补出口、舞台与列表） ——— */

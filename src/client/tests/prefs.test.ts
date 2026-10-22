@@ -178,7 +178,7 @@ describe('说明面板已读（sc.about.seen）', () => {
     }
   });
 
-  it('长度边界：正好 32 字符收，33 字符判废（不校验版本号格式）', () => {
+  it('长度边界：正好 32 字符收，33 字符判废（不校验指纹格式）', () => {
     const storage = fakeStorage();
     writeAboutSeen(`1.0.0-${'x'.repeat(26)}`, storage);
     expect(readAboutSeen(storage)).toHaveLength(32);
