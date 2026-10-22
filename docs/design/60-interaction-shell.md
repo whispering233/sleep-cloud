@@ -24,15 +24,18 @@
 idle ──focusin(可编辑控件)──▶ typing
 idle ──点「举报」（已选中某人）──▶ report
 idle ──点阅读入口──▶ reading（不拉键盘，所以不靠 focusin）
+idle ──点齿轮「反馈与建议」──▶ feedback（拉键盘，焦点进事由框）
 report ──focusin──▶ report（不降级：事由框换焦点不该把它换成快捷用语）
+feedback ──focusin──▶ feedback（不降级：同 report，否则会卸载表单、丢掉已写的字）
 reading ──focusin──▶ typing（点了输入框就该能打字，文本让位）
 report ──5003 回执 / 收起键 / 点面板空白 / 取消选中──▶ idle
+feedback ──5004 回执 / 收起键 / 点面板空白──▶ idle
 reading ──收起键 / 点面板空白──▶ idle
-typing / report / reading ──断线 / 焦点对账失败──▶ idle
+typing / report / reading / feedback ──断线 / 焦点对账失败──▶ idle
 ```
 
-- **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
-- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有三个源：聊天输入、`GO` 的床号输入、举报事由（它在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗书本图标胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
+- **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading' | 'feedback'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
+- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗书本图标胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
 - **出口唯一**：`exitComposer()`。它必须满足三条：
   1. **幂等**（重复调用无副作用）；
   2. **不看 `activeElement` 是谁**（当前实现正是因为它只看输入框，才在输入框被卸载后彻底失效）；
@@ -71,7 +74,7 @@ typing / report / reading ──断线 / 焦点对账失败──▶ idle
 
 ## 4. DOM 时序：可点性必须与视觉同源
 
-- **可点性跟视觉走，但依据是「盒子在不在」**：关闭态由 `visibility: hidden`（挂同一条 `allow-discrete` 过渡）负责——不可命中、不可 Tab、不在读屏树里。**不用 `pointer-events`**（关得早：面板还看得见的 160ms 里点击就漏给画布，实测 `opacity: 1` 而 `elementFromPoint` 返回 `<canvas>`）；**也不要指望 `inert`**——它会让命中跳过整棵子树（同样实测返回 `<canvas>`），它只保证「不可 Tab / 不被读屏读到」。
+- **可点性跟视觉走，但依据是「盒子在不在」**：关闭态由 `visibility: hidden`（挂同一条 `allow-discrete` 过渡）负责——不可命中、不可 Tab、不在读屏树里。**不用 `pointer-events`**（关得早：面板还看得见的 160ms 里点击就漏给画布，实测 `opacity: 1` 而 `elementFromPoint` 返回 `<canvas>`）；**也不要指望 `inert`**——它会让命中跳过整棵子树（同样实测返回 `<canvas>`），它只保证「不可 Tab / 不被读屏读到」。 **打开方向不能延迟 `visibility`**：表单 `autoFocus` 落在 `visibility: hidden` 的起始帧会被吞，随后 `focusout` 对账把面板判回 idle——所以 `visibility` 只在关闭方向参与过渡，`[data-open]` 上立即生效。
 - **一次点按手势期间，不许把被点的盒子拿掉。** 触摸抬手的兼容鼠标事件（`mousedown` / `mouseup` / `click`）是**按抬手那一刻**重新做命中的：盒子若在 `pointerdown` 里就消失（布局切换 / 元素卸载），补发的 `mousedown` 就落到 `<canvas>` 上——而它确实是从画布起手的事件，`pointer.downElement !== canvas` 那道兜底拦不住，一次误点就往服务端发一条 `walk`（实测：点插槽面板空白，10 次漏 7 次；鼠标不补发这些事件，所以桌面看不出来）。两种合规做法，二选一：
   1. 把手势期间的布局变化推到 `click`（点空白退场就是这么做的）；
   2. 在 `pointerdown` 里 `preventDefault()`（浏览器据此不再派发兼容鼠标事件；顺带保住焦点）。

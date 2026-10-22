@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, openLot, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openFeedback, openLot, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -78,7 +78,7 @@ const ICON_ENTRIES = [
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **关于失眠云** / 版本号 / 隐私说明；
+ * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那一组换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
@@ -431,6 +431,23 @@ export function ActionRow() {
                           }}
                         >
                           {soundLabel(view.sound)}
+                        </button>
+                        {/* 「反馈与建议」：进 `feedback` 会话，插槽面板换成反馈表单
+                            （`docs/design/50-slot-panel.md` §附）。点它关浮层。
+                            独立 `key` + `pointerdown` 拦默认行为：与「关于失眠云」那颗同理 */}
+                        <button
+                          key="feedback"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            closeMenu();
+                            // 等浮层关完再进 feedback：`hidePopover()` 的焦点归还会在提交之后
+                            // 把焦点抢回齿轮，下一帧的焦点对账就会把刚开的面板当成「焦点跑到面板外」
+                            window.setTimeout(openFeedback, 0);
+                          }}
+                        >
+                          反馈与建议
                         </button>
                         {/* 「关于失眠云」：手动入口（`docs/design/90-about-panel.md` §1），与自动那一次共用面板。
                             点它关浮层并打开面板——手动路径没有勾选框（`source` 决定）。

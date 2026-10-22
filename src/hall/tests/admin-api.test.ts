@@ -9,9 +9,10 @@ vi.mock('cloudflare:workers', () => ({
   },
 }));
 
-import { HALL_ID } from '../../shared/constants';
+import { BED_OWNERSHIP_TTL_MS, HALL_ID, REPORT_DEDUP_MS } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
+import { recordFeedback } from '../feedback';
 import { recordReport } from '../report';
 import { listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
 import { freshSql, insertBed } from './sqlite';
@@ -408,6 +409,14 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
   expect(second.next).toBeNull();
 });
 
+interface FeedbackItem {
+  id: number;
+  createdAt: number;
+  userId: string;
+  nickname: string | null;
+  text: string;
+}
+
 const reportsOf = async (hall: Hall, query = ''): Promise<ReportPage> =>
   (await (await adminGet(hall, `/admin/reports${query}`)).json()) as ReportPage;
 
@@ -467,6 +476,45 @@ test('举报分页：id 倒序，before 排他，两页合起来不重不漏', a
   expect(ids).toEqual([3, 2, 1]);
 });
 
+const feedbackOf = async (hall: Hall, query = ''): Promise<{ items: FeedbackItem[]; next: { before: number } | null }> =>
+  (await (await adminGet(hall, `/admin/feedback${query}`)).json()) as {
+    items: FeedbackItem[];
+    next: { before: number } | null;
+  };
+
+test('反馈列表：空表、字段与昵称读时补（删了身份就是 null），正文原样含换行', async () => {
+  const { hall, sql } = newHall();
+  expect(await feedbackOf(hall)).toEqual({ items: [], next: null });
+
+  recordIdentity(sql, { userId: 'u_known', nickname: '夜猫子' }, NOW);
+  recordFeedback(sql, 'u_known', '第一行\n第二行', NOW);
+  recordFeedback(sql, 'u_gone', '没有台账的行', NOW);
+
+  const page = await feedbackOf(hall);
+  expect(page.items).toEqual([
+    { id: 2, createdAt: NOW, userId: 'u_gone', nickname: null, text: '没有台账的行' },
+    { id: 1, createdAt: NOW, userId: 'u_known', nickname: '夜猫子', text: '第一行\n第二行' },
+  ]);
+  expect(page.next).toBeNull();
+});
+
+test('反馈分页：id 倒序、before 排他；limit 夹到 100', async () => {
+  const { hall, sql } = newHall();
+  for (const text of ['一', '二', '三']) recordFeedback(sql, 'u_a', text, NOW);
+
+  const first = await feedbackOf(hall, '?limit=2');
+  expect(first.items.map((item) => item.text)).toEqual(['三', '二']);
+  expect(first.next).toEqual({ before: first.items[1]?.id });
+
+  const second = await feedbackOf(hall, `?limit=2&before=${first.next?.before}`);
+  expect(second.items.map((item) => item.text)).toEqual(['一']);
+  expect(second.next).toBeNull();
+
+  const clamped = await feedbackOf(hall, '?limit=999');
+  expect(clamped.items).toHaveLength(3);
+  expect(clamped.next).toBeNull();
+});
+
 const reportTargetsOf = async (hall: Hall, query = ''): Promise<{ items: ReportTargetItem[] }> =>
   (await (await adminGet(hall, `/admin/reports/targets${query}`)).json()) as { items: ReportTargetItem[] };
 
@@ -503,4 +551,41 @@ test('按被举报人折叠：合计次数与举报人数对得上，次数多�
   expect(body).not.toHaveProperty('next');
   // `limit` 照旧生效（默认 50、上限 100）
   expect((await reportTargetsOf(hall, '?limit=1')).items.map((item) => item.target.userId)).toEqual(['u_heavy']);
+});
+
+interface StatsBody {
+  online: number;
+  ownedBeds: number;
+  blocks: number;
+  reports24h: number;
+}
+
+const statsOf = async (hall: Hall): Promise<StatsBody> =>
+  (await (await adminGet(hall, '/admin/stats')).json()) as StatsBody;
+
+test('统计卡空库：四个 0（页面拿到的是数字，不是 undefined）', async () => {
+  const { hall } = newHall();
+  expect(await statsOf(hall)).toEqual({ online: 0, ownedBeds: 0, blocks: 0, reports24h: 0 });
+});
+
+test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时被举报人数', async () => {
+  const socket = new FakeSocket(liveConnection('u_live'));
+  const { hall, sql } = newHall([socket]);
+
+  insertBed(sql, 0, { state: 'empty', ownerUserId: 'u_a', lastSeenAt: NOW, updatedAt: NOW });
+  // 归属过期 1ms：读时算无主，不进 `ownedBeds`
+  insertBed(sql, 1, { state: 'empty', ownerUserId: 'u_b', lastSeenAt: NOW - BED_OWNERSHIP_TTL_MS - 1, updatedAt: NOW });
+  // 只有占用、没有主：不是「有主床」
+  insertBed(sql, 2, { state: 'lying', updatedAt: NOW });
+
+  upsertBlock(sql, { kind: 'user', value: 'u_perm', untilAt: null, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'ip', value: '1.1.1.1', untilAt: NOW + 1_000, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'ip', value: '2.2.2.2', untilAt: NOW - 1_000, reason: '刷屏' }, NOW);
+
+  recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
+  recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
+  // 刚好早过 24 小时窗口：同一个人再被举报，不重复计
+  recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_old', reason: '刷屏', evidence: [] }, NOW - REPORT_DEDUP_MS - 1);
+
+  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 1 });
 });

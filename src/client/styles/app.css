@@ -393,6 +393,13 @@
     opacity: 1;
     transform: none;
     visibility: visible;
+    /* 打开时 `visibility` **不参与过渡**：它是离散属性，带 160ms 的话计算值要到下一帧才翻成 visible，
+       而 `autoFocus` 发生在 commit 里——浏览器按当时的计算值判定「不可聚焦」，焦点落回 body，
+       下一帧的焦点对账就把刚打开的表单当成「焦点在面板外」退场（实测反馈面板只存在 1 帧）。
+       关闭方向仍走基类的 160ms：退场期间保持 visible 才点得到，也不会把点击漏给画布 */
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out;
   }
 
   /* 快捷用语 = 插槽面板的首版内容（`../design/50-slot-panel.md` §附）：两列、每条一整个 44px 描边胶囊。
@@ -626,17 +633,79 @@
   /* 举报表单（插槽面板的第三个内容源，`docs/design/50-slot-panel.md` §4）：
      顶对齐、纵向排。事由框吃 `.input-field` 的字号（≥16px，避免聚焦时页面缩放）与墨色，
      只覆盖高度：多行、可滚，按钮永远在它下方——面板贴着 HUD，键盘弹起也盖不到 */
-  .report-form {
+  .report-form,
+  .feedback-form {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
     padding: var(--spacing-md);
   }
 
-  .report-reason {
+  .report-reason,
+  .feedback-text {
     flex: 0 0 auto;
     min-height: 96px;
     resize: none;
+  }
+
+  /* 反馈表单的告知与字数：弱提示一行 + 计数贴右，字色只降一档，不抢正文 */
+  .feedback-note {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  .feedback-meta {
+    display: flex;
+    justify-content: flex-end;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  /* 接近上限才变色：平时它只是计数，不该抢正文的注意力 */
+  .feedback-count[data-near] {
+    color: var(--color-neutral);
+  }
+
+  .feedback-count[data-full] {
+    font-weight: 600;
+  }
+
+  .feedback-link {
+    margin-inline-start: var(--spacing-xs);
+    color: var(--color-neutral);
+    text-decoration: underline;
+  }
+
+  /* 可恢复失败（配额 / 超长 / 空）：一行可见错误，内容原样留着 */
+  .feedback-error {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    line-height: var(--text-label--line-height);
+    font-weight: 600;
+  }
+
+  .feedback-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+
+  .feedback-cancel {
+    min-height: 44px;
+    padding: 0 var(--spacing-md);
+    color: var(--color-neutral-muted);
+    background-color: transparent;
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    border: 0;
   }
 
   /* 表情切换键：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。

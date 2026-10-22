@@ -6,13 +6,14 @@ const EVENTS: ComposerEvent[] = [
   { kind: 'focus-in' },
   { kind: 'report' },
   { kind: 'read' },
+  { kind: 'feedback' },
   { kind: 'exit' },
   { kind: 'lost-focus' },
   { kind: 'offline' },
 ];
 const EXIT_EVENT_KINDS = new Set(['exit', 'lost-focus', 'offline']);
 
-/** 长度 1..maxLength 的全部事件序列（长度 4 的正好 6^4 = 1296 条）。 */
+/** 长度 1..maxLength 的全部事件序列（7 种事件，长度 4 共 7^4 = 2401 条）。 */
 function sequences(maxLength: number): ComposerEvent[][] {
   let layer: ComposerEvent[][] = [[]];
   const all: ComposerEvent[][] = [];
@@ -30,7 +31,7 @@ function run(events: ComposerEvent[]): ComposerState {
 /**
  * 由序列直接推出的终态（不复用 reducer，免得两边一起错）：
  * 先找到尾巴（最后一次退出类事件之后）里最后一个**非焦点**事件：
- * 没有就只剩 `focus-in` → `typing`；是 `report` → `report`（`report` 下的 `focus-in` 不降级）；
+ * 没有就只剩 `focus-in` → `typing`；是 `report` / `feedback` → 原态（这两种会话下的 `focus-in` 不降级）；
  * 是 `read` → 后面再有 `focus-in` 就降级成 `typing`，否则停在 `reading`。
  */
 function expectedState(events: ComposerEvent[]): ComposerState {
@@ -41,14 +42,14 @@ function expectedState(events: ComposerEvent[]): ComposerState {
   const tail = events.slice(lastExit + 1);
   const lastNonFocus = [...tail].reverse().find((event) => event.kind !== 'focus-in');
   if (lastNonFocus === undefined) return tail.length === 0 ? 'idle' : 'typing';
-  if (lastNonFocus.kind === 'report') return 'report';
+  if (lastNonFocus.kind === 'report' || lastNonFocus.kind === 'feedback') return lastNonFocus.kind;
   return tail[tail.length - 1].kind === 'focus-in' ? 'typing' : 'reading';
 }
 
 describe('输入会话状态机', () => {
   it('穷举长度 ≤ 4 的全部序列：退出类事件把状态清回 idle，之后再按序列重建', () => {
     const all = sequences(4);
-    expect(all).toHaveLength(6 + 36 + 216 + 1296);
+    expect(all).toHaveLength(7 + 49 + 343 + 2401);
     for (const events of all) {
       expect(run(events)).toBe(expectedState(events));
       // 剪到第一次退出为止必须已经回到 idle（幂等的前半句）
@@ -58,7 +59,7 @@ describe('输入会话状态机', () => {
   });
 
   it('任意状态都有一条到 idle 的路（没有死状态）：存在某个事件一步到 idle', () => {
-    for (const state of ['idle', 'typing', 'report', 'reading'] as ComposerState[]) {
+    for (const state of ['idle', 'typing', 'report', 'reading', 'feedback'] as ComposerState[]) {
       expect(EVENTS.some((event) => composerReducer(state, event) === 'idle')).toBe(true);
     }
   });
@@ -67,6 +68,15 @@ describe('输入会话状态机', () => {
     expect(composerReducer('idle', { kind: 'report' })).toBe('report');
     expect(composerReducer('typing', { kind: 'report' })).toBe('report');
     expect(composerReducer('report', { kind: 'report' })).toBe('report');
+  });
+
+  it('feedback 入口：idle / typing / reading 都进 feedback，焦点进来不降级', () => {
+    expect(composerReducer('idle', { kind: 'feedback' })).toBe('feedback');
+    expect(composerReducer('typing', { kind: 'feedback' })).toBe('feedback');
+    expect(composerReducer('reading', { kind: 'feedback' })).toBe('feedback');
+    expect(run([{ kind: 'feedback' }, { kind: 'focus-in' }])).toBe('feedback');
+    // 退场之后同样的事件序列才回到 typing
+    expect(run([{ kind: 'feedback' }, { kind: 'exit' }, { kind: 'focus-in' }])).toBe('typing');
   });
 
   it('report 下 focus-in 不降级（事由框复焦不能卸掉表单）', () => {
@@ -103,7 +113,7 @@ describe('输入会话状态机', () => {
   });
 
   it('reducer 是纯函数：同一输入两次调用结果相同', () => {
-    for (const state of ['idle', 'typing', 'report', 'reading'] as ComposerState[]) {
+    for (const state of ['idle', 'typing', 'report', 'reading', 'feedback'] as ComposerState[]) {
       for (const event of EVENTS) {
         expect(composerReducer(state, event)).toBe(composerReducer(state, event));
       }
