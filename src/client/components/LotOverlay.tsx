@@ -97,8 +97,9 @@ export function LotOverlay() {
       <div className="entry-card lot-sheet">
         <h1 className="entry-title">求签</h1>
 
-        {/* 签筒**常驻**（不再按态挂卸）：1.2 s 末它只淡到 0.25，卡片不会因少一层而向上跳。
-            `lot-stage` 的固定高度同时留给升起的那支签——它要升 56px，超出就会被卡片上沿裁掉 */}
+        {/* 签筒**常驻**（不按态挂卸）：`revealed` 只淡到 0.25，卡片不会因少一层而向上跳。
+            `lot-stage` 的高度就是「筒 64 + 升 56」：签静止时整根落在筒身里，升起后正好贴这一块上沿，
+            所以它既不出上沿、也不会停在标题上（三个数字要一起改） */}
         <div className="lot-stage">
           <LotTube shaking={phase === 'shaking'} dim={phase === 'revealed'} />
           {/* 升起的那支签：只在摇签期间出现，纯装饰（内容在下面那张卡里） */}
