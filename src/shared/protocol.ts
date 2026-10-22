@@ -158,7 +158,7 @@ interface UpstreamPayloads {
   /**
    * 活动声明：`hall`（在看厅，默认）/ `game`（在游戏页）。**与 `state` 正交**——服务端无从推导
    * 「我在看哪一页」，所以只能由客户端说；它不进任何业务判定。只在进 / 出游戏页各发一次，
-   * 重连后要补发一次（附加数据已丢，否则后缀静默消失）。见 `docs/design/110-games-page.md` §6。
+   * 重连后要补发一次（附加数据已丢，否则后缀静默消失）。见 `docs/design/140-games-page.md` §6。
    */
   act: { act: 'hall' | 'game' };
   chat: { text: string };

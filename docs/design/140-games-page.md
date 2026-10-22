@@ -54,7 +54,7 @@ export interface GameCtx {
 
 **外壳（`games/host.ts`）负责**：按 `base` 建一块舞台、等比 `scale = min(cw/bw, ch/bh)`、居中、裁掉溢出、交出 `el`；同一时刻只挂载一个；换条目 = 先 `dispose` 再 `mount`；关闭页面 = `dispose` + 清空 `el`。**舞台尺寸变了（转屏 / 窗口尺寸变）就按新 `scale` 重挂一次**（`dispose` + `mount`），游戏不必自己处理 resize。
 
-**`dpr` 是「每基准像素对应的设备像素」，不是裸的 `devicePixelRatio`**：舞台是「按基准尺寸建、再用 CSS 放大 `scale` 倍」，所以 `canvas.width = base.w * dpr` 只有在 `dpr` 含 `scale` 时才能一颗设备像素对一颗位图像素（`docs/design/110-games-page.md` 的作者踩过：只乘 `devicePixelRatio` 时真机上 1.2 倍放大，窗格边缘是插值出来的）。上限取 `2 × MAX_DPR`：手机上 `scale` 约 1.2，`3 × 1.2 = 3.6` 刚好落在里面；桌面大窗口下继续乘上去会白吃几十 MB 显存与位图，所以在这里封顶、宁可略软。
+**`dpr` 是「每基准像素对应的设备像素」，不是裸的 `devicePixelRatio`**：舞台是「按基准尺寸建、再用 CSS 放大 `scale` 倍」，所以 `canvas.width = base.w * dpr` 只有在 `dpr` 含 `scale` 时才能一颗设备像素对一颗位图像素（`docs/design/140-games-page.md` 的作者踩过：只乘 `devicePixelRatio` 时真机上 1.2 倍放大，窗格边缘是插值出来的）。上限取 `2 × MAX_DPR`：手机上 `scale` 约 1.2，`3 × 1.2 = 3.6` 刚好落在里面；桌面大窗口下继续乘上去会白吃几十 MB 显存与位图，所以在这里封顶、宁可略软。
 
 **游戏自己负责**：往 `el` 里放 `canvas`（`canvas.width = base.w * dpr`，CSS 宽高 = `base.w/h`）或 SVG / DOM；自己的 `requestAnimationFrame` 与定时器；**在自己的手势里**建 / `resume()` 它的 `AudioContext`——点列表那一刻的手势不算（中间隔着 `await import`，Safari 已判定解锁失效）。
 

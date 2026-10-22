@@ -16,7 +16,7 @@ import { Hall } from '../hall';
 import { freshSql } from './sqlite';
 
 /**
- * 活动声明 `act`（见 `docs/design/110-games-page.md` §6）：
+ * 活动声明 `act`（见 `docs/design/140-games-page.md` §6）：
  * 它不进任何业务判定，变化时复用一条 `state` 报文发给所有人（含本人）。
  */
 class FakeSocket {
@@ -94,7 +94,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('act：活动声明（docs/design/110-games-page.md §6）', () => {
+describe('act：活动声明（docs/design/140-games-page.md §6）', () => {
   it("'game' → 附加数据记住，state 报文发给所有人（含本人）并带 act", () => {
     const me = new FakeSocket(handshook('u_me', 1000));
     const other = new FakeSocket(handshook('u_other', 1000));

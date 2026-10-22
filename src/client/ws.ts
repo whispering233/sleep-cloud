@@ -188,7 +188,7 @@ export function sendSleep(): boolean {
 
 /**
  * 声明「我在看哪一页」（`hall` / `game`）：**只在进 / 出游戏页各发一次**，不是状态同步。
- * 服务端只把它记在连接附加数据里，变化时回一条 `state` 报文（`docs/design/110-games-page.md` §6）。
+ * 服务端只把它记在连接附加数据里，变化时回一条 `state` 报文（`docs/design/140-games-page.md` §6）。
  */
 export function sendAct(act: 'hall' | 'game'): boolean {
   const s = live();

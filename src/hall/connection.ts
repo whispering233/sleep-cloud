@@ -25,7 +25,7 @@ export interface ConnectionState {
   state: 'roaming' | 'lying' | 'asleep';
   /**
    * 「我在看哪一页」：只有 `game` 会被记住（`hall` 等于默认、字段省略）。可丢弃的临时量——
-   * 断线即丢，重连后由客户端补发（见 `docs/design/110-games-page.md` §6）。
+   * 断线即丢，重连后由客户端补发（见 `docs/design/140-games-page.md` §6）。
    */
   act?: 'game';
   /**

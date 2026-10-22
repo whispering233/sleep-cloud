@@ -24,9 +24,7 @@
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
-| 求签：入口出口、三态、一天一次的键、38 条吉签、HUD 那句、明暗 | `docs/design/110-lot.md` |
-| 后台管理面板：五个视图、统计卡、抽屉、文件拆分与取舍 | `docs/design/120-admin-console.md` |
-| 反馈与建议：入口、表单、协议、上限、留存、后台列表 | `docs/design/130-feedback.md` |
+| 求签 / 游戏页 / 后台管理面板 / 反馈与建议 | `docs/design/110-lot.md`、`docs/design/140-games-page.md`、`docs/design/120-admin-console.md`、`docs/design/130-feedback.md` |
 | 配置（常量 / 限制 / 密钥 / 词表）、运行构建部署发版、测试环境与流程 | `docs/design/config.md`、`docs/design/build.md`、`docs/design/test.md` |
 | 数据模型与接口契约（HTTP / WebSocket / 后台 / 错误码） | `docs/db/schema.md`、`docs/api/` |
 | 视觉令牌、组件、素材变体清单 | `docs/ui/DESIGN.md` |
@@ -155,6 +153,7 @@
 | 天气（雨天 / 无雨）/ 雨声（雨声 / 静音） | 晴、天气同步、天气 API、天气音、BGM | 两颗**各自独立**的**个人偏好**（`sc.weather` 只管雨层画面、`sc.sound` 只管声音），缺键都是关；不与现实天气同步，不进协议 |
 | 早播循环（intro loop） | 预览音、小样 | 8 s 的短循环，只负责「尽快出声」；30 s 主循环解码完成后 1 s 交叉淡化接上并释放它 |
 | 雨层（`rain-layer`） | 天气特效、粒子雨 | **屏幕空间**的并行 Scene（相机原点左上 + `zoom` = 画布 DPR）；与世界缩放、可用视口、面板换位无关 |
+| 游戏页 / 游戏舞台 | 弹出页、游戏弹窗、游戏画布 | 动作行的「游戏」拉起的**整屏页**（`docs/design/140-games-page.md`），**不占大厅画布**；舞台 = 页内按游戏自声明的 `base` 等比缩放的那块容器（`scale = min(cw/bw, ch/bh)`）。列表条目**逐条动态 import**，首屏不载游戏代码；世界挂起走与入场层同一个 `setWorldSuspended` |
 
 ## 开发流程（本项目）
 

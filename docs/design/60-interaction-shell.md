@@ -15,7 +15,7 @@
 | **面板停靠 / 插槽显隐** | `composer` 状态（store） | `.app-shell` 的 `data-composer`、面板的 `data-open` | DOM 的 `blur` 事件、`:focus-within`、键盘高度 |
 | **可用视口（相机）** | HUD 与面板的**布局**实占（`layoutTopOf` + `offsetHeight`）；底部占位 = **面板自身高度** | 取景、夹取、死区 | `getBoundingClientRect`（会跟着 transform 跑）；「屏底 − 面板顶边」（打字态会把整屏算成界面） |
 | **世界缩放** | `zoomMode` | `camera.zoom` | 键盘、面板 |
-| **游戏页是否打开** | `gamesOpen`（store） | `GamesOverlay` 的挂载、`WorldHandle.pause()` / `resume()`、`suspendHall()` / `resumeHall()` | 由 DOM 焦点或 `history` 推导（见 `110-games-page.md` §2） |
+| **游戏页是否打开** | `gamesOpen`（store） | `GamesOverlay` 的挂载、`suspendHall()` / `resumeHall()`；世界按 `covered` 走**共用的** `setWorldSuspended`，不另记一份暂停态 | 由 DOM 焦点或 `history` 推导（见 `140-games-page.md` §2） |
 
 **游戏页是唯一一个「盖住整屏、却不是输入会话」的层**：它只可能在 `composer === 'idle'` 时被打开（打开它的那颗胶囊就在被「收起」替换掉的那一组里），所以不参与 §2 的状态机，也没有第二条退场路径。
 
@@ -99,7 +99,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 
 ### 5.2 整屏页期间世界停渲染
 
-- **触发**：只要有一块**不透明的整屏页**盖着世界（入场层、说明面板，统一写成 `covered = session !== null && (!entered || aboutOpen !== null)`）——世界层就**整帧停**——`game.loop.sleep()`（Phaser 语义：`raf.stop()`，连渲染一起停）。`game.pause()` / `scene.pause()` 不行：只停 update，画布照旧每帧重绘（§8）。**`session` 也算进公式**：`/api/me` 没回来时两块页都没画（都等 `session`），只看 `!entered` 就会停在一块什么都没盖的屏上。
+- **触发**：只要有一块**不透明的整屏页**盖着世界（入场层、说明面板、游戏页，统一写成 `covered = session !== null && (!entered || aboutOpen !== null || gamesOpen)`；**求签页不在内**——它是薄薄一层，世界在底下看得见）——世界层就**整帧停**——`game.loop.sleep()`（Phaser 语义：`raf.stop()`，连渲染一起停）。`game.pause()` / `scene.pause()` 不行：只停 update，画布照旧每帧重绘（§8）。**`session` 也算进公式**：`/api/me` 没回来时两块页都没画（都等 `session`），只看 `!entered` 就会停在一块什么都没盖的屏上。
 - **为什么停**：整屏页盖住的是 **2.7 Mpx** 画布（393 CSS px × DPR 3 = 1179×2316）。谁也看不见它，它却照旧吃满合成与 WebGL 的那一份预算。宿主 Android 模拟器（SwiftShader，≈23fps）实测：说明页开着时整条帧管线堵到**一次 tap 排队 31 → 270 ms、rAF 停顿 1.8 ~ 3.7 s**；真机 Via 上的形态正是这个——**「点知道了没反应、1-2 秒后大厅直接出现」，卡的不是关闭动作（面板出 DOM 只要 2 ~ 12 ms），是关闭之前那段时间管线已经堵住**。
 - **恢复必须重锚**：`loop.wake()` 只重启 rAF，**不清 `lastTime`**；`step()` 里 `delta = time - lastTime` 于是会算出「暂停了多久」那么大的一个 delta，`advanceMover` 与相机跟随都会一次跳一屏。顺序恒为 `resetDelta()` → `wake()`（`resetDelta()` 把 `time` / `lastTime` 一起打回 `performance.now()`，首帧 delta ≈ 0）。位置本身不需要补偿：服务端时间戳与外推都是 `f(t)`，醒来那一帧自然就是「当下」。
 - **幂等**：世界层自留一个 `suspended` 布尔，只有状态真翻转才 sleep / wake（`wake()` 在 `running` 时虽会早退，但 `resetDelta()` 会打乱 FPS 统计）。

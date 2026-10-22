@@ -482,7 +482,7 @@ export class Hall extends DurableObject<Env> {
 
     // `act` 只声明「我在看哪一页」：**与 `state` 正交**，不进任何业务判定（不刷新 `lastInputAt`、
     // 不碰自动睡着、不改归属与占用），所以不能走下面那条「先写 fresh」的通用路径。
-    // 被限流、或值不是 `hall` / `game` 时**静默丢弃**（不回错误码、不断线）。见 `110-games-page.md` §6。
+    // 被限流、或值不是 `hall` / `game` 时**静默丢弃**（不回错误码、不断线）。见 `140-games-page.md` §6。
     if (message.t === 'act') {
       if (!gate.allowed) {
         log.drop({ kind: 'limit' });

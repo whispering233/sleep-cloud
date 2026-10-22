@@ -1,5 +1,5 @@
 /**
- * 游戏契约（`docs/design/110-games-page.md` §4）：游戏页里每个游戏只实现这一层接口。
+ * 游戏契约（`docs/design/140-games-page.md` §4）：游戏页里每个游戏只实现这一层接口。
  * 它拿不到大厅的任何数据——`import` 任何大厅模块（`store` / `ws` / `world` / `audio` / `prefs`…）、
  * 发上行、读本地存储、读网络全部禁止，所以每个游戏都能独立删除，改大厅也不会连带改游戏。
  */
@@ -15,7 +15,7 @@ export interface GameCtx {
 }
 
 /**
- * 列表里的一个条目（`docs/design/110-games-page.md` §3）：**只有这五个字段**，没有缩略图。
+ * 列表里的一个条目（`docs/design/140-games-page.md` §3）：**只有这五个字段**，没有缩略图。
  * 「横屏更好」由 `base.w > base.h` 现推，不另存字段。
  */
 export interface GameEntry {

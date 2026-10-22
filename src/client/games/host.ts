@@ -2,7 +2,7 @@ import { MAX_DPR } from '../../shared/constants';
 import type { GameCtx, GameEntry } from './types';
 
 /**
- * 游戏舞台（`docs/design/110-games-page.md` §4）：按条目的 `base` 建一块舞台，等比缩放
+ * 游戏舞台（`docs/design/140-games-page.md` §4）：按条目的 `base` 建一块舞台，等比缩放
  * （`scale = min(cw/bw, ch/bh)`）、居中、裁掉溢出，然后把它交给游戏。
  * **同一时刻只挂一个**：换条目先 `dispose` 再 `mount`；关闭 = `dispose` + 清空容器。
  *

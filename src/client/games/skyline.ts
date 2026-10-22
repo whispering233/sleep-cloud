@@ -1,5 +1,5 @@
 /**
- * Skyline（`docs/design/110-games-page.md` §4 的游戏契约）：一排别人的窗，灯按慢节奏随机亮灭。
+ * Skyline（`docs/design/140-games-page.md` §4 的游戏契约）：一排别人的窗，灯按慢节奏随机亮灭。
  * 纯本地观赏物：不 import 大厅模块、不发上行、不读本地存储、不联网，`import` 本文件没有副作用。
  * 基准尺寸由 `registry.ts` 声明，这里一律按 `ctx.base` 画——舞台给多大就画多大。
  */

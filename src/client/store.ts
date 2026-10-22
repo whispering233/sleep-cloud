@@ -149,7 +149,7 @@ export interface ClientState {
   aboutOpen: AboutSource | null;
   /**
    * **游戏页**（客户端本地状态，不进协议、不进快照）：`true` = 整屏那一页开着。
-   * 大厅的连接照旧，人只是暂时不看厅里——所以它不进任何上行（`docs/design/110-games-page.md` §2）。
+   * 大厅的连接照旧，人只是暂时不看厅里——所以它不进任何上行（`docs/design/140-games-page.md` §2）。
    */
   gamesOpen: boolean;
   /**

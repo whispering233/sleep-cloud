@@ -149,7 +149,7 @@ export function setSound(on: boolean): void {
 }
 
 /**
- * 让位（`docs/design/110-games-page.md` §5）：游戏页盖着时把大厅的声音挂起。
+ * 让位（`docs/design/140-games-page.md` §5）：游戏页盖着时把大厅的声音挂起。
  * **没建 context 就什么都不做**（不为了挂起而建一个）、不改 `sound` 偏好、不共用总开关。
  */
 export function suspendHall(): void {

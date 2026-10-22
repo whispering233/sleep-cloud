@@ -31,7 +31,7 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
  * 动作行右端的三颗**图标入口**（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
  * 图形是设计给的 24 × 24 绘制区 SVG（`stroke-width 1.6`）——按钮里按 20×20 渲染，所以描边写 `1.8`，
  * 视觉上才等于 20 绘制区上的 `1.5px`（与书本 / 齿轮同一套画法）。
- * **求签与游戏接通了功能**（拉起来签页 `docs/design/110-lot.md` / 拉起游戏页 `docs/design/110-games-page.md`）；
+ * **求签与游戏接通了功能**（拉起来签页 `docs/design/110-lot.md` / 拉起游戏页 `docs/design/140-games-page.md`）；
  * 睡不着留言板先上界面、后接功能：点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
  */
 const ICON_ENTRIES = [

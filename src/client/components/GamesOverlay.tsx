@@ -9,7 +9,7 @@ import { closeGames, subscribe } from '../store';
 import { PrimaryAction } from './PrimaryAction';
 
 /**
- * 游戏页（`docs/design/110-games-page.md`）：整屏一页纯程序化的观赏物，跟大厅无关，也拿不到大厅的任何数据。
+ * 游戏页（`docs/design/140-games-page.md`）：整屏一页纯程序化的观赏物，跟大厅无关，也拿不到大厅的任何数据。
  * 壳 / 卡片 / 标题复用入场层那套（`.entry-overlay` / `.entry-card` / `.entry-title`）——它就是第三种
  * 「临时整屏页」，不再造第二套排版。`App.tsx` 里挂在聊天面板之后、说明面板之前，层级靠 DOM 顺序，
  * 所以三档减光照旧盖得住它（明暗只有一层，不给这一页开例外）。

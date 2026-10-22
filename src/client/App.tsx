@@ -72,7 +72,7 @@ export function App() {
   const layoutVersion = session?.layoutVersion;
   /**
    * 有一块不透明的整屏页盖着世界（入场层 / 说明面板 / 游戏页）：世界层整帧停渲染
-   * （`60-interaction-shell.md` §5.2、`110-games-page.md` §5）。求签页不在内——它是薄薄一层盖着可见的世界
+   * （`60-interaction-shell.md` §5.2、`140-games-page.md` §5）。求签页不在内——它是薄薄一层盖着可见的世界
    */
   const covered = session !== null && (!entered || aboutOpen !== null || gamesOpen);
 
@@ -135,7 +135,7 @@ export function App() {
 
           <ChatPanel />
 
-          {/* 游戏页（`docs/design/110-games-page.md` §1）：挂在聊天面板之后、说明面板之前，
+          {/* 游戏页（`docs/design/140-games-page.md` §1）：挂在聊天面板之后、说明面板之前，
               层级靠 DOM 顺序、不加 `z-index`，所以 `tone-layer` 照旧盖得住它 */}
           {gamesOpen ? <GamesOverlay /> : null}
         </>
