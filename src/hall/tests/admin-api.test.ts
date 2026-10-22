@@ -595,7 +595,7 @@ test('统计卡空库：四个 0（页面拿到的是数字，不是 undefined�
   expect(await statsOf(hall)).toEqual({ online: 0, ownedBeds: 0, blocks: 0, reports24h: 0 });
 });
 
-test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时被举报人数', async () => {
+test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时举报行数', async () => {
   const socket = new FakeSocket(liveConnection('u_live'));
   const { hall, sql } = newHall([socket]);
 
@@ -611,8 +611,9 @@ test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 /
 
   recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
   recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
-  // 刚好早过 24 小时窗口：同一个人再被举报，不重复计
+  // 刚好早过 24 小时窗口，不计入
   recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_old', reason: '刷屏', evidence: [] }, NOW - REPORT_DEDUP_MS - 1);
 
-  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 1 });
+  // 两个人报同一个人 = 2 行
+  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 2 });
 });

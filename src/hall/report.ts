@@ -134,11 +134,9 @@ interface RawReportTargetRow {
   reason: string;
 }
 
-/** 统计卡（`120-admin-console.md` §2）：近 24 小时被举报的人数（按 `target_user_id` 去重）。 */
-export function countRecentReportTargets(sql: SqlStorage, now: number): number {
-  return sql
-    .exec<{ n: number }>('SELECT COUNT(DISTINCT target_user_id) AS n FROM report WHERE last_at >= ?', now - REPORT_DEDUP_MS)
-    .one().n;
+/** 统计卡（`120-admin-console.md` §3）：近 24 小时的举报**行数**（一行 = 一对举报人 / 被举报人，重复举报只加 `count`）。 */
+export function countRecentReports(sql: SqlStorage, now: number): number {
+  return sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM report WHERE last_at >= ?', now - REPORT_DEDUP_MS).one().n;
 }
 
 /**

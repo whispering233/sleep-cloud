@@ -56,16 +56,4 @@
 
 ---
 
-## K6 统计卡「近 24 小时举报」改回行数
-
-**契约**：`../api/30-api-admin.md` §5.8 与 `120-admin-console.md` §3（口径是**行数**，不是被举报人数）。
-
-- `src/hall/report.ts` `countRecentReportTargets` → 改名 `countRecentReports`，SQL 改成 `SELECT COUNT(*) AS n FROM report WHERE last_at >= ?`。
-- `src/hall/admin.ts` 的 `reports24h` 改调新名字。
-- `src/hall/tests/admin-api.test.ts` 统计卡那条期望值改（现在数的是 `DISTINCT target_user_id`）。
-- **不做**：不改卡片标题、不改 `REPORT_DEDUP_MS`、不改举报页折叠表。
-
-**验收**（全部通过才算完成）
-
-1. `npm test` 通过。
-2. `npm run typecheck` 通过。
+（本批只剩 K2 / K3 / K4 三张静态页卡片。）

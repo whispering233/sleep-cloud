@@ -2,7 +2,7 @@ import { displayBedNoOf } from '../shared/layout';
 import * as log from '../shared/log';
 import { findOwnedBed, countOwnedBeds } from './bed-store';
 import { listFeedback } from './feedback';
-import { countRecentReportTargets, listReports, listReportTargets } from './report';
+import { countRecentReports, listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
 import {
   blockDetailOf,
@@ -333,6 +333,6 @@ function statsView(ctx: AdminContext): Record<string, number> {
     online: ctx.live.length,
     ownedBeds: countOwnedBeds(ctx.sql, now),
     blocks: countActiveBlocks(ctx.sql, now),
-    reports24h: countRecentReportTargets(ctx.sql, now),
+    reports24h: countRecentReports(ctx.sql, now),
   };
 }
