@@ -9,7 +9,7 @@ export const GAMES: GameEntry[] = [
     id: 'skyline',
     title: '窗',
     blurb: '一排别人的窗，灯随机亮灭',
-    base: { w: 320, h: 320 },
+    base: { w: 320, h: 640 },
     load: () => import('./skyline'),
   },
 ];

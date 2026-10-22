@@ -9,7 +9,7 @@ import type { GameModule } from './types';
 const LIGHTS_MS = 1800;
 const FLIP_RATIO = 0.16;
 
-/** 楼体与窗格（基准坐标，1:1 的 320 宽约放 7 栋楼）。 */
+/** 楼体与窗格（基准坐标，320×640 下 320 宽约放 7 栋楼、纵向约 40 排窗）。 */
 const SKY_TOP = '#0a1220';
 const SKY_BOTTOM = '#1b2942';
 const BUILDING_FILL = '#111a2b';

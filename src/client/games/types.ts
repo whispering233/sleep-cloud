@@ -10,7 +10,7 @@ export interface GameModule {
 
 export interface GameCtx {
   base: { w: number; h: number }; // 条目自己声明的基准尺寸
-  dpr: number; // 画布 DPR（上限 MAX_DPR = 3），canvas 用它放大
+  dpr: number; // 每基准像素对应的设备像素（= min(dpr, MAX_DPR) × 舞台 scale，封顶 2 × MAX_DPR）
   now: () => number; // 外壳给的单调时钟，游戏不必自建时间源
 }
 
