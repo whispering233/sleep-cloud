@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { resumeHall, suspendHall } from '../audio';
-import { back, depth, onPop, pushLevel } from '../nav';
+import { back, depth, onPop, pushLevel, settle } from '../nav';
 import type { NavLevel } from '../nav';
 import { sendAct } from '../ws';
 import { createGameHost } from '../games/host';
@@ -32,10 +32,12 @@ export function GamesOverlay() {
   /** 刚点的那一颗条目：从具体页回列表时把焦点还给它（具体页没有可聚焦的东西） */
   const entryRef = useRef<HTMLButtonElement>(null);
 
-  // 返回栈（§2）：进这一页压一层 `list`；门口已经在栈上（浏览器「前进」把页面又打开了）就不重复压。
+  // 返回栈（§2）：进这一页压一层 `list`；门口已经在栈上（浏览器「前进」回来、或刷新后残留了更深的标记）
+  // 就把**当前**条目改写成 `list`，而不是再压一条——否则层级与实际条数不符，按一次返回会什么都没发生。
   // 弹栈后 `undefined` = 大厅，那一层由 `closeGames()` 收掉这一页
   useEffect(() => {
     if (depth() === 0) pushLevel('list');
+    else settle('list');
     return onPop((next) => {
       if (next === undefined) closeGames();
       else setLevel(next);

@@ -40,6 +40,12 @@ export function back(steps = 1): void {
   if (steps > 0) history.go(-steps);
 }
 
+/** 把**当前**条目改写成某一层（不新增条目）。用在「门口已经在栈上」时对齐层级：浏览器前进回到旧标记、
+ *  或刷新残留了更深的标记，不对齐就会出现「按返回一次什么也没发生」（`140-games-page.md` §2） */
+export function settle(level: NavLevel): void {
+  history.replaceState({ sc: 'games', level } satisfies MarkedState, '');
+}
+
 /** 订阅弹栈：`popstate` 是唯一的状态来源。返回退订 */
 export function onPop(handler: (level: NavLevel | undefined) => void): () => void {
   const listener = (event: PopStateEvent): void => handler(levelOf(event.state));
