@@ -193,7 +193,10 @@ function feedbackRow(item) {
 
 /** 黑名单 / 审计的「值」格（§5.3、§5.5）：`user` 行显示昵称并能点开抽屉；`ip` 行只是字面量（不编「该 IP 名下几个人」）。 */
 function valueCell(item) {
-  return item.kind === 'user' ? partyLink({ userId: item.value, nickname: item.nickname }) : cell(item.value);
+  if (item.kind !== 'user') return cell(item.value);
+  const td = document.createElement('td');
+  td.append(partyLink({ userId: item.value, nickname: item.nickname }));
+  return td;
 }
 
 function auditRow(item) {
@@ -243,6 +246,10 @@ async function loadIdentityDetail(userId) {
   const res = await dataFetch(`/api/admin/identities/${encodeURIComponent(userId)}`);
   if (!res) {
     drawerBody.replaceChildren(htmlLine('读取失败。'));
+    return;
+  }
+  if (res.status === 404) {
+    drawerBody.replaceChildren(htmlLine('查不到这个身份'));
     return;
   }
   if (res.status !== 200) {
@@ -567,6 +574,10 @@ auditNext.addEventListener('click', () => void loadAudit(auditIndex + 1));
 reportsPrev.addEventListener('click', () => void loadReports(reportIndex - 1));
 reportsNext.addEventListener('click', () => void loadReports(reportIndex + 1));
 drawerClose.addEventListener('click', () => drawer.close());
+// `showModal()` 只给 Esc；点遮罩时事件目标是 dialog 本身，不接这一条就关不掉（见 `120-admin-console.md` §5）。
+drawer.addEventListener('click', (event) => {
+  if (event.target === drawer) drawer.close();
+});
 
 function showView(name) {
   for (const [key, view] of Object.entries(VIEWS)) {
