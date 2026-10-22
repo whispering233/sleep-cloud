@@ -29,7 +29,7 @@ describe('错误码文案映射', () => {
 
   it('ERROR_MESSAGES 里的每个码都有交代：静默或有文案（除 "0"）', () => {
     const codes = Object.keys(ERROR_MESSAGES).filter((code) => code !== '0');
-    expect(codes).toHaveLength(25); // 漏一个码在类型层就过不了，这里再钉一次数量（已删 1006）
+    expect(codes).toHaveLength(27); // 漏一个码在类型层就过不了，这里再钉一次数量（已删 1006，新增 4004 / 5004）
     // 键集合也要对拍：静默码在映射表里是 `undefined` 值，只查值就分不出「漏了键」
     expect(Object.keys(ERROR_TEXT).sort()).toEqual([...codes].sort());
     for (const code of codes) {

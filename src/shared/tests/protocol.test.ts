@@ -17,7 +17,7 @@ const docUpstream = messageNames('## 3. 上行消息', '## 4. 下行消息');
 const docDownstream = messageNames('## 4. 下行消息', '### 4.1');
 
 describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
-  it('上行消息与文档一致（10 种）', () => {
+  it('上行消息与文档一致（11 种）', () => {
     expect(docUpstream).toEqual([
       'hello',
       'ping',
@@ -29,6 +29,7 @@ describe('协议类型覆盖 docs/api/20-api-ws.md 的全部消息', () => {
       'chat',
       'whisper',
       'report',
+      'feedback',
     ]);
     expect([...UPSTREAM_TYPES]).toEqual(docUpstream);
   });

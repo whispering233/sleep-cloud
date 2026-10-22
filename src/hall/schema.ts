@@ -95,6 +95,20 @@ export const REPORT_INDEX_SQL: readonly string[] = [
   'CREATE INDEX IF NOT EXISTS report_pair ON report (reporter_user_id, target_user_id, last_at)',
 ];
 
+/** 反馈（`docs/db/schema.md` §4.5）：一条反馈 = 一行，正文**不进内容过滤**（只有运维看得到）。 */
+export const FEEDBACK_TABLE_SQL = `CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`;
+
+/** 索引：`user_id + created_at` 服务每日配额，`created_at` 服务后台分页与 90 天清理。 */
+export const FEEDBACK_INDEX_SQL: readonly string[] = [
+  'CREATE INDEX IF NOT EXISTS feedback_user_at ON feedback (user_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS feedback_at ON feedback (created_at)',
+];
+
 /** 运维动作流水（只写不改）：首版只有 `block` / `unblock`，`actor` 恒为 `admin`（单令牌，没有账号表）。 */
 export const ADMIN_AUDIT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS admin_audit (
   id INTEGER PRIMARY KEY,

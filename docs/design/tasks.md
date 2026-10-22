@@ -6,12 +6,6 @@
 
 
 
-## 卡 3 · 反馈服务端：表 + 协议 + 5004/4004 + 每日上限 + 90 天清理
-
-- **范围**：`src/hall/schema.ts` 建 `feedback` 表与两个索引；`src/shared/protocol.ts` 上行 `feedback {text}` 与类型串；`src/shared/error-code.ts` 加 `5004` / `4004`（并修正 `5003` 旧注释）；`src/shared/constants.ts` 三常量；新建 `src/hall/feedback.ts`（校验顺序空 `4003` → 长 `4001` → 配额 `4004` → `insert` → 回 `5004`；滚动 24 小时 `user_id` 计数，`now` 只取一次）；`src/hall/hall.ts` 分发与 ack（`send(ws, { type: 'error', code: '5004' })`）；每日清理点加 `DELETE FROM feedback WHERE created_at < now - FEEDBACK_TTL_MS`；镜像测试（协议类型清单、错误码清单）与单测（空/超长/配额/过期/边界）。
-- **验收**：`npm test`、`npm run typecheck` 绿；`npm run lint:design` 0 error；手工用 `wscat`/现有客户端脚本发 6 条验证 `5004`×5 + `4004`×1，且 5 条/秒限流命中时静默丢弃；清理语句在测试里用注入时钟验证边界（`>= now - 90d` 保留，`<` 删）。
-- **不碰**：举报协议与 `report` 表；客户端界面（本卡落地后入口尚未出现，允许暂时「协议可用、界面未接」）；`public/admin.*`。
-- **注意**：文档先于代码，本卡销掉镜像测试的红。
 
 ## 卡 4 · 反馈客户端：齿轮入口 + 面板 + 回执退场 + 告知
 
