@@ -24,7 +24,7 @@
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
-| 求签 / 游戏页 / 后台管理面板 / 反馈与建议 | `docs/design/110-lot.md`、`docs/design/140-games-page.md`、`docs/design/120-admin-console.md`、`docs/design/130-feedback.md` |
+| 求签 / 后台管理面板 / 反馈与建议 / 游戏页 | `docs/design/110-lot.md`、`docs/design/120-admin-console.md`、`docs/design/130-feedback.md`、`docs/design/140-games-page.md` |
 | 配置（常量 / 限制 / 密钥 / 词表）、运行构建部署发版、测试环境与流程 | `docs/design/config.md`、`docs/design/build.md`、`docs/design/test.md` |
 | 数据模型与接口契约（HTTP / WebSocket / 后台 / 错误码） | `docs/db/schema.md`、`docs/api/` |
 | 视觉令牌、组件、素材变体清单 | `docs/ui/DESIGN.md` |
