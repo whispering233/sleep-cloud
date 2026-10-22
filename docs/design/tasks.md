@@ -10,21 +10,6 @@
 
 ---
 
-## K2 台账点「身份」开抽屉
-
-**契约**：`120-admin-console.md` §2.1 与 §9 判据 5。
-
-- 只改 `public/admin.js`：`identityRow` 的第一格改成 `.link` 按钮（文案就是 `userId`），点击调 `openIdentity(item.userId, item.userId)`。
-- **不加列、不加表头**：台账仍是 8 列。
-- **不做**：不给整行加点击；不动抽屉内容。
-
-**验收**（全部通过才算完成）
-
-1. `node --check public/admin.js` 通过。
-2. 手工（或 `ui-verifier`）：点身份 → 抽屉出现该 `userId` 的详情；`Esc` / 遮罩 / 「关闭」都能退出；抽屉里没有封禁按钮。
-
----
-
 ## K3 反馈列表「提交者」
 
 **契约**：`../api/30-api-admin.md` §5.9（服务端已返回 `userId`）、`130-feedback.md` §7。
@@ -40,4 +25,4 @@
 
 ---
 
-（本批只剩 K2 / K3 两张静态页卡片。）
+（本批只剩 K3 一张静态页卡片。）

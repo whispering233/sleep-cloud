@@ -164,8 +164,11 @@ function blockText(block) {
 
 function identityRow(item) {
   const tr = document.createElement('tr');
+  // 昵称在第二格，这一格只印 userId（`nickname: null` 让 partyText 只出 userId）。
+  const id = document.createElement('td');
+  id.append(partyLink({ userId: item.userId, nickname: null }));
   tr.append(
-    cell(item.userId),
+    id,
     cell(item.nickname ?? '—'),
     cell(fmtTime(item.lastSeenAt)),
     cell(item.lastIp ?? '—'),
