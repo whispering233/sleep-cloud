@@ -74,7 +74,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 
 ## 4. DOM 时序：可点性必须与视觉同源
 
-- **可点性跟视觉走，但依据是「盒子在不在」**：关闭态由 `visibility: hidden`（挂同一条 `allow-discrete` 过渡）负责——不可命中、不可 Tab、不在读屏树里。**不用 `pointer-events`**（关得早：面板还看得见的 160ms 里点击就漏给画布，实测 `opacity: 1` 而 `elementFromPoint` 返回 `<canvas>`）；**也不要指望 `inert`**——它会让命中跳过整棵子树（同样实测返回 `<canvas>`），它只保证「不可 Tab / 不被读屏读到」。
+- **可点性跟视觉走，但依据是「盒子在不在」**：关闭态由 `visibility: hidden`（挂同一条 `allow-discrete` 过渡）负责——不可命中、不可 Tab、不在读屏树里。**不用 `pointer-events`**（关得早：面板还看得见的 160ms 里点击就漏给画布，实测 `opacity: 1` 而 `elementFromPoint` 返回 `<canvas>`）；**也不要指望 `inert`**——它会让命中跳过整棵子树（同样实测返回 `<canvas>`），它只保证「不可 Tab / 不被读屏读到」。 **打开方向不能延迟 `visibility`**：表单 `autoFocus` 落在 `visibility: hidden` 的起始帧会被吞，随后 `focusout` 对账把面板判回 idle——所以 `visibility` 只在关闭方向参与过渡，`[data-open]` 上立即生效。
 - **一次点按手势期间，不许把被点的盒子拿掉。** 触摸抬手的兼容鼠标事件（`mousedown` / `mouseup` / `click`）是**按抬手那一刻**重新做命中的：盒子若在 `pointerdown` 里就消失（布局切换 / 元素卸载），补发的 `mousedown` 就落到 `<canvas>` 上——而它确实是从画布起手的事件，`pointer.downElement !== canvas` 那道兜底拦不住，一次误点就往服务端发一条 `walk`（实测：点插槽面板空白，10 次漏 7 次；鼠标不补发这些事件，所以桌面看不出来）。两种合规做法，二选一：
   1. 把手势期间的布局变化推到 `click`（点空白退场就是这么做的）；
   2. 在 `pointerdown` 里 `preventDefault()`（浏览器据此不再派发兼容鼠标事件；顺带保住焦点）。

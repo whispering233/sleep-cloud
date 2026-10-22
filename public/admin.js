@@ -62,7 +62,7 @@ let feedbackCursors = [null];
 let feedbackIndex = 0;
 
 /**
- * 四个视图各自加载、各自翻页；切视图只重拉当前视图（`110-admin-console.md` §3）。
+ * 五个视图各自加载、各自翻页；切视图只重拉当前视图（`110-admin-console.md` §3）。
  * 反馈视图随卡 5 接入。
  */
 const VIEWS = {
