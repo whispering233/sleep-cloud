@@ -182,10 +182,12 @@ function identityRow(item) {
 
 function feedbackRow(item) {
   const tr = document.createElement('tr');
+  const submitter = document.createElement('td');
+  submitter.append(partyLink({ userId: item.userId, nickname: item.nickname }));
   const body = document.createElement('td');
   body.className = 'feedback-body';
   body.textContent = item.text;
-  tr.append(cell(fmtTime(item.createdAt)), cell(item.nickname ?? '—'), body);
+  tr.append(cell(fmtTime(item.createdAt)), submitter, body);
   return tr;
 }
 
@@ -355,7 +357,7 @@ async function loadReports(index) {
   render(reportRows, data.items, reportRow, 6);
 }
 
-/** 反馈列表（`120-admin-console.md` §2.1）：按 `id` 倒序、只读；正文保留换行，不显示 `userId`。 */
+/** 反馈列表（`120-admin-console.md` §2.1）：按 `id` 倒序、只读；正文保留换行，提交者按 `partyText` 规则印「昵称 · userId」并能点开抽屉。 */
 async function loadFeedback(index) {
   const cursor = feedbackCursors[index] ?? null;
   const params = new URLSearchParams({ limit: String(PAGE) });
