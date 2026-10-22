@@ -13,6 +13,7 @@ import { LotOverlay } from './components/LotOverlay';
 import { Toast } from './components/Toast';
 import { ToneLayer } from './components/ToneLayer';
 import { WorldCanvas } from './components/WorldCanvas';
+import { coversWorld } from './covered';
 import { trackComposerFocus } from './focus';
 import { trackKeyboard } from './keyboard';
 import { getState, setComposer, subscribe } from './store';
@@ -71,10 +72,10 @@ export function App() {
 
   const layoutVersion = session?.layoutVersion;
   /**
-   * 有一块不透明的整屏页盖着世界（入场层 / 说明面板 / 游戏页）：世界层整帧停渲染
-   * （`60-interaction-shell.md` §5.2、`140-games-page.md` §5）。求签页不在内——它是薄薄一层盖着可见的世界
+   * 有一块不透明的整屏页盖着世界（入场层 / 说明面板 / 游戏页 / 求签页）：世界层整帧停渲染
+   * （`60-interaction-shell.md` §5.2、`140-games-page.md` §5）。判据只在 `coversWorld` 一处
    */
-  const covered = session !== null && (!entered || aboutOpen !== null || gamesOpen);
+  const covered = coversWorld({ hasSession: session !== null, entered, aboutOpen, gamesOpen, lotOpen });
 
   // 软键盘：只把「视觉视口被 pan 了多少」写到 `.app-shell` 的 transform 上（不改尺寸，见 `./keyboard.ts`）
   useEffect(() => {
