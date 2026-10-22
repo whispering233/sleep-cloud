@@ -5,7 +5,7 @@ import { unlock as unlockAudio } from '../audio';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openLot, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -28,16 +28,17 @@ const DIRECTION_ARROW: Record<BedDirection, string> = {
 };
 
 /**
- * 右端三颗**还没做功能**的入口（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
+ * 动作行右端的三颗**图标入口**（`docs/ui/DESIGN.md` 的 `action-row` / `hud-action` 行）。
  * 图形是设计给的 24 × 24 绘制区 SVG（`stroke-width 1.6`）——按钮里按 20×20 渲染，所以描边写 `1.8`，
  * 视觉上才等于 20 绘制区上的 `1.5px`（与书本 / 齿轮同一套画法）。
- * 先上界面、后接功能：点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
+ * **只有求签接通了功能**（拉起来签页，`docs/design/110-lot.md`）；另外两颗先上界面、后接功能：
+ * 点它只出一条弱提示，**不发任何上行**（没有协议就没有野心）。
  */
-const PLACEHOLDER_ENTRIES = [
+const ICON_ENTRIES = [
   {
     key: 'board',
     label: '睡不着留言板',
-    notice: '睡不着留言板 · 还没做',
+    on: () => showNotice('睡不着留言板 · 还没做'),
     paths: (
       <>
         <rect x="3" y="5" width="18" height="14.6" rx="2.2" />
@@ -50,7 +51,7 @@ const PLACEHOLDER_ENTRIES = [
   {
     key: 'fortune',
     label: '求签',
-    notice: '求签 · 还没做',
+    on: openLot,
     paths: (
       <>
         <path d="M5.9 9.8v6.6c0 2.3 2.7 3.5 6.1 3.5s6.1-1.2 6.1-3.5V9.8" />
@@ -63,7 +64,7 @@ const PLACEHOLDER_ENTRIES = [
   {
     key: 'game',
     label: '游戏',
-    notice: '游戏 · 还没做',
+    on: () => showNotice('游戏 · 还没做'),
     paths: (
       <>
         <path d="M8.3 7.2h7.4c2.5 0 4.6 1.9 4.9 4.4l.5 4c.2 1.9-2.1 3.1-3.5 1.7l-2.1-2.2H8.5l-2.1 2.2c-1.4 1.4-3.7.2-3.5-1.7l.5-4C3.7 9.1 5.8 7.2 8.3 7.2Z" />
@@ -257,16 +258,16 @@ export function ActionRow() {
             </button>
           ) : (
             <>
-              {/* 三颗「还没做」的入口（睡不着留言板 / 求签 / 游戏）：组内 8px、均在阅读入口左侧。
+              {/* 三颗图标入口（睡不着留言板 / 求签 / 游戏）：组内 8px、均在阅读入口左侧。
                   独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理（免得被 React 原地复用 / 聚焦换位） */}
-              {PLACEHOLDER_ENTRIES.map((entry) => (
+              {ICON_ENTRIES.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
                   className="hud-action hud-icon"
                   aria-label={entry.label}
                   onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => showNotice(entry.notice)}
+                  onClick={entry.on}
                 >
                   <svg
                     className="hud-icon-glyph"

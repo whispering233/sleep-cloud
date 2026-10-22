@@ -24,13 +24,13 @@
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
+| 求签：入口出口、三态、一天一次的键、38 条吉签、HUD 那句、明暗 | `docs/design/110-lot.md` |
 | 时间常量、限制、天气与雨声参数、密钥、内容过滤数据、前端可见配置 | `docs/design/config.md` |
 | 运行、构建、部署、发版顺序、额度监控；测试环境与流程（哪类测试用哪个环境） | `docs/design/build.md`、`docs/design/test.md` |
 | 数据模型 | `docs/db/schema.md` |
 | 接口、协议、错误码 | `docs/api/` |
 | 视觉令牌、组件、素材变体清单 | `docs/ui/DESIGN.md` |
-| 竞品与开源参考 | `docs/research/competitive-analysis.md` |
-| 已决定推迟的事；当前任务卡片 | `docs/design/backlog.md`、`docs/design/tasks.md` |
+| 其他 | 竞品与开源参考 `docs/research/competitive-analysis.md`；已决定推迟的事 `docs/design/backlog.md`；当前任务卡片 `docs/design/tasks.md` |
 | Phaser 4 的 API 细节（28 份技能文档） | `.agents/skills/`（项目专用，按需 `read`） |
 
 ## 硬纪律
@@ -151,8 +151,8 @@
 | 说明面板 / 公告版本 | 弹窗、公告、更新日志、`APP_VERSION` | 一页纯文档：这个厅是什么 + 最近一版更新了什么。两个入口（公告未确认时**进厅前自动一次** / 齿轮「关于失眠云」）、**唯一出口**「知道了」；**不是浮层、也不是插槽面板**。**公告版本** = 内容真的变了才升的那个号（`ANNOUNCE.version`，`sc.about.seen` 存的就是它），与 `package.json` 的发布版本**不是同一个数**（`docs/design/90-about-panel.md`） |
 | 插槽面板（slot panel）/ 触发源（slot source） | 浮层、遮罩、overlay、浮动面板；触发器、开关、provider | 一块**常驻可占用区**，挂在聊天面板**下沿**（`docs/design/50-slot-panel.md`）；位置 / 尺寸 / 层叠全由框架给，**不是浮层**。开关：**开与关由同一个源负责**（每源一个 `active`，面板显示 = 任一源 active），不写全局的「失焦即退场」 |
 | 类型文本（type text）/ `reading` | 冷笑话、内容、分类 | 插槽面板的第二个内容：按分类分组的一组短文本，抽一条读。**纯本地**——静态包 `public/fun/type-texts.vN.json`（文件名带版本号 + `immutable`，换内容必须改名）、**不发任何上行**、不进协议；`composer` 的 `reading` 值就是它，阅读进度只在 `sc.read.seen`（`docs/design/50-slot-panel.md` §附） |
-| 天气（雨天 / 无雨） | 晴、天气同步、天气 API | **个人偏好**（本地键 `sc.weather`，值 `{v,kind}`，`kind` 是天气 id），**只管雨层画面**；**不与现实天气同步**，不进协议 |
-| 雨声（雨声 / 静音） | 天气音、声音总开关、BGM | **个人偏好**（本地键 `sc.sound`，值 `{v,kind}`，`kind` 是声道 id），**只管声音**、与天气各自独立；缺键 = 静音 |
+| 求签 / 签库 | 抽签、占卜、今日运势 | **一天一次**（本地键 `sc.lot = {v,date,no}`，比较设备本地日期，跨零点失效）、**只出吉签**（38 条观音灵签里的上上 / 大吉 / 上吉，下签不入库）、**纯本地**（不发上行、服务端不知道、不存历史）。出口只有页底「收起来」。HUD 那句 `今日宜 睡觉好梦` 是**固定文案**，不随签变（`docs/design/110-lot.md`） |
+| 天气（雨天 / 无雨）/ 雨声（雨声 / 静音） | 晴、天气同步、天气 API、天气音、BGM | 两颗**各自独立**的**个人偏好**（`sc.weather` 只管雨层画面、`sc.sound` 只管声音），缺键都是关；不与现实天气同步，不进协议 |
 | 早播循环（intro loop） | 预览音、小样 | 8 s 的短循环，只负责「尽快出声」；30 s 主循环解码完成后 1 s 交叉淡化接上并释放它 |
 | 雨层（`rain-layer`） | 天气特效、粒子雨 | **屏幕空间**的并行 Scene（相机原点左上 + `zoom` = 画布 DPR）；与世界缩放、可用视口、面板换位无关 |
 

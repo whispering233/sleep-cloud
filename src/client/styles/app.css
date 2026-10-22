@@ -981,6 +981,193 @@
     display: block;
   }
 
+  /* ——— 求签页（复用入场层那套壳与卡片，只补签筒、签与结果卡；`docs/design/110-lot.md`） ——— */
+
+  /* 卡片内容居中：签筒、四句诗、解签都该像一张签一样立在中轴 */
+  .lot-sheet {
+    justify-items: center;
+    text-align: center;
+  }
+
+  /* **顶对齐，不是垂直居中**（覆盖 `.entry-overlay` 的 `place-items: center`）：这一页的内容高度会随状态变
+     （签文本体只在有签时出现、「今日已求」小字与出口只在 revealed 出现），居中会让卡片在这两处各上跳一次
+     （实测 revealed 那一帧上跳 43.6px）。顶对齐后三个状态共用一个锚点 */
+  .lot-overlay {
+    align-items: start;
+  }
+
+  .lot-stage {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    align-items: end;
+    /* 筒高 64 + 升 56 = 120：签从筒里升到正好贴着这一块的上沿，不会越过卡片上沿、也不压标题。
+       这一块**始终占着**（签筒不按态挂卸） */
+    min-height: 120px;
+  }
+
+  .lot-tube {
+    width: 64px;
+    height: 64px;
+    color: var(--color-neutral);
+    /* 晃动的支点在下沿：签筒是立着的，不是绕中心转 */
+    transform-origin: 50% 100%;
+  }
+
+  /* 升起的那支签：一根细签，纯装饰（内容在下面那张卡里）。
+     静止时整根**落在签筒里**（下沿 8px、高 56 → 8…64 正好是筒身），升 56px 后正好升到 64…120；
+     两个位置都在 `lot-stage` 之内，所以它既不出上沿、也不会停在标题上 */
+  .lot-stick {
+    position: absolute;
+    bottom: 8px;
+    width: 3px;
+    height: 56px;
+    background-color: var(--color-neutral);
+    border-radius: var(--radius-full);
+    opacity: 0;
+  }
+
+  .lot-hint {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-size: var(--text-caption);
+  }
+
+  .lot-sign {
+    display: grid;
+    gap: var(--spacing-xs);
+    justify-items: center;
+  }
+
+  .lot-level {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  /* 签题：`label` 档（与页标题「求签」同面但不抢它——一张签的名字靠字重与字距立住） */
+  .lot-title {
+    margin: 0;
+    color: var(--color-neutral);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-label);
+    letter-spacing: var(--tracking-label);
+    line-height: var(--text-label--line-height);
+  }
+
+  /* 四句一句一行：不问宽度，按句断行 */
+  .lot-poem {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    color: var(--color-neutral);
+    font-size: var(--text-reading);
+    letter-spacing: var(--tracking-reading);
+    line-height: 1.7;
+  }
+
+  .lot-reading {
+    margin: 0;
+    color: var(--color-neutral);
+    font-size: var(--text-reading);
+    letter-spacing: var(--tracking-reading);
+    line-height: 1.7;
+  }
+
+  .lot-good {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-label);
+    font-size: var(--text-label);
+    letter-spacing: var(--tracking-label);
+  }
+
+  /* 摇 520 → 起 380 → 出 300（合计 1.2 s，`config.md` §5）。三段靠 `animation-delay` 串，
+     不用 JS 排时序：到点即终态（`both` 填满），跳过的唯一入口是 click + `animationend` */
+  @keyframes lot-tube-shake {
+    0%,
+    100% {
+      opacity: 1;
+      transform: rotate(0deg);
+    }
+
+    20% {
+      transform: rotate(-3deg);
+    }
+
+    40% {
+      transform: rotate(3deg);
+    }
+
+    60% {
+      transform: rotate(-3deg);
+    }
+
+    80% {
+      transform: rotate(3deg);
+    }
+  }
+
+  /* 签抽出来之后筒身淡到 0.25：它退成背景，签与卡在上面 */
+  .lot-tube-dim {
+    opacity: 0.25;
+  }
+
+  @keyframes lot-stick-rise {
+    0% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+
+    40% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(-56px);
+    }
+  }
+
+  @keyframes lot-sign-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .lot-tube-shake {
+    animation: lot-tube-shake 520ms ease-in-out both;
+  }
+
+  .lot-stick-rise {
+    animation: lot-stick-rise 380ms 520ms ease-out both;
+  }
+
+  /* `both` + 延迟：签还在摇时卡片已在底下等待，只到 900ms 才淡入 */
+  .lot-sign-in {
+    animation: lot-sign-in 300ms 900ms ease-out both;
+  }
+
+  /* 减动效：三段压到 0.01ms（`animationend` 照旧会来，`Toast` 同一套做法） */
+  @media (prefers-reduced-motion: reduce) {
+    .lot-tube-shake,
+    .lot-stick-rise,
+    .lot-sign-in {
+      animation-duration: 0.01ms;
+      animation-delay: 0ms;
+    }
+  }
+
   /* ——— 提示条：只对可恢复错误出现，几秒后自行消失 ——— */
 
   /* 动画末帧停在透明，`animationend` 一到组件就自己卸下（见 `Toast.tsx`，那边不挂定时器） */

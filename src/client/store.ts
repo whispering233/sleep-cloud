@@ -148,6 +148,12 @@ export interface ClientState {
    */
   aboutOpen: AboutSource | null;
   /**
+   * **求签页**（客户端本地状态，不进协议、不进快照）：`true` = 开着。
+   * 页面自己的三态（未求 / 摇签 / 已求）**不住这里**：它只活在那一次挂载里，重新打开就按本地键重算
+   * （`docs/design/110-lot.md` §2），所以 store 不需要第二份可以跟本地键矛盾的状态。
+   */
+  lotOpen: boolean;
+  /**
    * **输入会话**（`docs/design/60-interaction-shell.md` §2）：面板停靠与插槽面板显隐只看它。
    * DOM 焦点只是入口之一，不是状态本体——控件被卸载时会**不发 `blur`**，把焦点当状态就回不到大厅。
    */
@@ -189,6 +195,7 @@ const emptyState = (): ClientState => ({
   rain: readWeather() === 'rain',
   sound: readSound() === 'rain',
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
+  lotOpen: false,
 });
 
 let state: ClientState = emptyState();
@@ -404,6 +411,18 @@ export function openAbout(source: AboutSource): void {
 export function closeAbout(): void {
   if (state.aboutOpen === null) return;
   setState({ aboutOpen: null });
+}
+
+/** 打开求签页（见 `ClientState.lotOpen`）：同值不写。 */
+export function openLot(): void {
+  if (state.lotOpen) return;
+  setState({ lotOpen: true });
+}
+
+/** 关闭求签页：**只改状态**，不碰 `sc.lot`（那张签是当天的事实，关页不等于没求过）。 */
+export function closeLot(): void {
+  if (!state.lotOpen) return;
+  setState({ lotOpen: false });
 }
 
 /**
