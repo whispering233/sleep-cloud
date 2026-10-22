@@ -138,6 +138,7 @@
 | **双击必然发 2 条 `walk`** | 双击 = 两次轻点，代码本就是逐 tap 分派；5 条/秒限流内无坏结果。若用户心里把双击当“一次动作”，就在客户端做双击去抖 | 出现真实抱怨时 |
 | **提示条自清只挂在 `animationend`** | 动画被外力取消/禁用（截图管线、未来的 `prefers-reduced-motion` 分支）时提示条会常驻；产品默认路径下不复现 | 改提示条生命周期时一并改 |
 | **提示条遮住顶部两行床号** | 提示条出现时盖住 y≈41~77 的床号约 4 秒（`pointer-events:none`，不影响点击） | 窄屏面板高度与提示条位置一起看时 |
+| **`document.hidden` 时要不要也冻结世界层** | 现在只有两条兜底，且都不是我们要来的：Phaser 的 `VisibilityHandler` → `Game.onHidden` → `loop.pause()`（**注意 `pause()` 不 `raf.stop()`**，只记一个 `_pauseTime`，完整依据见 `60-interaction-shell.md` §5.2），以及浏览器对 hidden 文档本就不派 rAF | 出现「切出去再回来，大厅要缓一下」的真机反馈时。届时补 `setWorldSuspended(true)`，**与整屏页共用 `coversWorld` 那一处判据**（不写第二份），只认 `visibilitychange`、不做常驻轮询 |
 
 ## 五、部署与交付类
 
