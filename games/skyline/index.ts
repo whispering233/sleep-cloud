@@ -1,9 +1,9 @@
 /**
  * Skyline（`docs/design/140-games-page.md` §4 的游戏契约）：一排别人的窗，灯按慢节奏随机亮灭。
  * 纯本地观赏物：不 import 大厅模块、不发上行、不读本地存储、不联网，`import` 本文件没有副作用。
- * 基准尺寸由 `registry.ts` 声明，这里一律按 `ctx.base` 画——舞台给多大就画多大。
+ * 基准尺寸由 `meta.ts` 声明，这里一律按 `ctx.base` 画——舞台给多大就画多大。
  */
-import type { GameModule } from './types';
+import type { GameModule } from '../../src/client/games/types';
 
 /** 换一批灯的时间（ms）与每批里亮灭翻转的比例：慢到不像报警灯，也不会整片同时跳。 */
 const LIGHTS_MS = 1800;

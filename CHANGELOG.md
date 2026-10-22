@@ -13,6 +13,10 @@
 
 - **`/api/ws` 的入场拒绝有痕迹了**（`docs/design/100-log.md` §2）：会话缺失 / 过期 / 未取昵称（`1001`/`1002`/`1003`）以前在服务端一点记录都没有——`invocation_logs` 关着，只能靠客户端症状反推。现在三个分支各记一条 `reject{intent:'hello'}`，与厅内被拒的意图同形。用户看到的仍然是 `error` + `close(1006)`，没有任何提示变化
 
+### Changed
+
+- **游戏条目改成「文件夹即注册」**（`docs/design/140-games-page.md` §3、§4.1）：游戏代码搬出 `src`，住在仓库根的 `games/<id>/`——`meta.ts`（`title` / `blurb` / `base`）只给列表读，`index.ts` 是游戏本体；加一个游戏 = 加一个文件夹，`src/client/games/registry.ts` 里不再有手写条目表。注册由 Vite 在构建期扫两条 `import.meta.glob` 产生（`meta.ts` eager、`index.ts` lazy），产物仍是普通 chunk，「窗」照旧不在首屏。两条守护单测钉住：每个文件夹必须两半都在、`meta` 三字段齐且 `base` 是正整数；`games/**` 除同目录相对 import 外零项目 import（唯一例外是 `import type` 取契约接口——它在产物里一行不剩，复制一份进 `games/` 就是两份契约）
+
 ### Fixed
 
 - **求签页开着时画布整帧停渲染**：求签页是不透明满屏页，世界在底下连一个像素都看不见，之前却不在停渲染的名单里，2.7 Mpx 画布在整页底下照旧满帧重绘（症状是「关页慢」）。现在四页（入场层 / 说明面板 / 游戏页 / 求签页）任一盖住世界就 `loop.sleep()`，恢复仍 `resetDelta()` → `wake()` 重锚。判据收在纯函数 `coversWorld`（`src/client/covered.ts`）一处：它按**可见性**判，不再按页面名枚举，并由真值表 + 「组件里用 `.entry-overlay` 的清单」两条单测钉住

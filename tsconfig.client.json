@@ -6,6 +6,6 @@
     "types": ["vite/client"],
     "moduleResolution": "bundler"
   },
-  "include": ["src/client", "src/shared"],
+  "include": ["src/client", "src/shared", "games"],
   "exclude": ["src/**/tests/**"]
 }
