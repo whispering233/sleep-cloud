@@ -151,11 +151,14 @@ test('宽限已过重连（睡痕行）：回来是睡着，且推一次 state �
   expect(resumed.state).toBe('asleep');
   expect(resumed.bedNo).toBe(7);
   expect({ x: resumed.x, y: resumed.y }).toEqual(point(frontPointOf(7)));
-  expect(rawRow(sql, 7)).toMatchObject({
+  const row = rawRow(sql, 7) ?? {};
+  expect(row).toMatchObject({
     state: 'asleep', // 睡痕恢复 = 睡着的还原（`docs/db/schema.md` §7）
     owner_user_id: 'u_me', // 归属不动
-    sleep_started_at: now, // 睡眠起点从「回来这一刻」重算（否则 dwellMs 会含离线那段）
+    sleep_started_at: expect.any(Number), // 睡眠起点从「回来这一刻」重算（否则 dwellMs 会含离线那段）
   });
+  // 不写成严格相等：`resume()` 自己又调了一次 `Date.now()`，两次调用偶尔会跨毫秒边界
+  expect(Number(row.sleep_started_at)).toBeGreaterThanOrEqual(now);
   expect(watcher.received).toHaveLength(1);
   const message = JSON.parse(watcher.received[0] as string) as DownstreamMessage;
   expect(message).toMatchObject({ t: 'state', id: 'u_me', state: 'asleep', bedNo: 7 }); // 别人那边本是暗的
