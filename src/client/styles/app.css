@@ -557,7 +557,7 @@
 
   /* 私聊目标行：选中某个人后出现在输入行上方（目标离开时选中已被清掉）。
      三栏：名字 `flex-[3]`（窄屏省略号）/ 竖线 / 「举报」`flex-[1]`，× 在最右。
-     举报按钮和名字共用一行、自带文案：纯文字不当按钮用，但这一行里它是唯一的动作，所以靠对比区分 */
+     两颗动作都是描边胶囊（硬纪律 26：可点击的才画成描边胶囊）：举报同 `.hud-action`、× 同 `.hud-settings-button` */
   .whisper-target {
     display: flex;
     align-items: center;
@@ -589,17 +589,19 @@
     background-color: var(--color-claimed);
   }
 
-  /* 举报按钮：44px 触摸目标、无明显底色（这一行已经够重了）。回过执后 disabled 置灰成「已举报」 */
+  /* 举报按钮：与 `.hud-action` 同一套描边胶囊外观（项目里「这是个按钮」的既有答案）。
+     回过执后 disabled 置灰成「已举报」 */
   .whisper-target-report {
     flex: 1 1 0;
     min-height: 44px;
-    padding: 0 var(--spacing-xs);
+    padding: 0 var(--spacing-md);
     color: var(--color-neutral);
     background-color: transparent;
     font-family: var(--font-label);
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
-    border: 0;
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
   }
 
   .whisper-target-report:disabled {
@@ -607,14 +609,18 @@
     opacity: 0.6;
   }
 
+  /* 清除选中：44×44 圆胶囊（`radius-full` 在 44px 见方上被夹成 22px = 圆），同 `.hud-settings-button`。
+     × 字形吃 `title` 档：13px 的字在 44px 的框里显得空 */
   .whisper-target-clear {
-    min-width: 44px;
-    min-height: 44px;
+    width: 44px;
+    height: 44px;
     margin-inline-start: auto;
+    padding: 0;
     color: var(--color-neutral-muted);
     background-color: transparent;
-    font-size: var(--text-label);
-    border: 0;
+    font-size: var(--text-title);
+    border: 1px solid var(--color-claimed);
+    border-radius: var(--radius-full);
   }
 
   /* 举报表单（插槽面板的第三个内容源，`docs/design/50-slot-panel.md` §4）：

@@ -119,8 +119,9 @@ export function ChatPanel() {
         <ConnectionBanner />
 
         {/* 私聊目标行：查不到名字就不渲染（目标离开时选中已被清掉，这里只是兜底）。
-            三栏：名字 / 竖线 / 「举报」；× 在最右。举报按钮自带文案（纯文字不当按钮用），
-            `pointerdown` 里 `preventDefault()` 保住焦点、独立的 `key` 避开 React 原地复用（硬纪律 35） */}
+            三栏：名字 / 竖线 / 「举报」；× 在最右。两颗动作都是描边胶囊（`.hud-action` 家族，
+            × 同 `.hud-settings-button`，见硬纪律 26）；举报在 `pointerdown` 里 `preventDefault()` 保住焦点，
+            两颗各带独立的 `key` 避开 React 原地复用（硬纪律 35） */}
         {selectedId !== undefined && targetName !== undefined && (
           <div className="whisper-target">
             <span className="whisper-target-name">{`私聊 ${targetName}`}</span>
