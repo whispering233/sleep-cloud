@@ -177,7 +177,7 @@
 | 用户提交反馈 | **读** `feedback`（一次 `COUNT(*)` 配额查询）+ **写** `feedback`（一行） |
 | 每日唤醒 | **改** `identity`（90 天清空来源三列**与昵称**）+ **删** `block`（到期 + 30 天）+ **删** `admin_audit`（1 年）+ **清** `report.evidence`（`created_at` 90 天）+ **删** `report`（`last_at` 90 天）+ **删** `feedback`（90 天） |
 
-三条清理**并入既有的每日唤醒**，不新开唤醒（见 `../design/10-hall-runtime.md` §4）；加上举报与反馈共五条。
+六条清理**并入既有的每日唤醒**，不新开唤醒（见 `../design/10-hall-runtime.md` §4）。
 
 ## 5. 为什么不建用户表
 
