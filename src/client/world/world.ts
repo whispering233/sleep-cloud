@@ -586,6 +586,7 @@ class WorldScene extends Phaser.Scene {
       setPersonName(
         personView,
         detail && named && !(chat !== undefined && selected) ? person.name : '',
+        person.act,
         person.state === 'trace',
         selected,
       );

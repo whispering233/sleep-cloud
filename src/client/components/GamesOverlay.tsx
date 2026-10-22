@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { resumeHall, suspendHall } from '../audio';
+import { sendAct } from '../ws';
 import { createGameHost } from '../games/host';
 import type { GameHost } from '../games/host';
 import { GAMES } from '../games/registry';
@@ -14,8 +15,9 @@ import { PrimaryAction } from './PrimaryAction';
  * 「临时整屏页」，不再造第二套排版。`App.tsx` 里挂在聊天面板之后、说明面板之前，层级靠 DOM 顺序，
  * 所以三档减光照旧盖得住它（明暗只有一层，不给这一页开例外）。
  *
- * **只有两个出口**：左上「离开」胶囊与 `Esc`，都走 `closeGames()`（幂等）。离开**不发任何上行**——
- * 大厅的连接还在，人只是暂时不看厅里。安卓返回键直接离开站点（不做 `history` 条目，§2）。
+ * **只有两个出口**：左上「离开」胶囊与 `Esc`，都走 `closeGames()`（幂等）。离开只发一条 `act: 'hall'`——
+ * 大厅的连接还在，人只是暂时不看厅里（§6 那一条在场声明；其余一律不发）。安卓返回键直接离开站点
+ * （不做 `history` 条目，§2）。
  * 游戏只可能在 `composer === 'idle'` 时被打开（非空闲态右端被「收起」占位），所以这里不需要退场逻辑。
  */
 export function GamesOverlay() {
@@ -33,12 +35,15 @@ export function GamesOverlay() {
 
   // 让位（§5）：这一页盖着大厅的整段时间里大厅不必推进——世界层只停渲染循环（**位置与状态一个字节都不改**），
   // 雨声一起挂起（没建 context 就什么都不做、不改偏好）。卸载时成对恢复：`wake(true)` 不吃暂停期间累积的 `delta`
+  // 在场状态跟着这一页的生死走（§6）：进 / 出**各一次**，不随后续任何重渲染重发
   useEffect(() => {
     pauseWorld();
     suspendHall();
+    sendAct('game');
     return () => {
       resumeWorld();
       resumeHall();
+      sendAct('hall');
     };
   }, []);
 

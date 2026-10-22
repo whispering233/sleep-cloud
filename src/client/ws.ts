@@ -175,6 +175,15 @@ export function sendSleep(): boolean {
   return s ? sendRaw(s, { t: 'sleep' }) : false;
 }
 
+/**
+ * 声明「我在看哪一页」（`hall` / `game`）：**只在进 / 出游戏页各发一次**，不是状态同步。
+ * 服务端只把它记在连接附加数据里，变化时回一条 `state` 报文（`docs/design/110-games-page.md` §6）。
+ */
+export function sendAct(act: 'hall' | 'game'): boolean {
+  const s = live();
+  return s ? sendRaw(s, { t: 'act', act }) : false;
+}
+
 // ————————————————————————— 连接与计时器 —————————————————————————
 
 /** 还没有进厅（没建过连）时上行什么都不做：没有会话就没有意图。 */
@@ -205,6 +214,8 @@ function openSocket(s: Session): void {
   socket.addEventListener('open', () => {
     if (s.socket !== socket) return;
     socket.send(JSON.stringify({ t: 'hello', layoutVersion: s.layoutVersion }));
+    // 附加数据随旧连接一起没了：仍在游戏页就补发一次，否则头顶后缀会静默消失（§6 的最后一行）
+    if (getState().gamesOpen) socket.send(JSON.stringify({ t: 'act', act: 'game' }));
   });
 
   socket.addEventListener('message', (event) => {
