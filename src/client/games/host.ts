@@ -92,6 +92,7 @@ function fitScale(container: HTMLElement, base: GameCtx['base']): number {
 }
 
 /** 交给游戏的上下文：`dpr` = 每基准像素对应的设备像素（含舞台 `scale`，§4），`now` 是单调时钟。 */
+// shortcut: 跨显示器拖窗口改了 DPR 不重挂（容器尺寸不变，观察器不触发），刷新即可
 function ctxOf(base: GameCtx['base'], scale: number): GameCtx {
   const dpr = Math.min(Math.min(window.devicePixelRatio || 1, MAX_DPR) * scale, MAX_DPR * 2);
   return { base, dpr: Number.isFinite(dpr) && dpr > 0 ? dpr : 1, now: () => performance.now() };
