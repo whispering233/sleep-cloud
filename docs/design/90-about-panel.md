@@ -60,7 +60,7 @@ shouldShowAbout(seen: string | undefined) → seen !== ABOUT_TOKEN
 
 ## 4. 内容
 
-内容 = **一个配置文件** `src/client/about.json`（正文）+ `src/client/about.ts`（解析、指纹、判定；纯函数、DOM-free、可单测）。
+内容 = **一个配置文件** `src/client/about.json`（正文）+ `src/client/about.ts`（解析、指纹、判定；纯函数、DOM-free、可单测）。文件里**只有一个字段 `text`**，值是一行一个元素的字符串数组。
 
 ```json
 {

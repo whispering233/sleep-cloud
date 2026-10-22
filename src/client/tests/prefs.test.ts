@@ -157,15 +157,15 @@ describe('说明面板已读（sc.about.seen）', () => {
 
   it('写后读回：落盘形状是 { v: 1, seen }', () => {
     const storage = fakeStorage();
-    writeAboutSeen('0.0.7', storage);
-    expect(JSON.parse(storage.data.get(PREFS.aboutSeen) ?? '')).toEqual({ v: 1, seen: '0.0.7' });
-    expect(readAboutSeen(storage)).toBe('0.0.7');
+    writeAboutSeen('1k9f3a2', storage);
+    expect(JSON.parse(storage.data.get(PREFS.aboutSeen) ?? '')).toEqual({ v: 1, seen: '1k9f3a2' });
+    expect(readAboutSeen(storage)).toBe('1k9f3a2');
   });
 
   it('坏 JSON / 版本不符 / 空串 / 非字符串 / 超 32 字符 → undefined，且该键已被删', () => {
     const raws = [
       '{不是 JSON',
-      JSON.stringify({ v: 2, seen: '0.0.7' }),
+      JSON.stringify({ v: 2, seen: '1k9f3a2' }),
       JSON.stringify({ v: 1, seen: '' }),
       JSON.stringify({ v: 1, seen: 7 }),
       JSON.stringify({ v: 1, seen: 'x'.repeat(33) }),
@@ -180,7 +180,7 @@ describe('说明面板已读（sc.about.seen）', () => {
 
   it('长度边界：正好 32 字符收，33 字符判废（不校验指纹格式）', () => {
     const storage = fakeStorage();
-    writeAboutSeen(`1.0.0-${'x'.repeat(26)}`, storage);
+    writeAboutSeen('k'.repeat(32), storage);
     expect(readAboutSeen(storage)).toHaveLength(32);
     storage.data.set(PREFS.aboutSeen, JSON.stringify({ v: 1, seen: 'y'.repeat(33) }));
     expect(readAboutSeen(storage)).toBeUndefined();
