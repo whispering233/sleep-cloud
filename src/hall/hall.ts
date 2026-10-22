@@ -480,6 +480,24 @@ export class Hall extends DurableObject<Env> {
       return;
     }
 
+    // `act` 只声明「我在看哪一页」：**与 `state` 正交**，不进任何业务判定（不刷新 `lastInputAt`、
+    // 不碰自动睡着、不改归属与占用），所以不能走下面那条「先写 fresh」的通用路径。
+    // 被限流、或值不是 `hall` / `game` 时**静默丢弃**（不回错误码、不断线）。见 `140-games-page.md` §6。
+    if (message.t === 'act') {
+      if (!gate.allowed) {
+        log.drop({ kind: 'limit' });
+        return;
+      }
+      if (message.act !== 'hall' && message.act !== 'game') return;
+      const declared: ConnectionState = { ...connection, rate: gate.window };
+      if (message.act === 'game') declared.act = 'game';
+      else delete declared.act;
+      this.writeConnection(ws, declared);
+      // 变化复用一条 `state` 报文（整条人重发），发给所有人**包括本人**（`docs/api/20-api-ws.md` §4.4）
+      this.broadcast({ t: 'state', ...personFromConnection(declared), online: this.onlineCount() });
+      return;
+    }
+
     if (!gate.allowed) {
       // 被限流：不写附件（省一次写入），也不刷新任何状态。`report` / `feedback` 超额**静默丢弃**
       // （`docs/api/20-api-ws.md` §7）：客户端已经本地置灰防连点，回一个 `4002` 只会多一次可见噪音。

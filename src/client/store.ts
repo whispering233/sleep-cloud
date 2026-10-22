@@ -148,6 +148,11 @@ export interface ClientState {
    */
   aboutOpen: AboutSource | null;
   /**
+   * **游戏页**（客户端本地状态，不进协议、不进快照）：`true` = 整屏那一页开着。
+   * 大厅的连接照旧，人只是暂时不看厅里——所以它不进任何上行（`docs/design/140-games-page.md` §2）。
+   */
+  gamesOpen: boolean;
+  /**
    * **求签页**（客户端本地状态，不进协议、不进快照）：`true` = 开着。
    * 页面自己的三态（未求 / 摇签 / 已求）**不住这里**：它只活在那一次挂载里，重新打开就按本地键重算
    * （`docs/design/110-lot.md` §2），所以 store 不需要第二份可以跟本地键矛盾的状态。
@@ -200,6 +205,7 @@ const emptyState = (): ClientState => ({
   rain: readWeather() === 'rain',
   sound: readSound() === 'rain',
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
+  gamesOpen: false,
   lotOpen: false,
 });
 
@@ -450,6 +456,18 @@ export function closeAbout(): void {
   setState({ aboutOpen: null });
 }
 
+/** 打开游戏页（见 `ClientState.gamesOpen`）：同值不写。 */
+export function openGames(): void {
+  if (state.gamesOpen) return;
+  setState({ gamesOpen: true });
+}
+
+/** 关闭游戏页：「离开」与 `Esc` 走同一个出口，可能重复触发，所以幂等。 */
+export function closeGames(): void {
+  if (!state.gamesOpen) return;
+  setState({ gamesOpen: false });
+}
+
 /** 打开求签页（见 `ClientState.lotOpen`）：同值不写。 */
 export function openLot(): void {
   if (state.lotOpen) return;
@@ -566,8 +584,24 @@ function placementOf(source: PersonPlacement): PersonPlacement {
     : { state: source.state, bedNo: source.bedNo };
 }
 
-function withPlacement(person: Person, placement: PersonPlacement): Person {
-  return { id: person.id, name: person.name, appearance: person.appearance, ...placement };
+/**
+ * `state` 报文之后的同一个人：换位置，可能换 `act`。
+ *
+ * **`act` 只有「整条人」那条报文才声明**：服务端改 `act` 时重发整条人（带 `name`），
+ * 显示态那条只带位置（`docs/api/20-api-ws.md` §4.4）。所以「带不带名字」是「这次 `act` 算不算数」
+ * 的判据——缺字段不能当成「没在看游戏」，否则一躺下后缀就没了。
+ */
+function afterState(person: Person, message: StateMessage): Person {
+  const declared = message as StateMessage & Partial<Pick<Person, 'name' | 'act'>>;
+  const act = declared.name === undefined ? person.act : declared.act;
+  const next: Person = {
+    id: person.id,
+    name: person.name,
+    appearance: person.appearance,
+    ...placementOf(message),
+  };
+  if (act === 'game') next.act = 'game';
+  return next;
 }
 
 /**
@@ -582,12 +616,15 @@ function onlinePatch(online: number): Partial<ClientState> {
 /** 有人进厅：插入条目（同 id 重复到达就覆盖，天然幂等）。 */
 export function applyJoin(message: JoinMessage): void {
   const people = new Map(state.people);
-  people.set(message.id, {
+  const person: Person = {
     id: message.id,
     name: message.name,
     appearance: message.appearance,
     ...placementOf(message),
-  });
+  };
+  // 在场状态跟着 `join` 一起下发（缺省 = 在看厅），丢掉它后缀就不见了
+  if (message.act === 'game') person.act = 'game';
+  people.set(message.id, person);
   const motion = new Map(state.motion);
   motion.delete(message.id); // 新出现的人先落位，插值从下一批 pos 开始
   setState({ people, motion, ...onlinePatch(message.online) });
@@ -601,7 +638,7 @@ export function applyState(message: StateMessage): void {
 
   // 自己的状态变化也走这条消息（服务端会发给自己）：自己的 `me` 必须跟着变
   if (state.me && state.me.id === message.id) {
-    const next: SelfPerson = { ...withPlacement(state.me, placement) };
+    const next: SelfPerson = afterState(state.me, message);
     // 归属与占用是两个维度：在床上时床号就是我的床；起身后归属位继续留着（暖灯标记不能丢）
     const ownedBedNo = placement.state === 'roaming' ? state.me.ownedBedNo : placement.bedNo;
     if (ownedBedNo !== undefined) next.ownedBedNo = ownedBedNo;
@@ -622,7 +659,7 @@ export function applyState(message: StateMessage): void {
   }
 
   const people = new Map(state.people);
-  people.set(message.id, withPlacement(person, placement));
+  people.set(message.id, afterState(person, message));
   setState({ people, motion, ...onlinePatch(message.online) });
 }
 

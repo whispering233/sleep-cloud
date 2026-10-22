@@ -7,6 +7,7 @@ import { AboutOverlay } from './components/AboutOverlay';
 import { ChatPanel } from './components/ChatPanel';
 import { EntryOverlay } from './components/EntryOverlay';
 import type { EntryBlock } from './components/EntryOverlay';
+import { GamesOverlay } from './components/GamesOverlay';
 import { Hud } from './components/Hud';
 import { LotOverlay } from './components/LotOverlay';
 import { Toast } from './components/Toast';
@@ -31,6 +32,8 @@ export function App() {
   const [entered, setEntered] = useState(false);
   /** 说明面板：`null` = 关着，否则是打开的原因（自动 / 手动） */
   const [aboutOpen, setAboutOpen] = useState<AboutSource | null>(() => getState().aboutOpen);
+  /** 游戏页：与说明面板同一种「整屏页开关」，也只看 store 那一个字段 */
+  const [gamesOpen, setGamesOpen] = useState(() => getState().gamesOpen);
   /** 求签页开着（`docs/design/110-lot.md` §2）：页面自己的三态不住 store，只有开关在这里 */
   const [lotOpen, setLotOpen] = useState(() => getState().lotOpen);
 
@@ -58,9 +61,20 @@ export function App() {
     });
   }, []);
 
+  // 游戏页的开关同理（`gamesOpen`）：打开只发生在 `entered` 之后，关掉 = 卸载这一页
+  useEffect(() => {
+    setGamesOpen(getState().gamesOpen);
+    return subscribe((state) => {
+      setGamesOpen((prev) => (prev === state.gamesOpen ? prev : state.gamesOpen));
+    });
+  }, []);
+
   const layoutVersion = session?.layoutVersion;
-  /** 有一块不透明的整屏页盖着世界（入场层 / 说明面板）：世界层整帧停渲染（`60-interaction-shell.md` §5.2） */
-  const covered = session !== null && (!entered || aboutOpen !== null);
+  /**
+   * 有一块不透明的整屏页盖着世界（入场层 / 说明面板 / 游戏页）：世界层整帧停渲染
+   * （`60-interaction-shell.md` §5.2、`140-games-page.md` §5）。求签页不在内——它是薄薄一层盖着可见的世界
+   */
+  const covered = session !== null && (!entered || aboutOpen !== null || gamesOpen);
 
   // 软键盘：只把「视觉视口被 pan 了多少」写到 `.app-shell` 的 transform 上（不改尺寸，见 `./keyboard.ts`）
   useEffect(() => {
@@ -120,6 +134,10 @@ export function App() {
           </div>
 
           <ChatPanel />
+
+          {/* 游戏页（`docs/design/140-games-page.md` §1）：挂在聊天面板之后、说明面板之前，
+              层级靠 DOM 顺序、不加 `z-index`，所以 `tone-layer` 照旧盖得住它 */}
+          {gamesOpen ? <GamesOverlay /> : null}
         </>
       ) : null}
 

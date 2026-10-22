@@ -34,8 +34,8 @@ export function setZoomMode(mode: ZoomMode): void {
 }
 
 /**
- * 整屏页（入场层 / 说明面板）盖住世界时整帧停渲染。请求先记在模块级，世界层起来时再补上——
- * 入场层不该等它下载完，所以 App 的 effect 可能比世界层先跑。
+ * 整屏页（入场层 / 说明面板 / 游戏页）盖住世界时整帧停渲染。请求先记在模块级，世界层起来时再补上——
+ * 入场层不该等它下载完，所以 App 的 effect 可能比世界层先跑。**位置与状态一个字节都不改**，人还站在厅里。
  */
 export function setWorldSuspended(next: boolean): void {
   suspended = next;

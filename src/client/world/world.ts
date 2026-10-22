@@ -95,7 +95,7 @@ export interface WorldHandle {
   focusBed(bedNo: number): void;
   /** 设世界缩放档位（齿轮浮层的「缩放」二级选出来的；也是 捏合之外的**单指入口**，WCAG 2.5.1）。 */
   setZoomMode(mode: ZoomMode): void;
-  /** 整屏页盖住世界时整帧停渲染；恢复时重锚，否则醒来第一帧的 delta 是「暂停了多久」。 */
+  /** 整屏页（入场层 / 说明面板 / 游戏页）盖住世界时整帧停渲染；恢复时重锚，否则醒来第一帧的 delta 是「暂停了多久」。 */
   setSuspended(next: boolean): void;
 }
 
@@ -584,6 +584,7 @@ class WorldScene extends Phaser.Scene {
       setPersonName(
         personView,
         detail && named && !(chat !== undefined && selected) ? person.name : '',
+        person.act,
         person.state === 'trace',
         selected,
       );

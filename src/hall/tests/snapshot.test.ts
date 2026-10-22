@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LAYOUT_VERSION } from '../../shared/layout';
 import { decodeOwnedBeds } from '../../shared/protocol';
+import type { Person } from '../../shared/protocol';
 import type { ConnectionState } from '../connection';
 import { buildSnapshot, onlineCountOf, splitLive } from '../snapshot';
 import type { TraceBedRow } from '../bed-store';
@@ -180,5 +181,24 @@ describe('自己的归属位', () => {
   it('有床时 me 带 ownedBedNo；没有床时不带这个字段', () => {
     expect(snapshot({ myOwnedBedNo: 42, ownedBeds: [42] }).me).toMatchObject({ ownedBedNo: 42 });
     expect('ownedBedNo' in snapshot().me).toBe(false);
+  });
+});
+
+describe('活动声明（act）跟着快照下发', () => {
+  it('在游戏页的人带 act：自己的 me 与别人的 people 条目都带', () => {
+    const message = snapshot({
+      me: connection({ act: 'game' }),
+      others: [connection({ userId: 'u_other', act: 'game' })],
+    });
+
+    expect(message.me.act).toBe('game');
+    expect(message.people[0]).toMatchObject({ id: 'u_other', act: 'game' });
+  });
+
+  it('在看厅（字段省略）：me 与 people 都没有 act 键', () => {
+    const message = snapshot({ others: [connection({ userId: 'u_other' })] });
+
+    expect('act' in message.me).toBe(false);
+    expect('act' in (message.people[0] as Person)).toBe(false);
   });
 });

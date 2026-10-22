@@ -3,6 +3,7 @@ import * as Phaser from 'phaser';
 import { ART_SCALE, BED_H, BED_W, MAX_DPR } from '../../shared/constants';
 import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
+import { actTextOf } from '../act-text';
 // 气泡几何与提示共用一份（那个模块是 Phaser-free 的，界面层与单测都能拿，见 `../bubble-fit.ts`）
 import {
   BUBBLE_PAD,
@@ -402,6 +403,8 @@ export interface PersonView {
   paint: string;
   /** 上一次画的名字行（槽位 + 名字）：不变就跳过重排 */
   namePaint: string;
+  /** 上一次名字行的原文（名字 + 后缀）：不变就跳过截断——截断要反复量文字，量一次很贵 */
+  nameLine: string;
   /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字一起换 */
   chatBaseY: number;
 }
@@ -424,6 +427,8 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     .text(0, NAME_Y, '', { fontFamily: FONT_FAMILY, fontSize: LABEL_PX, color: INK_CSS, resolution: TEXT_RESOLUTION })
     .setOrigin(0.5, 1)
     .setVisible(false);
+  // 名字行是**一行**（超宽就截断，见 `fitNameLine`）：不给换行宽就只能溢出，也无法量出超没超
+  name.setWordWrapWidth(NAME_MAX_PX, true);
   const container = scene.add.container(0, 0, [
     bubble.body,
     bubble.tail,
@@ -442,6 +447,7 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     bubbleName,
     paint: '',
     namePaint: '',
+    nameLine: '',
     chatBaseY: CHAT_Y,
   };
 }
@@ -472,14 +478,27 @@ export function paintPerson(
   view.sprite.setScale(ART_SCALE * sway);
 }
 
-/** 名字：只在有人的床上、自己一律不画；选中时整条换成气泡样式（不叠第二个）。 */
-export function setPersonName(view: PersonView, text: string, dim: boolean, bubble: boolean): void {
+/**
+ * 名字：只在有人的床上、自己一律不画；选中时整条换成气泡样式（不叠第二个）。
+ * 带在场状态时整条是 `名字 | 游戏中`——**后缀优先保留、名字先截断**（见 `fitNameLine`）。
+ */
+export function setPersonName(
+  view: PersonView,
+  name: string,
+  act: 'game' | undefined,
+  dim: boolean,
+  bubble: boolean,
+): void {
+  const line = name === '' ? '' : `${name}${actTextOf(act)}`;
+  if (line !== view.nameLine) {
+    view.nameLine = line;
+    view.name.setText(line === '' ? '' : fitNameLine(view.name, name, actTextOf(act)));
+  }
   view.name
-    .setText(text)
     .setColor(dim ? TRACE_CSS : INK_CSS)
     .setBackgroundColor(bubble ? SURFACE_CSS : NO_BACKGROUND)
     .setPadding(bubble ? BUBBLE_PAD : 0)
-    .setVisible(text !== '');
+    .setVisible(name !== '');
 }
 
 /**
@@ -536,6 +555,19 @@ function fitBubbleName(nameText: Phaser.GameObjects.Text, name: string): void {
     return nameText.getWrappedText().length;
   };
   nameText.setText(truncateToLines(name, 1, linesOf));
+}
+
+/**
+ * 名字行整条 `名字 + 后缀`：**后缀优先保留、名字先截断**——否则「小明 | 游戏中」会把名字吃掉一半，
+ * 而后缀是这条消息的正文。截断仍用同一套按字素簇二分（`rules.truncateToLines`）：量的是
+ * 「名字候选 + 后缀」整条，所以吃的宽度全部落在名字上。
+ */
+function fitNameLine(nameText: Phaser.GameObjects.Text, name: string, suffix: string): string {
+  const linesOf = (candidate: string): number => {
+    nameText.setText(`${candidate}${suffix}`);
+    return nameText.getWrappedText().length;
+  };
+  return `${truncateToLines(name, 1, linesOf)}${suffix}`;
 }
 
 /**
