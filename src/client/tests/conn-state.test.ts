@@ -60,16 +60,17 @@ describe('重连退避', () => {
 });
 
 describe('带语义的 close（`docs/api/20-api-ws.md` §5.1.1）', () => {
-  it('四条分支：blocked / replaced / 2003 / 其它（含空 reason）', () => {
+  it('五条分支：blocked / replaced / 2003 / 2002 / 其它（含空 reason）', () => {
     expect(haltReasonOf('blocked')).toBe('blocked');
     expect(haltReasonOf('replaced')).toBe('replaced');
     expect(haltReasonOf('2003')).toBe('stale');
+    expect(haltReasonOf('2002')).toBe('full'); // 厅满：再来也进不去，按过退避就是每 15 秒撞一次
     expect(haltReasonOf('')).toBeUndefined(); // 网络/平台原因的 close 不带 reason：按退避重连
     expect(haltReasonOf('going away')).toBeUndefined();
   });
 
   it('停住之后就一直是 halted：`shouldReconnect` 恒假（hidden 与可见都一样）', () => {
-    for (const reason of ['blocked', 'replaced', 'stale'] as const) {
+    for (const reason of ['blocked', 'replaced', 'stale', 'full'] as const) {
       const state = halted(offline(initialConnState()), reason);
       expect(state.connection).toBe('halted');
       expect(state.halt).toBe(reason);

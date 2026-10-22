@@ -31,7 +31,7 @@ describe('连接提示条文案（纯函数）', () => {
     expect(connBannerOf({ connection: 'connecting', now: 10_000 }).visible).toBe(false);
   });
 
-  it('停住的三种文案都常驻，且不再给「尝试连接」按钮（点它只会立刻再失败一次）', () => {
+  it('停住的四种文案都常驻，且不再给「尝试连接」按钮（点它只会立刻再失败一次）', () => {
     const now = 100_000;
     expect(connBannerOf({ connection: 'halted', halt: 'blocked', untilAt: null, now })).toEqual({
       visible: true,
@@ -46,6 +46,11 @@ describe('连接提示条文案（纯函数）', () => {
     expect(connBannerOf({ connection: 'halted', halt: 'stale', now })).toEqual({
       visible: true,
       text: '资源已更新，请刷新页面',
+      retry: false,
+    });
+    expect(connBannerOf({ connection: 'halted', halt: 'full', now })).toEqual({
+      visible: true,
+      text: '这个大厅满了，稍后刷新再试',
       retry: false,
     });
   });

@@ -86,6 +86,13 @@ export const RAIN_CROSSFADE_S = 1;
 export const PROBE_TIMEOUT_MS = 2_000;
 
 /**
+ * 建连超时（**只在客户端**）：从发起连接到收到 `snapshot` 超过这么久 → 按一次失败处理（`offline` + 退避）。
+ * 覆盖两种哑火：TCP 黑洞（`readyState` 永停 `CONNECTING`）、握手通了但 `snapshot` 不来（`hello` 没能送达）。
+ * 只盖「握手」两个字会漏掉后一种——那时界面同样永远停在一句「正在连接…」上。
+ */
+export const CONNECT_TIMEOUT_MS = 8_000;
+
+/**
  * 意图无回执超时（**只在客户端**）：发出上行后这么久没收到任何「关于自己的下行」→ 视为可疑，
  * 触发一次探活（不直接判死）。
  */

@@ -1,4 +1,4 @@
-import { INTENT_ECHO_TIMEOUT_MS, PROBE_TIMEOUT_MS } from '../shared/constants';
+import { CONNECT_TIMEOUT_MS, INTENT_ECHO_TIMEOUT_MS, PROBE_TIMEOUT_MS } from '../shared/constants';
 import { beginSample, clearSamples, settleSample } from './latency';
 import type { LatencyKind, PendingSamples } from './latency';
 import type { DownstreamMessage, UpstreamMessage } from '../shared/protocol';
@@ -49,7 +49,8 @@ interface Session {
   layoutVersion: string;
   socket: WebSocket | null;
   state: ConnState;
-  /** 在飞的计时器：探测超时、无回执超时、退避等待。**一个都不能漏**（见 `clearTimers`）。 */
+  /** 在飞的计时器：建连超时、探测超时、无回执超时、退避等待。**一个都不能漏**（见 `clearTimers`）。 */
+  connectTimer?: ReturnType<typeof setTimeout>;
   probeTimer?: ReturnType<typeof setTimeout>;
   echoTimer?: ReturnType<typeof setTimeout>;
   retryTimer?: ReturnType<typeof setTimeout>;
@@ -94,8 +95,8 @@ export function retryNow(): void {
   const s = live();
   if (!s) return;
   if (s.socket?.readyState === WebSocket.CONNECTING) {
-    // 建连超过 PROBE_TIMEOUT_MS 还没落地（TCP 黑洞，`readyState` 会一直停在 CONNECTING）：
-    // 掐掉重建，否则这个按钮就是个空操作；没超时就维持现状（不折腾一条正在建的连接）
+    // 用户按按钮就是不想再等了：建连超过 PROBE_TIMEOUT_MS 还没落地就掐掉重建，否则这个按钮是空操作。
+    // 这里比 `CONNECT_TIMEOUT_MS`（8 秒）短是有意的：那个阈值管自动判定，这个管「用户已经开始等急了」
     const since = s.connectingSinceMs;
     if (since === undefined || Date.now() - since < PROBE_TIMEOUT_MS) return;
   }
@@ -221,6 +222,11 @@ function openSocket(s: Session): void {
   s.socket = socket;
   s.connectingSinceMs = Date.now();
   updateState(s, connecting(s.state));
+  s.connectTimer = setTimeout(() => {
+    s.connectTimer = undefined;
+    if (s.socket !== socket || s.state.connection !== 'connecting') return;
+    fail(s);
+  }, CONNECT_TIMEOUT_MS);
 
   socket.addEventListener('open', () => {
     if (s.socket !== socket) return;
@@ -362,7 +368,7 @@ function armEchoWatch(s: Session): void {
   }, INTENT_ECHO_TIMEOUT_MS);
 }
 
-type TimerField = 'probeTimer' | 'echoTimer' | 'retryTimer';
+type TimerField = 'connectTimer' | 'probeTimer' | 'echoTimer' | 'retryTimer';
 
 function clearTimer(s: Session, field: TimerField): void {
   const timer = s[field];
@@ -371,11 +377,12 @@ function clearTimer(s: Session, field: TimerField): void {
 }
 
 /**
- * 清理函数必须清掉**全部**在飞的计时器（探测超时、无回执超时、退避等待），一个都不能漏：
+ * 清理函数必须清掉**全部**在飞的计时器（建连超时、探测超时、无回执超时、退避等待），一个都不能漏：
  * 漏一个的后果是组件卸载或重连之后，那个旧计时器又触发一次重连。
  * **内存定时器不清 = 对象无法休眠**（`AGENTS.md` 硬纪律 6）。
  */
 function clearTimers(s: Session): void {
+  clearTimer(s, 'connectTimer');
   clearTimer(s, 'probeTimer');
   clearTimer(s, 'echoTimer');
   clearTimer(s, 'retryTimer');
@@ -421,6 +428,7 @@ function handleMessage(s: Session, event: MessageEvent): void {
     case 'snapshot':
       // 重连后以新快照为准：旧连接上的回投不会再来，样本留着只会结算出假 RTT
       pendingSamples = clearSamples();
+      clearTimer(s, 'connectTimer'); // 建连成功即用完；守卫仍在，防已入队的回调
       updateState(s, online());
       applySnapshot(message);
       return;
@@ -457,6 +465,9 @@ function handleMessage(s: Session, event: MessageEvent): void {
         if (message.untilAt !== undefined) setBlockedUntil(message.untilAt);
         return;
       }
+      // 厅满（`2002`）同一取舍：紧跟其后的 `close(1000,'2002')` 会让提示条停住并说明原因，
+      // 再弹一条瞬时提示就是同一句话说两遍（见 `docs/api/error-code.md` §3）
+      if (message.code === '2002') return;
       // 举报回执（`5003`）：唯一「成功用 error 报文回」的例外，走本地三件事（退场 / 置灰 / 一行回执），
       // 不进瞬时提示条。文案取自错误码表，与文档逐字一致
       if (message.code === '5003') {

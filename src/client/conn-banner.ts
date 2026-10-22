@@ -35,9 +35,10 @@ export function connBannerOf(input: {
   return { visible: elapsed >= CONNECT_BANNER_DELAY_MS, text: '正在连接…', retry: true };
 }
 
-/** 停住的三种文案：封禁给到到期时间（不给原因），另两种只说一句该怎么自救。 */
+/** 停住的四种文案：封禁给到到期时间（不给原因），另三种只说一句该怎么自救。 */
 function haltedTextOf(reason: HaltReason | undefined, untilAt: number | null | undefined, now: number): string {
   if (reason === 'blocked') return blockedTextFor(untilAt ?? null, now);
   if (reason === 'replaced') return '你已在别处打开';
+  if (reason === 'full') return '这个大厅满了，稍后刷新再试';
   return '资源已更新，请刷新页面';
 }
