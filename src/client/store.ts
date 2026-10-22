@@ -150,6 +150,8 @@ export interface ClientState {
   /**
    * **游戏页**（客户端本地状态，不进协议、不进快照）：`true` = 整屏那一页开着。
    * 大厅的连接照旧，人只是暂时不看厅里——所以它不进任何上行（`docs/design/140-games-page.md` §2）。
+   * 页内的层级（列表 / 具体页）**不住这里**：它在 `history.state` 里（`src/client/nav.ts`），
+   * 由 `popstate` 映射回来——store 是纯状态模块，不碰历史 API。
    */
   gamesOpen: boolean;
   /**
@@ -462,7 +464,7 @@ export function openGames(): void {
   setState({ gamesOpen: true });
 }
 
-/** 关闭游戏页：「离开」与 `Esc` 走同一个出口，可能重复触发，所以幂等。 */
+/** 关闭游戏页：页内的「返回」/ `Esc` 走 `nav.back()`，由 `popstate` 落到这里；强制关页（停住）也直调。可能重复触发，所以幂等。 */
 export function closeGames(): void {
   if (!state.gamesOpen) return;
   setState({ gamesOpen: false });

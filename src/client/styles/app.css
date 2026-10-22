@@ -990,7 +990,8 @@
 
   /* 出口钉在左上角。`.entry-overlay` 靠 `place-items` 居中，而两条 inset 都是显式的绝对定位孩子
      不吃那套居中（`place-items` 只给 auto 的那两条 insets 收尾）。卡片顶部留出它的高：
-     `44px` 是触击尺寸（`touch-target-min`），加上它自己的开场边距 */
+     `44px` 是触击尺寸（`touch-target-min`），加上它自己的开场边距。
+     它**只在列表层存在**（`返回`）：具体页零 chrome，那颗胶囊由组件不渲染，所以这里没有 `display: none` */
   .games-leave {
     position: absolute;
     inset-block-start: calc(env(safe-area-inset-top) + var(--spacing-md));
@@ -1022,8 +1023,8 @@
     pointer-events: auto;
   }
 
-  /* 有一个游戏在台上时列表收起（`GamesOverlay` 的 `data-playing`）：列表只是「选哪一个」的那一下，
-     选中后整页交给舞台。换游戏 = 离开这一页再进（首版只有一个条目） */
+  /* 有一个游戏在台上时列表收起（`GamesOverlay` 的 `data-playing`）：列表只是「选哪一个」
+     的那一下，选中后整页交给舞台。换游戏 = 返回列表再点（一次返回），不需要离开这一页 */
   .games-page[data-playing] .entry-card {
     display: none;
   }
