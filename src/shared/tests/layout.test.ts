@@ -772,7 +772,9 @@ describe('不变式 ⑤：街网连通（逐级 BFS，路径只走街网）', ()
     expect(stats.reached).toBe(stats.beds * 2);
     // 最高级里，最远的两张床之间是一条比整个厅还长的路径（不是只测相邻两格）
     expect(stats.longestPath * STEP).toBeGreaterThan(TOP.width);
-  });
+    // 逐级 BFS × 最高级 9558 张床：实测 2~4 秒，已贴着默认的 5 秒预算（全量并行时必超）→ 单独给预算。
+    // 它验的是连通性，耗时与断言无关，所以不放宽任何东西
+  }, 30_000);
 
   it('不变式 ②：贴墙那一圈是**连通的环形走道**（四侧采样点全可走）', () => {
     const bad: string[] = [];
