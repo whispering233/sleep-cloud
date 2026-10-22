@@ -13,6 +13,7 @@ const statsStrip = document.getElementById('stats');
 
 const ipFilter = document.getElementById('ipFilter');
 const nameFilter = document.getElementById('nameFilter');
+const userIdFilter = document.getElementById('userIdFilter');
 const identityRows = document.getElementById('identities');
 const identitiesPrev = document.getElementById('identitiesPrev');
 const identitiesNext = document.getElementById('identitiesNext');
@@ -373,6 +374,8 @@ async function loadIdentities(index) {
   if (ip) params.set('ip', ip);
   const name = nameFilter.value.trim();
   if (name) params.set('name', name);
+  const userId = userIdFilter.value.trim();
+  if (userId) params.set('userId', userId);
   if (cursor) {
     params.set('before', String(cursor.before));
     params.set('beforeId', cursor.beforeId);
@@ -543,6 +546,7 @@ document.getElementById('ipSearch').addEventListener('click', () => {
 document.getElementById('ipClear').addEventListener('click', () => {
   ipFilter.value = '';
   nameFilter.value = '';
+  userIdFilter.value = '';
   identityCursors = [null];
   void loadIdentities(0);
 });

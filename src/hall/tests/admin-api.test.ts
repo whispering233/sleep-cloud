@@ -210,6 +210,33 @@ test('按昵称子串反查：命中 / 不命中，`%` 只是个百分号', asyn
   expect(percent.items.map((item) => item.userId)).toEqual(['u_c']);
 });
 
+test('按 userId 精确查：只回那一行', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
+  recordIdentity(sql, { userId: 'u_b', ip: '1.1.1.1' }, NOW + 1);
+
+  const page = await pageOf(await adminGet(hall, '/admin/identities?userId=u_a'));
+  expect(page.items.map((item) => item.userId)).toEqual(['u_a']);
+  expect(page.next).toBeNull();
+});
+
+test('按 userId 精确查：不存在就回空页（不做前缀 / 子串匹配）', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_abc' }, NOW);
+
+  expect((await pageOf(await adminGet(hall, '/admin/identities?userId=u_abcd'))).items).toEqual([]);
+  expect((await pageOf(await adminGet(hall, '/admin/identities?userId=u_ab'))).items).toEqual([]);
+});
+
+test('userId 与 ip 同时给是 AND', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
+  recordIdentity(sql, { userId: 'u_b', ip: '1.1.1.1' }, NOW + 1);
+
+  const page = await pageOf(await adminGet(hall, '/admin/identities?ip=1.1.1.1&userId=u_a'));
+  expect(page.items.map((item) => item.userId)).toEqual(['u_a']);
+});
+
 test('bedNo 是显示床号（内部 0 → 1），online 只对已握手的连接为真', async () => {
   const socket = new FakeSocket(liveConnection('u_a'));
   const { hall, sql } = newHall([socket]);

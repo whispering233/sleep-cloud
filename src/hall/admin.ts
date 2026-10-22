@@ -115,11 +115,13 @@ function identitiesPage(url: URL, ctx: AdminContext): Response {
   // 复合游标必须成对给：只给一半就分不清「没有下一页」还是「前端拼错了」，
   // 而静默当成第一页会让「下一页」原地打转（见 `docs/api/30-api-admin.md` §4）。
   if (before !== undefined && beforeId === undefined) return badRequest();
+  const userId = url.searchParams.get('userId') || undefined;
   const ip = url.searchParams.get('ip') ?? undefined;
   const name = url.searchParams.get('name') ?? undefined;
   // 多取一行只用来判断「还有没有下一页」
   const rows = listIdentities(ctx.sql, {
     limit: limit + 1,
+    ...(userId === undefined ? {} : { userId }),
     ...(ip === undefined ? {} : { ip }),
     ...(name === undefined ? {} : { name }),
     ...(before === undefined || beforeId === undefined ? {} : { before, beforeId }),

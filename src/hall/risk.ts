@@ -343,22 +343,26 @@ function likeSubstring(value: string): string {
  */
 export function listIdentities(
   sql: SqlStorage,
-  query: { limit: number; ip?: string; name?: string; before?: number; beforeId?: string },
+  query: { limit: number; userId?: string; ip?: string; name?: string; before?: number; beforeId?: string },
 ): IdentityRecord[] {
   // 两个游标值要么都给、要么都不给：只给一个时无法定位「从哪里接着看」
   const cursor =
     query.before !== undefined && query.beforeId !== undefined
       ? { before: query.before, beforeId: query.beforeId }
       : { before: null, beforeId: null };
+  const userId = query.userId ?? null;
   const ip = query.ip ?? null;
   const name = query.name === undefined ? null : likeSubstring(query.name);
   return sql
     .exec<RawIdentityRow>(
       `SELECT user_id, nickname, first_seen_at, last_seen_at, last_ip, last_country, ua_hash FROM identity
-        WHERE (? IS NULL OR last_ip = ?)
+        WHERE (? IS NULL OR user_id = ?)
+          AND (? IS NULL OR last_ip = ?)
           AND (? IS NULL OR nickname LIKE ? ESCAPE '\\')
           AND (? IS NULL OR last_seen_at < ? OR (last_seen_at = ? AND user_id < ?))
         ORDER BY last_seen_at DESC, user_id DESC LIMIT ?`,
+      userId,
+      userId,
       ip,
       ip,
       name,

@@ -10,22 +10,6 @@
 
 ---
 
-## K1 台账按 `userId` 精确查
-
-**契约**：`../api/30-api-admin.md` §5.1（`userId` 精确等值，与 `ip` / `name` / 游标是 AND）。
-
-- 服务端：`src/hall/risk.ts` `listIdentities` 的 query 加可选 `userId`，SQL 加一条 `AND (? IS NULL OR user_id = ?)`；`src/hall/admin.ts` `identitiesPage` 读 `userId` 查询参数并透传。
-- 前端：`public/admin.html` 台账 `.bar` 加第三个 `label` + `input#userIdFilter`（placeholder 用一个 `u_` 开头的假值）；`public/admin.js` `loadIdentities` 非空时 `params.set('userId', …)`，`#ipClear` 一并清空它。
-- **不做**：不做子串/前缀匹配；不动举报、反馈、黑名单、审计四个视图。
-
-**验收**（全部通过才算完成）
-
-1. `npm test` 新增 3 条（`src/hall/tests/admin-api.test.ts`）：精确命中 1 行；不存在的 `userId` 回 0 行；与 `ip` 同时给是 AND（造一条 IP 相同但 `userId` 不同的行，确认被过滤掉）。
-2. `npm run typecheck` 通过。
-3. `node --check public/admin.js` 通过。
-
----
-
 ## K2 台账点「身份」开抽屉
 
 **契约**：`120-admin-console.md` §2.1 与 §9 判据 5。
