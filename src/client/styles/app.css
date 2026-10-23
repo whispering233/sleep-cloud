@@ -119,7 +119,7 @@
     gap: var(--spacing-sm);
   }
 
-  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 阅读入口与齿轮，
+  /* 动作行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组（组内 8px）、右 = 礼物与齿轮，
      中间由右端那一组的 `margin-inline-start: auto` 拉开；高 44px。
      **一行是硬约束（393 下排得完），折行只是 ≤320 的兜底**：什么都不收只会横向溢出，而横溢会让小人走到屏外 */
   .action-row {
@@ -188,7 +188,7 @@
     margin-inline-start: auto;
   }
 
-  /* 阅读入口与三颗「还没做」入口：44×44 正方形（只有图标，不让胶囊自己变宽），
+  /* 礼物胶囊：44×44 正方形（只有图标，不让胶囊自己变宽），
      图标吃  `neutral`（主入口，比齿轮高一档）；画法与齿轮同一套：`currentColor` 描边、20×20 绘制区 */
   .hud-icon {
     width: 44px;
@@ -236,7 +236,7 @@
     height: 20px;
   }
 
-  /* 齿轮浮层：有 Popover 时是 `popover`（顶层渲染、light-dismiss、`Esc` 全部由平台给，
+  /* 齿轮浮层与礼物托盘：有 Popover 时是 `popover`（顶层渲染、light-dismiss、`Esc` 全部由平台给，
      `docs/design/60-interaction-shell.md` §4）——所以没有遮罩，也没有手写的点外关闭。
      没有 Popover 的内核由 `ActionRow` 自己管开关，样式（含下面的定位兜底）不变。
      位置**只有一个来源：锚在齿轮上**（CSS anchor positioning）。顶层元素的定位盒是视口，
@@ -244,7 +244,8 @@
      向上展开、右对齐到齿轮右缘——齿轮已经在屏幕最底部，向下展开会直接出屏。宽度就一行字，不设上限也不会被右边缘裁掉。
      `inset: auto` / `margin` 是抹掉 UA 给 `[popover]` 的 `inset: 0` / `margin: auto`：
      那两条会让浮层铺满视口或者居中 */
-  .hud-menu {
+  .hud-menu,
+  .gift-tray {
     position: fixed;
     position-anchor: --hud-settings-gear;
     inset: auto;
@@ -268,7 +269,8 @@
      不写这一块，UA 默认会把 popover 居中到屏幕正中——那比位置略差糟糕得多。
      菜单是一次性入口（换床 / 看版本号），固定位置够用 */
   @supports not (position-anchor: --hud-settings-gear) {
-    .hud-menu {
+    .hud-menu,
+    .gift-tray {
       inset: auto;
       inset-block-end: calc(var(--spacing-md) + 128px);
       inset-inline-end: var(--spacing-md);
@@ -288,6 +290,24 @@
   .hud-menu-action {
     display: block;
     width: 100%;
+  }
+
+  /* 礼物托盘里的胶囊改横排：图标 + 中文标签（`docs/ui/DESIGN.md` 的 `gift-tray` 行）。
+     图标不伸缩：标签短，`nowrap` 能把整行装下，不需要另写换行规则 */
+  .gift-tray .hud-menu-action {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .gift-tray .hud-icon-glyph {
+    flex: none;
+  }
+
+  /* 托盘里没有版本号，组的下间距（`.hud-menu-group` 用于「组与版本号之间」）不该留在托盘底部：
+     去掉它，托盘高才等于 `docs/ui/DESIGN.md` 的 `gift-tray` 行算的 218（`4×44 + 3×8 + 16 + 2`） */
+  .gift-tray .hud-menu-group {
+    margin-block-end: 0;
   }
 
   /* 版本号：浮层里两行纯文字之一（排查用信息，不常驻版面） */

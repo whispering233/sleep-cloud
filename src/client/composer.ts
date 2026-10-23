@@ -35,9 +35,13 @@ export function composerReducer(state: ComposerState, event: ComposerEvent): Com
     case 'read':
       return 'reading';
     case 'exit':
-    case 'lost-focus':
     case 'offline':
       return 'idle';
+    // `reading` 里没有可编辑控件（`50-slot-panel.md` §附），焦点对账没有可对的东西：这条对账本来只服务
+    // 「输入框被卸载 / 被抢焦点」，而 `reading` 的油门在点击那一刻就落了地。还留着它，就会在托盘那颗
+    // 触发源随面板卸载时误判成退场（实测：面板只活 1 帧）
+    case 'lost-focus':
+      return state === 'reading' ? 'reading' : 'idle';
     default:
       return state;
   }
