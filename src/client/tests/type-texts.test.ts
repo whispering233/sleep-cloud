@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -9,71 +9,87 @@ import {
   TYPE_TEXTS_PER_CATEGORY,
 } from '../../shared/constants';
 import {
-  createTypeTextLoader,
   drawNext,
   paragraphsOf,
-  parseTypeTextPack,
   poolSize,
-  TYPE_PACK_URL,
-  type TypeTextCategory,
+  TYPE_TEXT_CATEGORIES,
   type TypeTextItem,
 } from '../type-texts';
 
-/** 真实数据包（`public/fun/`），测试从仓库根目录跑——和 `audio-assets.test.ts` 同一套读法。 */
-function readPack(name: string): unknown {
-  return JSON.parse(readFileSync(join(process.cwd(), 'public', 'fun', name), 'utf8')) as unknown;
-}
+/**
+ * 真实数据在仓库根的 `fun/<分类>/`（测试从仓库根目录跑，和 `games-registry.test.ts` 同一套读法）。
+ * 正文在**编译期**就进了包、运行时没有降级，所以「数据对不对」只能在这里直接读源码目录拦一遍
+ * （`docs/design/50-slot-panel.md` §附「数据与来源」）。
+ */
+const FUN_DIR = join(process.cwd(), 'fun');
+/** 条目 id 就是文件名；长度上限也是 `sc.read.seen` 白名单的那一条。 */
+const FILE_ID = /^[a-z0-9-]{1,32}$/;
 
-const pack = readPack('type-texts.v1.json');
-const categories = parseTypeTextPack(pack);
-const rawItems: unknown[] = (() => {
-  const raw = pack as { categories?: { items?: unknown[] }[] };
-  return raw.categories?.[0]?.items ?? [];
-})();
+const categoryDirs = readdirSync(FUN_DIR, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 
-function categoryOf(id: string): TypeTextCategory {
-  const found = categories.find((category) => category.id === id);
-  if (!found) throw new Error(`数据包里没有分类 ${id}`);
-  return found;
+/** 一个分类目录里的正文文件（名字去掉 `.txt` 就是条目 id）。 */
+function textFilesOf(categoryId: string): string[] {
+  return readdirSync(join(FUN_DIR, categoryId))
+    .filter((name) => name.endsWith('.txt'))
+    .sort();
 }
 
 function itemsOf(...texts: string[]): TypeTextItem[] {
   return texts.map((text, index) => ({ id: `x${index}`, text }));
 }
 
-function withItems(items: unknown[]): unknown {
-  return { schema: 1, categories: [{ id: 'c', label: 'C', items }] };
-}
-
-function fakeFetch(respond: () => Promise<unknown>): { fetchFn: typeof fetch; calls: () => number } {
-  let calls = 0;
-  const fetchFn = (async () => {
-    calls += 1;
-    const body = await respond();
-    return { ok: true, json: async () => body } as unknown as Response;
-  }) as unknown as typeof fetch;
-  return { fetchFn, calls: () => calls };
-}
-
-describe('类型文本数据包', () => {
-  it('一期只有一个分类，且解析后一条都没被丢', () => {
-    expect(categories).toHaveLength(1);
-    const joke = categoryOf('joke');
-    expect(joke.label.trim().length).toBeGreaterThan(0);
-    expect(joke.items.length).toBe(rawItems.length);
-    expect(joke.items.length).toBeGreaterThan(0);
-    expect(joke.items.length).toBeLessThanOrEqual(TYPE_TEXTS_PER_CATEGORY);
+describe('类型文本数据', () => {
+  it('每个分类目录都有 meta.ts，扫描器为它产出一个分类，且 label 非空', () => {
+    expect(TYPE_TEXT_CATEGORIES.map((category) => category.id).sort()).toEqual(categoryDirs);
+    expect(TYPE_TEXT_CATEGORIES.length).toBeGreaterThan(0);
+    for (const category of TYPE_TEXT_CATEGORIES) {
+      expect([category.id, 'meta.ts', existsSync(join(FUN_DIR, category.id, 'meta.ts'))]).toEqual([
+        category.id,
+        'meta.ts',
+        true,
+      ]);
+      expect([category.id, category.label, category.label.trim().length > 0]).toEqual([
+        category.id,
+        category.label,
+        true,
+      ]);
+    }
   });
 
-  it('每条都守长度与段数上限，id 互不重复', () => {
-    const joke = categoryOf('joke');
-    for (const item of joke.items) {
-      expect(item.text.trim()).toBe(item.text);
-      expect(item.text.length).toBeLessThanOrEqual(TYPE_TEXT_MAX_LEN);
-      expect(paragraphsOf(item.text).length).toBeGreaterThan(0);
-      expect(paragraphsOf(item.text).length).toBeLessThanOrEqual(TYPE_TEXT_MAX_PARAS);
+  it('文件名合法、每类非空且 ≤ TYPE_TEXTS_PER_CATEGORY，条目 id 与目录内容一一对应', () => {
+    for (const category of TYPE_TEXT_CATEGORIES) {
+      const files = textFilesOf(category.id);
+      expect([category.id, files.length > 0]).toEqual([category.id, true]);
+      expect([category.id, files.length <= TYPE_TEXTS_PER_CATEGORY]).toEqual([category.id, true]);
+      const ids = files.map((file) => file.replace(/\.txt$/, ''));
+      expect([category.id, ids.filter((id) => !FILE_ID.test(id))]).toEqual([category.id, []]);
+      expect([category.id, category.items.map((item) => item.id)]).toEqual([category.id, ids]);
     }
-    expect(new Set(joke.items.map((item) => item.id)).size).toBe(joke.items.length);
+  });
+
+  it('每条正文非空、长度与段数在上限内，且与扫描器读到的一字不差', () => {
+    for (const category of TYPE_TEXT_CATEGORIES) {
+      textFilesOf(category.id).forEach((file, index) => {
+        const text = readFileSync(join(FUN_DIR, category.id, file), 'utf8').trim();
+        const paragraphs = paragraphsOf(text);
+        expect([category.id, file, category.items[index]?.text]).toEqual([category.id, file, text]);
+        expect([category.id, file, text.length, text.length <= TYPE_TEXT_MAX_LEN]).toEqual([
+          category.id,
+          file,
+          text.length,
+          true,
+        ]);
+        expect([category.id, file, paragraphs.length > 0]).toEqual([category.id, file, true]);
+        expect([category.id, file, paragraphs.length <= TYPE_TEXT_MAX_PARAS]).toEqual([
+          category.id,
+          file,
+          true,
+        ]);
+      });
+    }
   });
 });
 
@@ -106,33 +122,7 @@ describe('抽签', () => {
   });
 });
 
-describe('校验', () => {
-  it('坏条目丢那一条、其余留下', () => {
-    const parsed = parseTypeTextPack(
-      withItems([
-        { id: 'ok1', text: '正常一条' },
-        { id: 'empty', text: '   ' },
-        { id: 'long', text: 'x'.repeat(TYPE_TEXT_MAX_LEN + 1) },
-        { id: 'paras', text: Array.from({ length: TYPE_TEXT_MAX_PARAS + 1 }, () => 'p').join('\n\n') },
-        { id: 'ok1', text: '重复 id' },
-        { id: '', text: '空 id' },
-        'not an object',
-        { id: 'ok2', text: '另一条' },
-      ]),
-    );
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.items.map((item) => item.id)).toEqual(['ok1', 'ok2']);
-  });
-
-  it('整包形状坏返回空数组，分类一个都没条目就丢那一类', () => {
-    expect(parseTypeTextPack(null)).toEqual([]);
-    expect(parseTypeTextPack({ schema: 2, categories: [] })).toEqual([]);
-    expect(parseTypeTextPack({ schema: 1, categories: 'nope' })).toEqual([]);
-    expect(
-      parseTypeTextPack({ schema: 1, categories: [{ id: 'c', label: 'C', items: [] }] }),
-    ).toEqual([]);
-  });
-
+describe('正文切分', () => {
   it('行切分：单换行与连续换行都分行、空白行丢弃', () => {
     expect(paragraphsOf('甲\n\n乙')).toEqual(['甲', '乙']);
     expect(paragraphsOf('甲\n乙')).toEqual(['甲', '乙']);
@@ -140,28 +130,5 @@ describe('校验', () => {
     expect(paragraphsOf('  甲  \n\n  \n\n 乙 ')).toEqual(['甲', '乙']);
     expect(paragraphsOf('甲\r\n乙')).toEqual(['甲', '乙']);
     expect(paragraphsOf(' \n\n  ')).toEqual([]);
-  });
-});
-
-describe('懒加载', () => {
-  it('成功只请求一次（模块级 promise 去重）', async () => {
-    const { fetchFn, calls } = fakeFetch(async () => readPack('type-texts.v1.json'));
-    const load = createTypeTextLoader(fetchFn);
-    const first = await load();
-    const second = await load();
-    expect(second).toBe(first);
-    expect(calls()).toBe(1);
-    expect(first.length).toBeGreaterThan(0);
-  });
-
-  it('失败与空包都抛错，且不缓存（下一次还能重来）', async () => {
-    const bodies: unknown[] = [{ schema: 1, categories: [] }, readPack('type-texts.v1.json')];
-    const { fetchFn, calls } = fakeFetch(async () => bodies.shift() ?? readPack('type-texts.v1.json'));
-    const load = createTypeTextLoader(fetchFn);
-    await expect(load()).rejects.toThrow();
-    const categories = await load();
-    expect(categories.length).toBeGreaterThan(0);
-    expect(calls()).toBe(2);
-    expect(TYPE_PACK_URL).toBe('/fun/type-texts.v1.json');
   });
 });

@@ -493,11 +493,6 @@
     margin-block-start: 1.7em;
   }
 
-  .type-text-note {
-    color: var(--color-neutral-muted);
-    text-indent: 0;
-  }
-
   /* 按钮行：右对齐、「随机」与「再看一遍」互斥，同一格换字/换图标 */
   .type-text-actions {
     flex: 0 0 auto;

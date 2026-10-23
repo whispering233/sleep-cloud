@@ -1,33 +1,18 @@
+/// <reference types="vite/client" />
 /**
  * 类型文本（插槽面板的第二个内容，`docs/design/50-slot-panel.md` §附）。
  *
- * 数据包是**静态文件**：`public/fun/type-texts.v{N}.json`，懒加载、静态资源直给（不进 Worker 代码、
- * 不进任何接口）。版本号**只在文件名里**（`TYPE_PACK_VERSION` 是唯一来源，与 `public/_headers`
- * 的 `immutable` 配套，换内容必须改名）；JSON 内的 `schema` 只表**形状**版本。
- *
- * 校验原则：**坏条目丢那一块**（条 → 分类 → 整包），绝不因为一条脏数据把面板弄崩。
+ * 源是仓库根的 `fun/<分类 id>/`：`meta.ts` 只放 `label`，**一条文本一个 `.txt`、文件名就是条目 id**。
+ * 两个 **eager** `import.meta.glob` 在编译期把正文读成字符串、组装成本模块的常量——**不发任何请求**，
+ * 字节跟着 `index` chunk 走，所以**没有版本号、没有加载态、没有错误态**（内容变 ⇒ chunk 哈希变）。
+ * 校验在构建期单测（`src/client/tests/type-texts.test.ts` 直接读 `fun/`），运行时没有「坏条目丢那一条」这种降级。
  */
-import { TYPE_TEXT_MAX_LEN, TYPE_TEXT_MAX_PARAS, TYPE_TEXTS_PER_CATEGORY } from '../shared/constants';
-
-export const TYPE_PACK_VERSION = 1;
-export const TYPE_PACK_URL = `/fun/type-texts.v${TYPE_PACK_VERSION}.json`;
-
-/** 分类 id / 条目 id 的长度上限（也是 `sc.read.seen` 白名单的那一条）。 */
-const ID_MAX_LEN = 32;
 
 export type TypeTextItem = { id: string; text: string };
 export type TypeTextCategory = { id: string; label: string; items: TypeTextItem[] };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isShortString(value: unknown, maxLen: number): value is string {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLen;
-}
-
 /**
- * 切成要显示的行：**任意一个或连续的换行都分一次**——数据包里 `\n` 与 `\n\n` 混用，两者都是「换一行」。
+ * 切成要显示的行：**任意一个或连续的换行都分一次**——正文里 `\n` 与 `\n\n` 混用，两者都是「换一行」。
  * 每行 trim、空行丢弃；每行在面板里是一个 `<p>`，所以**每行都会首行缩进**（`docs/design/50-slot-panel.md` §附）。
  */
 export function paragraphsOf(text: string): string[] {
@@ -37,40 +22,59 @@ export function paragraphsOf(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function parseItems(raw: unknown[]): TypeTextItem[] {
-  const seen = new Set<string>();
-  const items: TypeTextItem[] = [];
-  for (const entry of raw) {
-    if (items.length >= TYPE_TEXTS_PER_CATEGORY) break;
-    if (!isRecord(entry)) continue;
-    const { id, text } = entry;
-    if (!isShortString(id, ID_MAX_LEN) || seen.has(id)) continue;
-    if (typeof text !== 'string') continue;
-    const trimmed = text.trim();
-    if (trimmed.length === 0 || trimmed.length > TYPE_TEXT_MAX_LEN) continue;
-    const paragraphs = paragraphsOf(trimmed);
-    if (paragraphs.length === 0 || paragraphs.length > TYPE_TEXT_MAX_PARAS) continue;
-    seen.add(id);
-    items.push({ id, text: trimmed });
-  }
-  return items;
+interface TypeTextMetaModule {
+  meta: { label: string };
 }
 
-/** 校验数据包。整包形状坏 → `[]`；坏分类丢那一类；坏条目丢那一条。 */
-export function parseTypeTextPack(raw: unknown): TypeTextCategory[] {
-  if (!isRecord(raw) || raw.schema !== 1 || !Array.isArray(raw.categories)) return [];
+const metas = import.meta.glob<TypeTextMetaModule>('../../fun/*/meta.ts', { eager: true });
+const sources = import.meta.glob<string>('../../fun/*/*.txt', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+});
+
+/** `…/fun/<分类 id>/meta.ts` 与 `…/fun/<分类 id>/<条目 id>.txt` 共用：倒数第二段就是分类 id。 */
+function categoryIdOf(path: string): string {
+  const segments = path.split('/');
+  return segments[segments.length - 2] ?? '';
+}
+
+/** 条目 id = 文件名去掉 `.txt`（改名等于换一条：`sc.read.seen` 就认不出它了）。 */
+function itemIdOf(path: string): string {
+  const name = path.split('/').pop() ?? '';
+  return name.replace(/\.txt$/, '');
+}
+
+/**
+ * 组装成分类表：分类 id = 文件夹名、`label` 取 `meta.ts`、条目 id = 文件名。两边都**按 glob 的 key
+ * 排序**，所以顺序只由路径决定（重排文件不会换顺序）。正文 `trim()` 后按 `paragraphsOf` 丢空段，
+ * 一条有效段都没有的条目直接跳过——没有分类 id、没有 `label` 的分类也不出现。
+ */
+function assembleCategories(): TypeTextCategory[] {
+  const itemsByCategory = new Map<string, TypeTextItem[]>();
+  for (const path of Object.keys(sources).sort()) {
+    const text = (sources[path] ?? '').trim();
+    if (paragraphsOf(text).length === 0) continue;
+    const id = categoryIdOf(path);
+    const items = itemsByCategory.get(id) ?? [];
+    items.push({ id: itemIdOf(path), text });
+    itemsByCategory.set(id, items);
+  }
+
   const categories: TypeTextCategory[] = [];
-  for (const entry of raw.categories) {
-    if (!isRecord(entry)) continue;
-    const { id, label, items } = entry;
-    if (!isShortString(id, ID_MAX_LEN) || !isShortString(label, ID_MAX_LEN)) continue;
-    if (!Array.isArray(items)) continue;
-    const parsed = parseItems(items);
-    if (parsed.length === 0) continue;
-    categories.push({ id, label, items: parsed });
+  for (const path of Object.keys(metas).sort()) {
+    const id = categoryIdOf(path);
+    const items = itemsByCategory.get(id) ?? [];
+    if (items.length === 0) continue;
+    const label = metas[path]?.meta.label.trim() ?? '';
+    if (label.length === 0) continue;
+    categories.push({ id, label, items });
   }
   return categories;
 }
+
+/** 一期只有一个分类（首期 = 冷笑话）：面板直接取 `[0]`。 */
+export const TYPE_TEXT_CATEGORIES: TypeTextCategory[] = assembleCategories();
 
 /**
  * 可抽的池：`items` 里还没抽过的；**当前条在池里且池长 ≥ 2 时排除它**
@@ -111,26 +115,3 @@ export function drawNext({ items, seen, current, rand = Math.random }: DrawInput
   const index = Math.min(pool.length - 1, Math.floor(rand() * pool.length));
   return pool[index] ?? null;
 }
-
-/**
- * 懒加载器。**成功才缓存**（模块级 promise 去重），失败清掉缓存——否则一次网络抖动会让整次
- * 会话都停在错误态。`fetchFn` 可注入只是为了单测。
- */
-export function createTypeTextLoader(fetchFn: typeof fetch): () => Promise<TypeTextCategory[]> {
-  let cached: Promise<TypeTextCategory[]> | null = null;
-  return () => {
-    cached ??= fetchFn(TYPE_PACK_URL).then(async (response) => {
-      if (!response.ok) throw new Error(`类型文本没取到：${response.status}`);
-      const categories = parseTypeTextPack(await response.json());
-      // 空包按失败处理：面板给「重试」，而不是显示一个永远空的内容区
-      if (categories.length === 0) throw new Error('类型文本没取到：空包');
-      return categories;
-    });
-    cached.catch(() => {
-      cached = null;
-    });
-    return cached;
-  };
-}
-
-export const loadTypeTextPack = createTypeTextLoader(fetch);
