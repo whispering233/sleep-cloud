@@ -118,7 +118,7 @@
 
 | 项 | 说明 | 何时该做 |
 | :--- | :--- | :--- |
-| **硬件返回键 → `popstate` 未在模拟器上验过** | 返回栈已用 Playwright `page.goBack()`（同一条 history 遍历）在桌面 Chromium 上验过六条（含被顶替强制关页），但「安卓内核对 keyevent 4 派发 `popstate`」这一环没验：驱动模拟器里的 Chrome 要 CDP attach，而 `adb shell input tap` 又不合成 `click`（`test.md` §1），纯 adb 走不到游戏页 | 把 betterwright 配成 CDP provider 之后，一次验两条：返回键逐层 + 触摸分派 |
+| **硬件返回键的端到端（真 climb 到游戏页）** | 两条环节已分开验过：模拟器真 Chrome 145 上「硬件返回键 → 同文档 `popstate`」成立（自驱页：手势内 `pushState` ×2，`keyevent 4` → `level=list`，`pops=1`；无手势那一版被 Chromium 整段跳过）；桌面 Chromium 上我们的 app 六条全过（含被顶替强制关页）。**缺的只有一节**：在设备上真的点进游戏页再按返回键——`adb shell input tap` 不合成 `click`（`test.md` §1），而 `input keyevent 61`（Tab）把焦点给地址栏、页面里没有键盘路径，所以设备侧驱动只能走 CDP，而本 AVD 是 `user` 构建（`ro.build.type=user`），Chrome 不读 `/data/local/tmp/chrome-command-line` | 需要设备级端到端证据时：换一个 debuggable 的 AVD（`google_apis` 系）→ `echo 'chrome --remote-debugging-port=9222' > /data/local/tmp/chrome-command-line` → `connectOverCDP`，一次验两条（返回键逐层 + 触摸分派），同时把 `test.md` §2 的配方补完 |
 | **单厅容量压测** | 官方只给「单对象软上限 1,000 requests/s、单线程」，未给每对象 WebSocket 连接数上限。第 1 阶段的目标（114 床起步 / 并发 100）是拍的，必须实测校准 | 上线后按用量面板校准 |
 | **Phaser 世界层帧率**（真机） | 本地已量：同屏对象数**约 60**（床 + 床号 + 小人）→ 现在**约 80**（每张床多了房间地面与预留位两块固定色贴片）。本机是 **SwiftShader 软件渲染**（28~38fps，不代表真机）。**画布 DPR 上限已提到 3**（`config.md` §3，为了与基准设备 1:1），填充率是上限 2 时的 2.25 倍 → 这条实测比之前更关键 | 真机（基准 iPhone 16）实测后。若低端机不够，最小改法是减少床号文字对象（只给整行编号）或把床号换成位图字体。**雨天再加一层雨**：约 160 个 2×14 的四边形/帧（DPR 3 下填充率才是成本），`DROP_QUANTITY` / `DROP_FREQUENCY_MS` 是唯一的闸门 |
 | **桌面鼠标拖拽平移是否生效** | `ui-verifier` 用合成 `mouse.down/move/up` 拖 300px，相机只动了 0~22px 且方向不一致；改用 `Input.dispatchTouchEvent` 后平移完全正常（几何自洽）。**无法判定是应用缺陷还是合成事件的假象**（本机无真人手测） | 桌面浏览器上真人拖一次。桌面只是次场景，但它是主场景之外唯一的平移手段（另有「点自己回中」与 HUD 跳回我的床）。若是真缺陷：查 `world.ts` 的拖拽判据是否只认 touch |
