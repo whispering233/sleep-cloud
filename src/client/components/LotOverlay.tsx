@@ -18,7 +18,7 @@ interface LotView {
   phase: LotPhase;
 }
 
-/** 签筒：动作行那颗图标的同一套画法（24 绘制区、`currentColor` 描边），这里放大到 64px。 */
+/** 签筒：礼物托盘里那颗图标的同一套画法（24 绘制区、`currentColor` 描边），这里放大到 64px。 */
 function LotTube({ shaking, dim }: { shaking: boolean; dim: boolean }) {
   const mood = shaking ? ' lot-tube-shake' : dim ? ' lot-tube-dim' : '';
   return (
@@ -41,7 +41,7 @@ function LotTube({ shaking, dim }: { shaking: boolean; dim: boolean }) {
 }
 
 /**
- * 求签页：动作行那颗签筒图标拉起的**独立整屏页**（`docs/design/110-lot.md`）。
+ * 求签页：礼物托盘里的「求签」拉起的**独立整屏页**（`docs/design/110-lot.md`）。
  * 复用入场层那套壳（`.entry-overlay` / `.entry-card` / `.entry-title` / `.primary-action`），
  * 只多了签筒、签与结果卡几个类；**层级靠 DOM 顺序**——挂在聊天面板之后、`<ToneLayer />` 之前，
  * 所以三档减光照旧盖得住它（不造第二套明暗语义）。
