@@ -61,9 +61,26 @@ npm run dev                                               # 项目仍跑在 WSL 
 
 `forward` 的端口绑在**宿主 Windows 的 127.0.0.1** 上，WSL 里连不上（`curl 127.0.0.1:9222` refused）。所以驱动脚本跑在 Windows 侧（`/mnt/c/Program Files/nodejs/node.exe <脚本>`，Node ≥ 22 自带 `WebSocket`），或者用 `/mnt/c/Windows/System32/curl.exe` 读 `/json/list`。
 
+**性能基线：单向 500ms（RTT ≈ 1000ms），用 `tools/dev/latency-proxy.mjs` 注入。** 代理把每个方向的字节都推迟 500ms 再转发，**产品代码一行不动**：
+
+```text
+node tools/dev/latency-proxy.mjs           # 自己打印监听口与那行 adb reverse（本 worktree 是 9287）
+"$ADB" reverse --remove tcp:<dev 端口>
+"$ADB" reverse tcp:<dev 端口> tcp:<代理端口>
+"$ADB" shell am force-stop com.android.chrome   # 重新打开页面，之后所有请求都过代理
+```
+
+**为什么不用 CDP 的 `Network.emulateNetworkConditions`**：实测（API 37 / Chrome 145）它只压 HTTP，**WebSocket 升级之后的帧一点不压** —— `latency: 1000` 下 HTTP 1016ms、握手 1010ms、**帧往返 4ms**。行走位置全走 WS，所以那条路对本项目的基线无效。
+
+**口径锚在页内实测，不锚在注入参数上**：代理与 `adb reverse` 就位后，从设备页面量一次 `fetch('/api/health')` 与一次 WS 帧往返，两者都 ≈1000ms 才算基线就位（实测 1013ms / 1007ms）；不进代理时是 11ms / 4ms，两个数量级分得很开，不会看错。`rttMs` 只有两个来源（聊天回投、按需探活，见 `src/client/latency.ts` 文件头），所以走动一趟后 HUD 上的「延迟」也会稳定读到 ≈1000。
+
+**改完前端必须重启 `npm run dev`**：静态资源清单是 dev 服务器**启动时**读的，`npm run build` 之后资产文件名换了，还在跑的那个 dev 服务器会对 `/` 回 **404**（页面全白、连 `<canvas>` 都没有，看起来像前端崩了）。实测踩过一次。
+
+**代理只延迟数据、不延迟建连**：TCP 握手不受影响，页面不会「连不上」，只是慢（首屏约多 1s）。**HTTP 也被拖慢，这是刻意的**：不为了页面快一点去解析 WS 帧的升级请求，而它对测量没有影响。
+
 **点按钮不要用 `adb shell input tap`：它不合成 `click`。** 实测（API 37 / Chrome 145）：`pointerdown` / `pointerup` / `touchstart` / `touchend` 都会到，`click` 永远是 0，按 120ms 也一样；拿两颗临时按钮做过隔离实验（一颗在 `pointerdown` 里 `preventDefault()`、一颗没有），**两颗都收不到 `click`**，所以这与硬纪律 35 的 `preventDefault()` 无关，是注入方式的问题。改为走 CDP 的 `Input.dispatchTouchEvent`（`touchStart` → 停 70ms → `touchEnd`，坐标是 **CSS 像素**）就有 `click`。
 
-**键盘也不是绕路：里面没有「用 `adb` 把页面点开」的办法。** 实测（同一台 API 37 / Chrome 145）：`input keyevent 61`（Tab）把焦点交给地址栏、后续 `DPAD_DOWN` 也留在浏览器 UI，页面里拿不到键盘焦点；`adb shell input keyevent 4` 能按返回键（这个是真事件，见下），但它只能退、不能进。因此设备侧要驱动页面（点按钮、连入游戏页）**只能靠 CDP attach**：而默认 AVD 是 `user` 构建（`ro.build.type=user`），Chrome 不读 `/data/local/tmp/chrome-command-line`，`localabstract:chrome_devtools_remote` 也不在监听（实测 `curl /json/version` 连接被拒）。要 attach 得换一个 debuggable 的镜像（`google_apis` 系）。**返回键本身不用 CDP**：用自驱页（页面自己 `pushState`） + `input keyevent 4` + `screencap` 就能验「硬件返回键 → `popstate`」。
+**键盘也不是绕路：里面没有「用 `adb` 把页面点开」的办法。** 实测（同一台 API 37 / Chrome 145）：`input keyevent 61`（Tab）把焦点交给地址栏、后续 `DPAD_DOWN` 也留在浏览器 UI，页面里拿不到键盘焦点；`adb shell input keyevent 4` 能按返回键（这个是真事件，见下），但它只能退、不能进。因此设备侧要驱动页面（点按钮、连入游戏页）**只能靠 CDP attach**：而默认 AVD 是 `user` 构建（`ro.build.type=user`），Chrome 不读 `/data/local/tmp/chrome-command-line`。**但 attach 本身能成**：`user` 构建的 `localabstract:chrome_devtools_remote` 也会监听，`adb forward tcp:9222 localabstract:chrome_devtools_remote` 之后 `/json/version` 返回 Chrome 145 / CDP 1.3（实测 API 37 + `google_apis_playstore`）。之前记录过「连接被拒」，那是**在 Chrome 还没启动时量的**——抽象 socket 由 Chrome 启动时创建，先 `am start` 再 forward 就没问题。**返回键本身不用 CDP**：用自驱页（页面自己 `pushState`） + `input keyevent 4` + `screencap` 就能验「硬件返回键 → `popstate`」。
 
 **`Input.dispatchTouchEvent` 用 CSS 像素，`input tap` 用设备像素**：页内 `getBoundingClientRect()` 是视口 CSS 像素，tap 吃的是设备像素，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。要发 pointer/touch 事件（测手势）时仍可用 tap，换算如下：
 

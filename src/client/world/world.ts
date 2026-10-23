@@ -18,6 +18,8 @@ import type { Person } from '../../shared/protocol';
 import atlasJson from '../assets/sprites/atlas.json';
 import atlasPngUrl from '../assets/sprites/atlas.png?url';
 import { errorTextFor } from '../error-text';
+import { sampleFrameProbe } from '../move-probe';
+import type { ProbeFrame } from '../move-probe';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
 import type { ClientState } from '../store';
@@ -32,6 +34,7 @@ import {
   clampZoom,
   followStep,
   isMoving,
+  isPictureMoving,
   layoutTopOf,
   personPoint,
   shouldDrawName,
@@ -214,6 +217,8 @@ class WorldScene extends Phaser.Scene {
   private insetElements: UiInsets = { top: null, bottom: null };
   private insets: ViewInsets = { top: 0, bottom: 0 };
   private insetsObserver: ResizeObserver | null = null;
+  /** `?debug=1` 的帧级观测入口（`docs/design/30-movement-sync.md` §6.2）：动态载入、只读，不调试时是 `undefined` */
+  private probe?: (frame: ProbeFrame) => void;
 
   constructor(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets) {
     super('world');
@@ -252,6 +257,11 @@ class WorldScene extends Phaser.Scene {
       this.insetsObserver = null;
     });
     this.bindInput();
+    // 帧级观测按需挂上（与 `main.tsx` 同一个 `?debug=1` 闸门）：不调试时每帧只多一次可选调用的判空。
+    // 注意这**不是**懒加载：`main.tsx` 已经静态 import 了同一个模块，字节数不会因此变化。
+    if (new URLSearchParams(location.search).get('debug') === '1') {
+      this.probe = sampleFrameProbe;
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -284,6 +294,24 @@ class WorldScene extends Phaser.Scene {
     this.follow(state, serverNow, delta, selfPoint);
     // 方位在相机这一帧动完之后算：拖拽/回中当帧就把字形换成对的
     this.syncBedDirection(state);
+    // 帧级观测（`30-movement-sync.md` §6.2）：只读、不参与任何判定；没开探针时这一行只是一次判空
+    this.probe?.({
+      point: selfPoint,
+      prediction: state.prediction,
+      camera: { x: this.cameras.main.scrollX, y: this.cameras.main.scrollY },
+      isMoving:
+        state.me !== undefined &&
+        isPictureMoving({
+          person: state.me,
+          motion: state.motion.get(state.me.id),
+          prediction: state.prediction,
+          point: selfPoint,
+          serverNow,
+        }),
+      now: performance.now(),
+      // Phaser 交给动画与猫的帧时（§6.2 的 loopDelta）：与 frameDelta 一比就知道帧时有没有被平滑
+      loopDelta: this.game.loop.delta,
+    });
   }
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
@@ -580,7 +608,11 @@ class WorldScene extends Phaser.Scene {
       // 按 y 排序解决遮挡：画面上更靠下 = 更靠前
       personView.container.setPosition(x, y).setDepth(DEPTH.person + y);
       const motion = state.motion.get(person.id);
-      paintPerson(personView, { person, mine, moving: isMoving(person, motion, serverNow), nowMs: now });
+      // 摆动闸门跟**画面**走（`isPictureMoving`），不跟服务端时间窗走：否则站住之后还要再摆一阵
+      const moving = mine
+        ? isPictureMoving({ person, motion, prediction: state.prediction, point: selfPoint, serverNow })
+        : isMoving(person, motion, serverNow);
+      paintPerson(personView, { person, mine, moving, nowMs: now });
       // 「我在哪」那颗暖点同样按屏幕尺寸恒定：拉远时它是唯一还能指出「我在哪」的东西
       personView.footMarker.setScale(1 / this.zoom);
 
@@ -661,7 +693,9 @@ class WorldScene extends Phaser.Scene {
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
-    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下。
+    // 镜头用的是**服务端窗口**（`isMoving`），不是摆动那条「画面在动」（`isPictureMoving`）：
+    // 窗口比画面晚关的那一阵正好把限速 500px/s 的追平走完（画面停了镜头可能还没追上）；
+    // 而 `followStep` 在死区内本来就是原样返回，站着不动时多开一会儿窗口不会有任何位移。
     // 换床模式里不跟随：模式就是「拖着看全厅挑一张床」，镜头不该被拽回自己身上（见 `docs/ui/DESIGN.md`）
     const moving =
       me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0 && !state.switching;
@@ -1101,6 +1135,10 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     audio: { noAudio: true },
     // 手势交给相机（单指拖拽平移、双指捏合拉远），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
+    // 帧时直通：Phaser 默认把帧时过一道平滑——`resetDelta()`（唤醒时）顺手把内部冷却计数拉到 120 帧，
+    // 那段时间里凡帧时 > 16.67ms 的帧都被夹小，delta 驱动的猫与动画于是慢下来（30fps 机上 2~4 秒才恢复）。
+    // 代价与判据见 `docs/design/60-interaction-shell.md` §5.2。
+    fps: { smoothStep: false },
     // **必须显式申请 2 个触摸指针**：Phaser 默认 `input.activePointers = 1`（`core/Config.js`），而
     // `InputManager.onTouchStart` 只在 `pointers[1..]` 里找空闲槽位、`pointers[0]` 归鼠标——默认配置下
     // 第二根手指找不到槽位就被直接丢掉，双指捏合永远进不了缩放分支（首指还会被当成单指拖拽把相机平移）。
