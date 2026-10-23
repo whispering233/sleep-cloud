@@ -74,6 +74,8 @@ node tools/dev/latency-proxy.mjs           # 自己打印监听口与那行 adb 
 
 **口径锚在页内实测，不锚在注入参数上**：代理与 `adb reverse` 就位后，从设备页面量一次 `fetch('/api/health')` 与一次 WS 帧往返，两者都 ≈1000ms 才算基线就位（实测 1013ms / 1007ms）；不进代理时是 11ms / 4ms，两个数量级分得很开，不会看错。`rttMs` 只有两个来源（聊天回投、按需探活，见 `src/client/latency.ts` 文件头），所以走动一趟后 HUD 上的「延迟」也会稳定读到 ≈1000。
 
+**改完前端必须重启 `npm run dev`**：静态资源清单是 dev 服务器**启动时**读的，`npm run build` 之后资产文件名换了，还在跑的那个 dev 服务器会对 `/` 回 **404**（页面全白、连 `<canvas>` 都没有，看起来像前端崩了）。实测踩过一次。
+
 **代理只延迟数据、不延迟建连**：TCP 握手不受影响，页面不会「连不上」，只是慢（首屏约多 1s）。**HTTP 也被拖慢，这是刻意的**：不为了页面快一点去解析 WS 帧的升级请求，而它对测量没有影响。
 
 **点按钮不要用 `adb shell input tap`：它不合成 `click`。** 实测（API 37 / Chrome 145）：`pointerdown` / `pointerup` / `touchstart` / `touchend` 都会到，`click` 永远是 0，按 120ms 也一样；拿两颗临时按钮做过隔离实验（一颗在 `pointerdown` 里 `preventDefault()`、一颗没有），**两颗都收不到 `click`**，所以这与硬纪律 35 的 `preventDefault()` 无关，是注入方式的问题。改为走 CDP 的 `Input.dispatchTouchEvent`（`touchStart` → 停 70ms → `touchEnd`，坐标是 **CSS 像素**）就有 `click`。

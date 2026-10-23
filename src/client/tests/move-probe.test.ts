@@ -56,7 +56,7 @@ describe('p50 / p95 / max', () => {
     expect(line).toBe(
       '[move-probe] leadMs p50=250 p95=260 max=260 | posAge p50=4 p95=9 max=9 | tickSpan p50=101 p95=102 max=102' +
         ' | regressPx p50=0 p95=0 max=0 | reversals 0 | frameDelta p50=- p95=- max=- | selfStepPx p50=- p95=- max=-' +
-        ' | camStepPx p50=- p95=- max=- opposed=0/0 | isMovingFlips 0 | pathSwap 0',
+        ' | camStepPx p50=- p95=- max=- opposed=0/0 | isMovingFlips 0 | pathSwap 0 | suspendGap 0',
     );
   });
 
@@ -231,5 +231,38 @@ describe('帧级采样', () => {
     expect(accumulator.window.regressPx).toEqual([0]);
     expect(accumulator.window.selfStepPx).toEqual([]);
     expect(accumulator.trail).toEqual({ point: at(5, 0), path: [at(10, 0)] });
+  });
+
+  it('单帧位移超过 10px 才记 bigStep，并带上外推与摆动两个判别位', () => {
+    const accumulator = createAccumulator();
+    sampleFrame(accumulator, { point: at(0, 0), prediction, camera: at(0, 0), isMoving: true, now: 1_000 });
+    sampleFrame(accumulator, { point: at(4, 0), prediction, camera: at(4, 0), isMoving: true, now: 1_016 });
+    expect(accumulator.window.bigStep).toBeUndefined();
+
+    sampleFrame(accumulator, { point: at(120, 0), prediction, camera: at(120, 0), isMoving: false, now: 1_032 });
+    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false });
+
+    // 更小的一次不覆盖：窗口里留的是最大的那一次
+    sampleFrame(accumulator, { point: at(140, 0), prediction: undefined, camera: at(140, 0), isMoving: false, now: 1_048 });
+    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false });
+  });
+
+  it('挂起后醒来的第一帧不算帧间隔也不算位移（记 suspendGap，轨迹重新起头）', () => {
+    const accumulator = createAccumulator();
+    sampleFrame(accumulator, { point: at(0, 0), prediction, camera: at(0, 0), isMoving: true, now: 1_000 });
+    sampleFrame(accumulator, { point: at(3, 0), prediction, camera: at(3, 0), isMoving: true, now: 1_016 });
+    // 190s 之后醒来：世界被整屏页挂起过
+    sampleFrame(accumulator, { point: at(900, 0), prediction, camera: at(900, 0), isMoving: true, now: 191_016 });
+    expect(accumulator.window.frameDelta).toEqual([16]);
+    expect(accumulator.window.selfStepPx).toEqual([3]);
+    expect(accumulator.window.camStepPx).toEqual([3]);
+    expect(accumulator.window.suspendGap).toBe(1);
+    expect(accumulator.window.isMovingFlips).toBe(0); // 恢复不把摆动闸门算成一次翻转
+    expect(accumulator.trail).toBeUndefined();
+
+    // 醒来后的下一帧重新从零起算，不把跨越整屏的位移当成一帧的步长
+    sampleFrame(accumulator, { point: at(903, 0), prediction, camera: at(903, 0), isMoving: true, now: 191_032 });
+    expect(accumulator.window.selfStepPx).toEqual([3]);
+    expect(accumulator.window.frameDelta).toEqual([16, 16]);
   });
 });

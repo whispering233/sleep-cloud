@@ -26,6 +26,10 @@ export interface ProbeWindow {
   reversals: number;
   isMovingFlips: number;
   pathSwap: number;
+  /** 世界被挂起过几次（那一帧不算帧间隔，也不算位移） */
+  suspendGap: number;
+  /** 窗口内最大的一次单帧位移；只有超过 `BIG_STEP_PX` 时才记（带两个判别位：当时有没有外推、摆动闸门开没开） */
+  bigStep?: { px: number; hadPrediction: boolean; isMoving: boolean };
 }
 
 export const emptyWindow = (): ProbeWindow => ({
@@ -40,6 +44,7 @@ export const emptyWindow = (): ProbeWindow => ({
   reversals: 0,
   isMovingFlips: 0,
   pathSwap: 0,
+  suspendGap: 0,
 });
 
 /**
@@ -165,11 +170,30 @@ function sampleRegress(
   return Math.max(0, -step);
 }
 
+/** 超过它的单帧位移不是「走了一帧」，是某一处跳变（`§6.1` 的硬指标是 < 10px）。 */
+const BIG_STEP_PX = 10;
+
+/** 大于它的帧间隔不是「卡顿」而是世界被挂起过（整屏页）：那一帧的间隔与位移都不是真实的一帧。 */
+const SUSPEND_GAP_MS = 2_000;
+
 /** 一帧的观测（世界层每帧调用）：`regressPx` 起的各项（§6.2）。 */
 export function sampleFrame(accumulator: ProbeAccumulator, frame: ProbeFrame): void {
   if (frame.now !== undefined) {
-    if (accumulator.frameTs !== undefined) accumulator.window.frameDelta.push(frame.now - accumulator.frameTs);
+    const delta = accumulator.frameTs === undefined ? undefined : frame.now - accumulator.frameTs;
     accumulator.frameTs = frame.now;
+    if (delta !== undefined) {
+      // 挂起 / 恢复会隔几秒甚至几分钟：记一次 `suspendGap`，把轨迹、镜头、摆动与方向符号全部重新起头——
+      // 否则醒来后第一帧会算出「190s 的一帧」和一个跨整屏的假位移。
+      if (delta > SUSPEND_GAP_MS) {
+        accumulator.window.suspendGap += 1;
+        accumulator.trail = undefined;
+        accumulator.camera = undefined;
+        accumulator.moving = undefined;
+        accumulator.stepSign = 0;
+        return;
+      }
+      accumulator.window.frameDelta.push(delta);
+    }
   }
 
   const previous = accumulator.trail;
@@ -181,7 +205,19 @@ export function sampleFrame(accumulator: ProbeAccumulator, frame: ProbeFrame): v
   if (frame.point !== undefined) {
     const regress = sampleRegress(accumulator, previous, frame.point, frame.prediction);
     if (regress !== undefined) accumulator.window.regressPx.push(regress);
-    if (step !== undefined) accumulator.window.selfStepPx.push(Math.hypot(step.x, step.y));
+    if (step !== undefined) {
+      const stepPx = Math.hypot(step.x, step.y);
+      accumulator.window.selfStepPx.push(stepPx);
+      // 单帧位移的硬指标是 < 10px（§6.1）：超了就留一个最大样本，带「当时有没有外推 / 摆动开没开」
+      const worst = accumulator.window.bigStep;
+      if (stepPx > BIG_STEP_PX && (worst === undefined || stepPx > worst.px)) {
+        accumulator.window.bigStep = {
+          px: stepPx,
+          hadPrediction: frame.prediction !== undefined,
+          isMoving: frame.isMoving === true,
+        };
+      }
+    }
     accumulator.trail = { point: frame.point, path: frame.prediction?.path };
   } else {
     // 没有画面点就没有轨迹连续性：下一帧不从这一帧量步长
@@ -243,7 +279,10 @@ export function summarizeWindow(window: ProbeWindow): string | undefined {
     ` | tickSpan ${stats(window.tickSpan)} | regressPx ${stats(window.regressPx)} | reversals ${window.reversals}` +
     ` | frameDelta ${stats(window.frameDelta)} | selfStepPx ${stats(window.selfStepPx)}` +
     ` | camStepPx ${stats(window.camStepPx)} opposed=${window.camOpposed}/${window.camStepPx.length}` +
-    ` | isMovingFlips ${window.isMovingFlips} | pathSwap ${window.pathSwap}`
+    ` | isMovingFlips ${window.isMovingFlips} | pathSwap ${window.pathSwap} | suspendGap ${window.suspendGap}` +
+    (window.bigStep === undefined
+      ? ''
+      : ` | bigStep ${round(window.bigStep.px)}px pred=${window.bigStep.hadPrediction ? 1 : 0} moving=${window.bigStep.isMoving ? 1 : 0}`)
   );
 }
 
