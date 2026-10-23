@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 
 import type { ReadProgress } from '../prefs';
 import { drawReadItem, ensureReadItem, replayRead } from '../store';
@@ -23,8 +23,9 @@ export function TypeTextPanel({ progress }: { progress: ReadProgress }) {
   const [current, setCurrent] = useState<TypeTextItem | null>(null);
 
   // 打开面板时确保有一个当前条。`ensureReadItem` 有副作用（没有当前条时抽一条并写 store），
-  // 所以只能在这里跑一次——挪到渲染期就是渲染中写状态。
-  useEffect(() => {
+  // 所以只能在这里跑一次——挪到渲染期就是渲染中写状态。用 `useLayoutEffect` 而不是
+  // `useEffect`（后者在绘制之后）：正文编译期就在包里，没理由先空一帧再填上。
+  useLayoutEffect(() => {
     if (category === undefined) return;
     setCurrent(ensureReadItem(category.id, category.items));
   }, [category]);
