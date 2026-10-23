@@ -5,11 +5,6 @@
 /audio/*
   Cache-Control: public, max-age=31536000, immutable
 
-# 类型文本的数据包（`docs/design/50-slot-panel.md` §附）。同样是懒加载 + 文件名版本号：
-# 换内容必须改名（`texts.v1.json` → `v2`），否则 immutable 会把旧包销死一年。
-/fun/*
-  Cache-Control: public, max-age=31536000, immutable
-
 # Vite 的构建产物（`index` / `phaser` / `world` / 游戏 chunk / CSS）全在这个前缀下，
 # 文件名带内容哈希：URL 不变 ⇒ 内容不变，换一行代码就换一个 URL，所以能锁死一年。
 # 判据是内容寻址（URL 不变 ⇒ 内容不变），不是「改动频率低」——一天改十次、
