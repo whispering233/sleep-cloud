@@ -26,6 +26,7 @@ import {
   openFeedback,
   selectPerson,
   setBedDirection,
+  setDecor,
   drawReadItem,
   ensureReadItem,
   replayRead,
@@ -360,6 +361,39 @@ describe('我的床的方位（动作行的方向字形）', () => {
     setBedDirection('s');
     applySnapshot(snapshot());
     expect(getState().bedDirection).toBeUndefined();
+  });
+});
+
+describe('预留位装饰（本地偏好，`docs/design/80-reserve-decor.md` §4）', () => {
+  it('setDecor 只动这一块：另一块原样保留，并且换掉对象引用（世界层 / 浮层据此重画）', () => {
+    const original = getState().decor;
+    try {
+      setDecor('head', 'none');
+      expect(getState().decor).toEqual({ head: 'none', foot: original.foot });
+      expect(getState().decor).not.toBe(original);
+    } finally {
+      setState({ decor: original });
+    }
+  });
+
+  it('同值不写：不通知订阅者也**不换对象**（连点同一项不该逐次重渲染）', () => {
+    const original = getState().decor;
+    let notices = 0;
+    const unsubscribe = subscribe(() => {
+      notices += 1;
+    });
+    try {
+      setDecor('foot', 'none');
+      expect(notices).toBe(1);
+      const after = getState().decor;
+
+      setDecor('foot', 'none');
+      expect(notices).toBe(1);
+      expect(getState().decor).toBe(after);
+    } finally {
+      unsubscribe();
+      setState({ decor: original });
+    }
   });
 });
 

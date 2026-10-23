@@ -4,7 +4,7 @@ import { findPath } from '../../shared/pathfinding';
 import type { SelfPerson } from '../../shared/protocol';
 
 /**
- * 我床尾那只猫的纯规则（`docs/design/80-reserve-decor.md` §3，常量见 §4）。与 Phaser 无关，可单测。
+ * 我床尾那只猫的纯规则（`docs/design/80-reserve-decor.md` §3，常量见 §5）。与 Phaser 无关，可单测。
  *
  * 它**绑「我」不绑床**：没有床的时候也有猫（首次进厅就是这种状态，§3.5）。每个状态都由「我的显示态」
  * 直接决定，不自己攒状态——所以这里没有状态机，只有两种持续目标、一个首次落位点、一条折线、

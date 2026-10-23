@@ -1,5 +1,6 @@
 import { displayBedNoOf } from '../shared/layout';
 import type { ComposerState } from './composer';
+import type { DecorPick } from './decor';
 import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 import { sameZoomMode } from './zoom';
@@ -33,6 +34,11 @@ export interface HudView {
   rain: boolean;
   /** 雨声（与天气各自独立的本地偏好）：隔壁那颗胶囊吃它，**音频只看它** */
   sound: boolean;
+  /**
+   * 预留位装饰（客户端本地偏好）：齿轮浮层「装饰」二级视图的选中态吃它。
+   * **按引用比**（`sameHudView`）：store 只在真变更时换对象，所以引用相等就是「没变」。
+   */
+  decor: DecorPick;
   /** 输入会话：`typing` 时动作行右端的齿轮换成「收起」胶囊（见 `docs/design/60-interaction-shell.md` §2） */
   composer: ComposerState;
 }
@@ -49,6 +55,7 @@ export function hudViewOf(state: ClientState): HudView {
     zoomMode: state.zoomMode,
     rain: state.rain,
     sound: state.sound,
+    decor: state.decor,
     composer: state.composer,
   };
 }
@@ -64,6 +71,8 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.switching === b.switching &&
     a.rain === b.rain &&
     a.sound === b.sound &&
+    // 装饰是对象：store 只在真变更时换它（`setDecor`），所以**按引用比**就够，不逐块拆字段
+    a.decor === b.decor &&
     a.composer === b.composer &&
     sameZoomMode(a.zoomMode, b.zoomMode)
   );

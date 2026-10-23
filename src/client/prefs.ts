@@ -1,4 +1,6 @@
 import { TYPE_TEXTS_PER_CATEGORY, ZOOM_TIERS } from '../shared/constants';
+import { DEFAULT_DECOR, isDecorChoice } from './decor';
+import type { DecorBlock, DecorPick, DecorValue } from './decor';
 import { LOT_POOL_SIZE } from './lots';
 import type { StoredLot } from './lots';
 import type { ZoomMode } from './zoom';
@@ -16,6 +18,7 @@ export const PREFS = {
   zoomMode: 'sc.zoom.mode',
   weather: 'sc.weather',
   sound: 'sc.sound',
+  decor: 'sc.decor',
   aboutSeen: 'sc.about.seen',
   readSeen: 'sc.read.seen',
   lot: 'sc.lot',
@@ -193,6 +196,37 @@ export function readSound(storage?: PrefStorage): SoundKind {
 /** 写 `sc.sound`：切到「静音」也照写（同天气，`none` 不是「删键」）。 */
 export function writeSound(kind: SoundKind, storage?: PrefStorage): void {
   writePref(PREFS.sound, { v: PREFS_VERSION, kind }, storage);
+}
+
+/**
+ * `sc.decor` 的落盘形状：`v` + 每块一个值。两块的原始值都是不可信输入，**逐块白名单在 `readDecor`
+ * 里跑**——`readPref` 的校验是全有或全无，而这里的坏值粒度是块（`40-client-storage.md` §3）。
+ */
+type StoredDecor = { v: number; head?: unknown; foot?: unknown };
+
+/** 白名单只判「是个对象」：块级的判据留给下面逐块跑，否则一块坏就整键判废。 */
+function isStoredDecor(value: unknown): value is StoredDecor {
+  return typeof value === 'object' && value !== null;
+}
+
+/** 某一块读出来的值：在该块候选里就用它，否则回**这一块**的默认（另一块不受影响）。 */
+function decorValueOf<B extends DecorBlock>(block: B, stored: StoredDecor): DecorValue<B> {
+  const raw = stored[block];
+  return isDecorChoice(block, raw) ? raw : DEFAULT_DECOR[block];
+}
+
+/**
+ * 读 `sc.decor`：缺键 / 坏 JSON / 版本不符 → 全回默认（与其它键同一条口径）。
+ * 对象里的坏值**按块**消化：某块的值不在该块候选里（包被删了 / 搬到了别的块）只把那一块回默认。
+ */
+export function readDecor(storage?: PrefStorage): DecorPick {
+  const stored = readPref<StoredDecor>(PREFS.decor, isStoredDecor, { v: PREFS_VERSION }, storage);
+  return { head: decorValueOf('head', stored), foot: decorValueOf('foot', stored) };
+}
+
+/** 写 `sc.decor`：`none` 与「选回默认」也照写一条（**写入路径只一条**，`none` 不是「删键」）。 */
+export function writeDecor(decor: DecorPick, storage?: PrefStorage): void {
+  writePref(PREFS.decor, { v: PREFS_VERSION, ...decor }, storage);
 }
 
 /** `sc.about.seen` 的值形状：`seen` 是**公告版本**（与 `ANNOUNCE.version` 逐字比较，不是发布版本）。 */

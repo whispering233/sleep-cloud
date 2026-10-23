@@ -4,6 +4,7 @@ import { LAYOUT_VERSION } from '../../shared/layout';
 import { encodeOwnedBeds } from '../../shared/protocol';
 import type { SnapshotMessage } from '../../shared/protocol';
 import { hudViewOf, sameHudView } from '../hud-view';
+import type { DecorPick } from '../decor';
 import { applyPos, applySnapshot, applyState, getState } from '../store';
 import type { ClientState } from '../store';
 
@@ -43,6 +44,7 @@ describe('HUD 派生视图', () => {
       zoomMode: { kind: 'free' },
       rain: false,
       sound: false,
+      decor: { head: 'fire', foot: 'cat' },
       composer: 'idle',
     });
   });
@@ -138,6 +140,19 @@ describe('HUD 派生视图', () => {
     expect(sameHudView(base, hudViewOf(stateWith({ sound: false })))).toBe(true);
     expect(sameHudView(base, hudViewOf(stateWith({ sound: true })))).toBe(false);
     expect(hudViewOf(stateWith({ sound: true })).sound).toBe(true);
+  });
+
+  it('装饰进视图：它决定浮层「装饰」二级里的选中态', () => {
+    const base = hudViewOf(stateWith());
+    expect(base.decor).toEqual({ head: 'fire', foot: 'cat' });
+
+    // **按引用比**：store 只在真变更时换那个对象（`setDecor`），所以同一份引用 = 没变、不重渲染
+    expect(sameHudView(base, hudViewOf(stateWith({ decor: base.decor })))).toBe(true);
+
+    const noFire: DecorPick = { head: 'none', foot: 'cat' };
+    const noCat: DecorPick = { head: 'fire', foot: 'none' };
+    expect(sameHudView(base, hudViewOf(stateWith({ decor: noFire })))).toBe(false);
+    expect(sameHudView(base, hudViewOf(stateWith({ decor: noCat })))).toBe(false);
   });
 
   it('空床变了才算变化：归属集合大小变化会换视图对象', () => {
