@@ -39,7 +39,7 @@
 
 | 产物 | 说明 |
 | :--- | :--- |
-| 美术素材 | `npm run art` 从 `tools/art/masters/` 的母图重新生成 **构建输入**：图集 `src/client/assets/sprites/atlas.png` + `atlas.json`、逐帧坐标的 `src/client/styles/frames.css`；许可声明仍写 `public/sprites/LICENSE-*.txt`（供 `README.md` / `AGENTS.md` / `20-layout.md` 引用，`public/` 里不再有贴图）。**产物入库，不挂进 `npm run build`**（构建保持快且确定）；改素材或改映射规则后要重跑。三者的进构建方式不同、都因此落进 `/assets/*` 吃 §3 末尾那条 `immutable`：`atlas.png` 走 `?url` 拿内容哈希 URL；`atlas.json` 被**内联进 `world` chunk**（Phaser 的 `load.atlas()` 第三参接受对象，**不发 JSON 请求**）；`frames.css` 由 `index.html` 的**相对路径** `<link>` 引入。母图有两种：`WheatCloudSleep` 的 5 张 PNG（床与小人），以及**猫与篝火**——它们是自绘 SVG，上游只提供一张 **1160×1072 的合成图 + 帧坐标 JSON**，已一次性栅格化为 `cat-sheet.png`（透明、已去掉纸底/注记/虚线格框）与 `cat-fire-out.png`（火苗屏掉后只留柴/灰/石圈），连同上游 JSON 一起存于 `tools/art/masters/`；**栅格化是离线发生的一次性步骤，`npm run art` 只读 PNG**（不引入 SVG 依赖） |
+| 美术素材 | `npm run art` 从 `tools/art/masters/` 的母图重新生成 **构建输入**：图集 `src/client/assets/sprites/atlas.png` + `atlas.json`、逐帧坐标的 `src/client/styles/frames.css`；许可声明仍写 `public/sprites/LICENSE-*.txt`（供 `README.md` / `AGENTS.md` / `20-layout.md` 引用，`public/` 里不再有贴图）。**产物入库，不挂进 `npm run build`**（构建保持快且确定）；改素材或改映射规则后要重跑。三者的进构建方式不同、都因此落进 `/assets/*` 吃 §3 末尾那条 `immutable`：`atlas.png` 走 `?url` 拿内容哈希 URL；`atlas.json` 被**内联进 `world` chunk**（Phaser 的 `load.atlas()` 第三参接受对象，**不发 JSON 请求**）；`frames.css` 由 `index.html` 的**相对路径** `<link>` 引入（Vite 把它并进入口 CSS、随它一起带内容哈希）。母图有两种：`WheatCloudSleep` 的 5 张 PNG（床与小人），以及**猫与篝火**——它们是自绘 SVG，上游只提供一张 **1160×1072 的合成图 + 帧坐标 JSON**，已一次性栅格化为 `cat-sheet.png`（透明、已去掉纸底/注记/虚线格框）与 `cat-fire-out.png`（火苗屏掉后只留柴/灰/石圈），连同上游 JSON 一起存于 `tools/art/masters/`；**栅格化是离线发生的一次性步骤，`npm run art` 只读 PNG**（不引入 SVG 依赖） |
 | 雨声素材 | `public/audio/` 里的两个 WAV（30 s 主循环 + 8 s 早播循环）是**加工后的产物，直接入库**（没有脚本管线）：源素材与完整的 `ffmpeg` 加工链写在 `public/audio/LICENSE-rain-and-thunders.txt`，换素材要重跑那条链并**同时改文件名里的版本号** |
 | 前端产物 | `npm run build` 产出到 `./dist`（在 `wrangler.jsonc` 的 `assets.directory` 中声明），交给平台托管。**分包固定为三块**（`vite.config.ts` 的 `rolldownOptions.output.codeSplitting`）：`index`（React + UI 层）、`world`（世界层，创建画布时动态导入）、`phaser`（引擎单独一块）。**引擎分块是为了缓存**：引擎 chunk 的 hash 只在升级 Phaser 时变化，业务代码改动不会让老用户重下引擎（否则两者同块，改任何一行界面代码都要重下 363 KB gzip）。构建末尾那条 `(!) Some chunks are larger than 500 kB` 是**引擎自己超线**（1374 kB），不是业务代码膨胀；**刻意不调 `chunkSizeWarningLimit`**，好让这条提示继续对业务代码生效。实测产物：`index` 249 kB / gzip 79 kB、`world` 16 kB / gzip 6 kB、`phaser` 1374 kB / gzip 357 kB |
 | 设计令牌 | `docs/ui/DESIGN.md` 是唯一来源；`npm run tokens` 导出为 Tailwind v4 的 `@theme`（生成物不提交）。**样式里不写硬编码色值**，组件样式只引用令牌变量。**干净克隆后先跑一次 `npm run tokens`**：`typecheck` 与 `test` 都依赖生成物 `src/client/styles/tokens.json`，只有 `npm run build` 与 `npm run dev:web` 会自己先跑它 |
@@ -55,7 +55,7 @@
 - `/assets/*`：由 Vite 的**内容哈希**保证。注意哈希派生自**内容**，与构建号 / 构建时间 / 构建次数无关——同一份字节在任何一次构建里都是同一个文件名。所以「重新部署」不会让用户重下没变过的产物；只有内容真的变了才换名字。
 - `/audio/*`、`/fun/*`：靠**人工把文件名里的版本号 +1**（`rain-loop.v1.wav` → `v2`）。换素材必须改名，否则浏览器一年内不会再来问，症状是「改了内容用户看不到、且没有报错」。为什么没搬进构建去见 `backlog.md`（搬过去的缓存收益正好为零）。
 
-**故意不加的三类**：`/`（`index.html`）——它是**唯一的版本指针**，必须每次校验，否则新版本永远发现不了；`/admin*`、`/privacy.html`——运维面改动要立刻生效；固定名的许可文本——没有版本标识，加了就是把「永远不改它」赌在纪律上。`/sprites/*` 已随美术管线搬进 `/assets/*`，所以那条前缀不再需要单独规则。
+**故意不加的三类**：`/`（`index.html`）——它是**唯一的版本指针**，必须每次校验，否则新版本永远发现不了；`/admin*`、`/privacy.html`——运维面改动要立刻生效；固定名的许可文本——没有版本标识，加了就是把「永远不改它」赌在纪律上。美术素材全进 `/assets/*` 之后，`public/sprites/` 只剩那两份许可文本，所以那个前缀也不再需要单独规则。
 
 **收益口径**：`immutable` 省的是**往返次数与失败点**，不是字节。未变的内容本来就只回 `304`（不重下），被淘汰或内容真变了则两种头都一样要重下。它也不防缓存淘汰。
 

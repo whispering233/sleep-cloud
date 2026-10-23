@@ -172,7 +172,7 @@
 # 干净克隆后先跑一次：typecheck 与 test 都依赖生成物 src/client/styles/tokens.*
 npm run tokens
 # 每个 worktree 先建 .dev.vars（照 .dev.vars.example，占位密钥、不入库）：缺了它 /api/me 报 9001、入场层不渲染
-# 美术素材管线（5 张母图 → 8 张贴图 → 构建输入：atlas.* + frames.css；产物入库，不挂进 build）
+# 美术素材管线（5 张母图 → 8 张贴图 → 构建输入：atlas.* 进 src/client/assets/sprites/、frames.css 进 src/client/styles/；产物入库，不挂进 build）
 npm run art
 # 内容过滤词表（上游固定 commit + tools/words/curated.txt → src/shared/blocked-words.json）
 npm run words

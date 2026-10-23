@@ -411,7 +411,7 @@ components:
 
 **气泡不走素材**（历史教训）：上游那两张气泡图是小尺寸的界面素材（36×30 与 23×27，竖直描边只有 1–2px 且带抗锯齿）。为了跟文字宽度对齐而**横向拉伸**它，会把那 1–2px 的竖直描边拉成 5–10px 的半透明带 —— 实测左右两边发虚（上下边只做纵向缩放，所以看起来正常）。所以气泡改成**程序化绘制**：一个圆角矩形（`setRounded`）+ 一个三角尾巴，1px 描边、位置取整，任何尺寸都不糊；这与「几何是程序化生成的」是同一条思路（床与人用素材，是因为它们有手绘造型）。**这个绘制已抽成可复用件**：「我的猫」的问候复用同一外观，但它走本地装饰通道（不进 `state.bubbles`，见 `../design/80-reserve-decor.md` §3.4）——外观同一份，通道不同一条。
 
-**管线顺带产出一份 `src/client/styles/frames.css`**（每帧一条 `background-position`）：入场层的形象预览要拿图集里的 `boy_stand` / `girl_stand` 当图片用，而图集坐标只能有**一个**来源（管线），不能在 CSS 里再拄一份。它没文件版本号，靠的是**构建期改写到内容哈希**（`index.html` 里相对路径的 `<link>`），因此吃的也是 `/assets/*` 那条 `immutable`。
+**管线顺带产出一份 `src/client/styles/frames.css`**（每帧一条 `background-position`）：入场层的形象预览要拿图集里的 `boy_stand` / `girl_stand` 当图片用，而图集坐标只能有**一个**来源（管线），不能在 CSS 里再拄一份。它没文件版本号，靠的是**构建期并进入口 CSS**（`index.html` 里相对路径的 `<link>`，产物是 `/assets/index-<hash>.css`），因此吃的也是 `/assets/*` 那条 `immutable`。
 
 ## Components
 
