@@ -405,6 +405,8 @@ export interface PersonView {
   namePaint: string;
   /** 上一次名字行的原文（名字 + 后缀）：不变就跳过截断——截断要反复量文字，量一次很贵 */
   nameLine: string;
+  /** 上一次名字行的样式签名（睡痕 / 气泡底 / 显不显示）：不变就跳过那三条 `TextStyle` setter */
+  nameStyle: string;
   /** 气泡槽位的底线（站着 / 躺在床上的两套高度）：由 `paintPerson` 与名字一起换 */
   chatBaseY: number;
 }
@@ -448,6 +450,7 @@ export function createPersonView(scene: Phaser.Scene): PersonView {
     paint: '',
     namePaint: '',
     nameLine: '',
+    nameStyle: '',
     chatBaseY: CHAT_Y,
   };
 }
@@ -494,11 +497,15 @@ export function setPersonName(
     view.nameLine = line;
     view.name.setText(line === '' ? '' : fitNameLine(view.name, name, actTextOf(act)));
   }
-  view.name
-    .setColor(dim ? TRACE_CSS : INK_CSS)
-    .setBackgroundColor(bubble ? SURFACE_CSS : NO_BACKGROUND)
-    .setPadding(bubble ? BUBBLE_PAD : 0)
-    .setVisible(name !== '');
+  const style = `${dim}|${bubble}|${name !== ''}`;
+  if (style !== view.nameStyle) {
+    view.nameStyle = style;
+    view.name
+      .setColor(dim ? TRACE_CSS : INK_CSS)
+      .setBackgroundColor(bubble ? SURFACE_CSS : NO_BACKGROUND)
+      .setPadding(bubble ? BUBBLE_PAD : 0)
+      .setVisible(name !== '');
+  }
 }
 
 /**

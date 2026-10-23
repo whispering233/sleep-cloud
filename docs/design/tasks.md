@@ -8,14 +8,6 @@
 
 ---
 
-## 卡 2 · `setPersonName` 签名守卫
-
-**范围**：`src/client/world/views.ts` 的 `setPersonName`，写法对齐同文件 `placeBed` 与 `setBubble`。
-
-**做**：把 `setColor` / `setBackgroundColor` / `setPadding` / `setVisible` 的入参收成一个签名字符串，与上一帧相同就整体跳过。今天它们**每人每帧无条件**执行三条 `TextStyle` setter，而三者都走 `updateText()`（整段 canvas 重画 + 纹理重传）。
-
-**验收**：`npm run typecheck` 绿；代码审阅对照 `placeBed` 写法一致。帧时改善由卡 5 量，**不作为本卡通过条件**。
-
 ## 卡 3 · 帧时直通（`fps: { smoothStep: false }`）
 
 **范围**：`src/client/world/world.ts` 的 `new Phaser.Game({...})` 加 `fps: { smoothStep: false }`。文档已在 `60-interaction-shell.md` §5.2 写定（理由与代价），本卡只改代码。
