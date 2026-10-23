@@ -34,6 +34,7 @@ import {
   clampZoom,
   followStep,
   isMoving,
+  isPictureMoving,
   layoutTopOf,
   personPoint,
   shouldDrawName,
@@ -298,7 +299,15 @@ class WorldScene extends Phaser.Scene {
       point: selfPoint,
       prediction: state.prediction,
       camera: { x: this.cameras.main.scrollX, y: this.cameras.main.scrollY },
-      isMoving: state.me !== undefined && isMoving(state.me, state.motion.get(state.me.id), serverNow),
+      isMoving:
+        state.me !== undefined &&
+        isPictureMoving({
+          person: state.me,
+          motion: state.motion.get(state.me.id),
+          prediction: state.prediction,
+          point: selfPoint,
+          serverNow,
+        }),
       now: performance.now(),
     });
   }
@@ -597,7 +606,11 @@ class WorldScene extends Phaser.Scene {
       // 按 y 排序解决遮挡：画面上更靠下 = 更靠前
       personView.container.setPosition(x, y).setDepth(DEPTH.person + y);
       const motion = state.motion.get(person.id);
-      paintPerson(personView, { person, mine, moving: isMoving(person, motion, serverNow), nowMs: now });
+      // 摆动闸门跟**画面**走（`isPictureMoving`），不跟服务端时间窗走：否则站住之后还要再摆一阵
+      const moving = mine
+        ? isPictureMoving({ person, motion, prediction: state.prediction, point: selfPoint, serverNow })
+        : isMoving(person, motion, serverNow);
+      paintPerson(personView, { person, mine, moving, nowMs: now });
       // 「我在哪」那颗暖点同样按屏幕尺寸恒定：拉远时它是唯一还能指出「我在哪」的东西
       personView.footMarker.setScale(1 / this.zoom);
 
@@ -678,7 +691,9 @@ class WorldScene extends Phaser.Scene {
   private follow(state: ClientState, serverNow: number, dtMs: number, point: Point | undefined): void {
     const me = state.me;
     const motion = me ? state.motion.get(me.id) : undefined;
-    // 「还在走」的判据与渲染摆动用同一个（`isMoving`），否则跟随会在窗口的最后一帧上顿一下。
+    // 镜头用的是**服务端窗口**（`isMoving`），不是摆动那条「画面在动」（`isPictureMoving`）：
+    // 窗口比画面晚关的那一阵正好把限速 500px/s 的追平走完（画面停了镜头可能还没追上）；
+    // 而 `followStep` 在死区内本来就是原样返回，站着不动时多开一会儿窗口不会有任何位移。
     // 换床模式里不跟随：模式就是「拖着看全厅挑一张床」，镜头不该被拽回自己身上（见 `docs/ui/DESIGN.md`）
     const moving =
       me !== undefined && isMoving(me, motion, serverNow) && this.pointers.size === 0 && !state.switching;

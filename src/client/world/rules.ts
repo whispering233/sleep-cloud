@@ -1,7 +1,9 @@
-import { ZOOM_MIN } from '../../shared/constants';
+import { PREDICTION_STALE_MS, ZOOM_MIN } from '../../shared/constants';
 import type { Appearance, Person, PersonState, SelfPerson } from '../../shared/protocol';
 import { interpolationDelay, isInterpolating, positionAt } from '../motion';
 import type { Motion } from '../motion';
+import { arcLengthAhead } from '../prediction';
+import type { Prediction } from '../prediction';
 import { petHitAt } from './pet';
 
 /**
@@ -141,6 +143,32 @@ export function isMoving(person: Person, motion: Motion | undefined, serverNow: 
   return (
     person.state === 'roaming' && motion !== undefined && isInterpolating(motion, serverNow - interpolationDelay(motion))
   );
+}
+
+/**
+ * 「**画面**还在动」：渲染的摆动用这一条，而不用 `isMoving`（那是服务端时间窗）。
+ * 相机跟随**仍用 `isMoving`**：窗口晚关的那一阵正好把限速中的追平走完（见 `world.ts` 的 `follow`）。
+ *
+ * 画面比真值领先一个单向时延，所以 `isMoving` 的窗口比画面晚关 `oneWay + MOTION_SLACK_MS`：
+ * 用它，小人站住之后还要再摆 0.35 s（实机 RTT 200）到 1.15 s（RTT 1000），读起来就是「到点之后还在抖」。
+ * 自己的判据因此改成「折线上还有路可走」且「外推没过保鲜期」；别人没有折线，仍走 `isMoving`
+ * （那条判据本来就按各自的插值滞后算过，与画面同源）。
+ */
+export function isPictureMoving(input: {
+  person: Person;
+  motion: Motion | undefined;
+  /** 只对自己有值：自己的外推折线 */
+  prediction: Prediction | undefined;
+  /** 这一帧画出来的那一点（与渲染、猫、跟随共用同一个点）；还没有点时退回 `isMoving` */
+  point: { x: number; y: number } | undefined;
+  serverNow: number;
+}): boolean {
+  const { person, motion, prediction, point, serverNow } = input;
+  if (prediction === undefined || point === undefined) return isMoving(person, motion, serverNow);
+  // 冻在最后一个外推点上（2 s 没有任何回执）：画面就是没在动
+  if (serverNow >= prediction.ts + PREDICTION_STALE_MS) return false;
+  const end = prediction.path[prediction.path.length - 1];
+  return end !== undefined && arcLengthAhead(point, prediction.path, end) > 0;
 }
 
 /**

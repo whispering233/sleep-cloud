@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { AISLE, BED_H, BED_W, CELL_H, CELL_W, RESERVE_W, ZOOM_MIN } from '../../../shared/constants';
+import { AISLE, BED_H, BED_W, CELL_H, CELL_W, PREDICTION_STALE_MS, RESERVE_W, ZOOM_MIN } from '../../../shared/constants';
 import { HALL_LEVELS, levelIndexOfBedCount, wallRegionOf } from '../../../shared/layout';
 import type { Person, SelfPerson } from '../../../shared/protocol';
 import { interpolationDelay, nextMotion, positionAt } from '../../motion';
+import type { Prediction } from '../../prediction';
 import {
   MARKER_RADIUS,
   PERSON_HIT_PX,
@@ -18,6 +19,7 @@ import {
   cameraStep,
   followStep,
   isMoving,
+  isPictureMoving,
   keyboardOf,
   personAlpha,
   personFrame,
@@ -122,6 +124,40 @@ describe('「还在走」的判据（渲染的摆动与相机跟随共用）', (
     expect(isMoving(sleeper, motion, 1000)).toBe(false); // 在床上的人不走
     expect(isMoving(walker, undefined, 1000)).toBe(false); // 没有插值窗口 = 停下即停
     expect(isMoving(walker, motion, 1300)).toBe(false); // 窗口走完（+宽限）就不是「还在走」
+  });
+});
+
+describe('「画面还在动」的判据（摆动与跟随跟它走，不跟服务端时间窗走）', () => {
+  const motion = nextMotion(undefined, 100, 0, 1000);
+  const prediction: Prediction = { x: 0, y: 0, anchorTs: 1000, ts: 1000, path: [{ x: 220, y: 0 }, { x: 440, y: 0 }] };
+
+  it('折线上还有路可走 = 还在动', () => {
+    expect(isPictureMoving({ person: walker, motion, prediction, point: { x: 100, y: 0 }, serverNow: 1100 })).toBe(
+      true,
+    );
+  });
+
+  it('走到折线尽头就停 —— 哪怕服务端窗口还开着', () => {
+    expect(isMoving(walker, motion, 1100)).toBe(true);
+    expect(
+      isPictureMoving({ person: walker, motion, prediction, point: { x: 440, y: 0 }, serverNow: 1100 }),
+    ).toBe(false);
+  });
+
+  it('没有外推（别人、或躺下之后）就退回 isMoving', () => {
+    expect(
+      isPictureMoving({ person: walker, motion, prediction: undefined, point: { x: 100, y: 0 }, serverNow: 1100 }),
+    ).toBe(true);
+    expect(
+      isPictureMoving({ person: walker, motion: undefined, prediction: undefined, point: { x: 100, y: 0 }, serverNow: 1100 }),
+    ).toBe(false);
+  });
+
+  it('外推冻住了（保鲜期过了）也算没在动', () => {
+    const staleAt = prediction.ts + PREDICTION_STALE_MS;
+    expect(
+      isPictureMoving({ person: walker, motion, prediction, point: { x: 100, y: 0 }, serverNow: staleAt }),
+    ).toBe(false);
   });
 });
 

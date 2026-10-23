@@ -26,6 +26,18 @@
 
 ---
 
+## 卡 6 · 摆动与相机跟随的闸门改成「画面还在动」
+
+**现象**：走到目的地站住之后，小人还要再摆一阵才停（RTT 1000 时约 1.15 s）。
+
+**机制**：摆动闸门（`views.ts:480`）与相机跟随闸门（`world.ts` 的 `follow`）都用 `isMoving(me, motion, serverNow)` —— 那是**服务端时间窗**，而画面比真值领先一个单向时延，所以窗口比画面晚关 `oneWay + MOTION_SLACK_MS`。
+
+**改法**：`rules.ts` 新增纯函数 `isPictureMoving({ person, motion, prediction, point, serverNow })`：有外推时 = 「折线上还有路可走」且「外推没过保鲜期」；没有外推时退回 `isMoving`。摆动（`world.ts:600`）与探针改用这一条；**相机跟随仍用 `isMoving`** —— 窗口晚关的那一阵正好把限速 500px/s 的追平走完，而 `followStep` 在死区内本来就原样返回。**幅度与频率一个字不动**（`docs/ui/DESIGN.md` Shapes 明说不要改）。
+
+**验收**：`rules.test.ts` 覆盖四种情形（有路可走 / 走到尽头 / 无外推回退 / 外推过期）；RTT 1000 下走一趟，`?debug=1` 那一行 `isMovingFlips` 与相机那两列不变。
+
+---
+
 ## 暂不做
 
 - **游戏代码搬 `public/`**：游戏 chunk 已在 `/assets/` 下、缓存策略相同；途中的另一个动机（加游戏不用碰 TS）已由「文件夹即注册」解决。今天没有需求方。
