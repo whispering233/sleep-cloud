@@ -12,12 +12,12 @@
 
 **代码已全部落地**（探针 / 名字守卫 / 帧时直通），本卡只验不改：卡 3 的验收由下面第 4 项承担。
 
-**前置**：建 `.dev.vars` 与 `.android-env`（都不入库）；`npm run build`。
+**前置**：`.dev.vars` 与 `.android-env` 已就位（本 worktree 已建，都不入库）；`npm run build` 与 `npm run dev` 已在跑。
 
 **样本上限**（超了没结论就写「未能验证」）：`?debug=1` 下 **3 趟**跳厅走动（每趟 ≤30s）、**2 段** `screenrecord`（各 ≤30s）、**1 次**游戏页进出。
 
 **做**：
-1. 按 `test.md` §2 起模拟器、注入单向 500ms、用 HUD「延迟」确认 ≈1000ms（先验 WS 帧是否跟着变）。
+1. 按 `test.md` §2 用 `tools/dev/latency-proxy.mjs` 注入单向 500ms（已核实：设备内 HTTP 1013ms / WS 帧往返 1007ms；不迸代理时 11ms / 4ms）。
 2. 每趟走动录下 `?debug=1` 的那一行，按 `30-movement-sync.md` §6.2 的五条判据判红/绿。
 3. **先做 `WALK_SWAY = 0` 的对照**：临时把 `src/client/world/views.ts:88` 置 0、走一趟、录一段，**立刻还原**，看「抽搐」是否消失（4.5Hz ±3% 缩放摆动）。收尾 `git status` 必须干净。
 4. 游戏页进出：录屏判猫的速度是否仍被压慢。
