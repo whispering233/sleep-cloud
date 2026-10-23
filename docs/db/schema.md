@@ -24,7 +24,7 @@
 | `owner_name` | 否 | TEXT | 1~16 字符 | **最近一次上床时使用的昵称快照**，不是「同步于会话的昵称」。唯一消费者：生成快照时给**睡痕条目**提供名字 |
 | `owner_appearance` | 否 | TEXT | 枚举值 | 小人外观（第一版为固定几种） |
 | `claimed_at` | 否 | INTEGER | epoch 毫秒 | 认领时刻。**两个用途**：①换床冷却的判据（`now − claimed_at < 10_000` 且目标是另一张床 → `3008`；**读取时推导**，不挂定时器，见 `../design/config.md` §2）；②「这张床归我多久了」这类展示的口子 |
-| `last_seen_at` | 否 | INTEGER | epoch 毫秒 | **最后一次出现**的时刻。写入方有三处：认领 / 在自己床上再躺（`putInBed`）、连接建立（`hello`）、断开（`webSocketClose`）；睡痕恢复那一路**不再**写它（`restoreBedOccupancy` 只动 `state` / 名字快照 / `sleep_started_at`）。两个用途：归属过期判定，以及**宽限 / 睡痕推导** |
+| `last_seen_at` | 否 | INTEGER | epoch 毫秒 | **最后一次出现**的时刻。写入方有三处：认领 / 在自己床上再躺、连接建立（入场）、断开；睡痕恢复那一路**不再**写它（只动 `state` / 名字快照 / `sleep_started_at`）。两个用途：归属过期判定，以及**宽限 / 睡痕推导** |
 | `sleep_started_at` | 否 | INTEGER | epoch 毫秒 | 本次睡眠（躺下）的起始时刻。为空表示当前未在床上 |
 | `updated_at` | 是 | INTEGER | epoch 毫秒 | 最后一次状态变更时刻。**睡痕行上写的是宽限到期的时刻**（`last_seen_at + 宽限期`）。它**不是任何判据**（睡痕没有 TTL），只是「这件事本该何时发生」的记录 |
 

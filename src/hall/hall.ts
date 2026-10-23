@@ -1163,6 +1163,8 @@ export class Hall extends DurableObject<Env> {
   /**
    * 每次连接建立时更新 `last_seen_at`（归属释放的依据，也是宽限推导的「最后在线时刻」）。
    * **不随心跳更新**——那是写放大；断开时的更新在宽限处理里做（避免每抖动一次写一行）。
+   * 认领 / 在自己床上再躺由 `putInBed` 写这一列；入场这一次**必须早于任何「归属是否过期」的判定**
+   * （`10-hall-runtime.md` §4.6），否则过期但还没被每日唤醒释放的行会被读成「不是我的」。
    * 时刻由调用方给：关连接时它必须与写进事件堆的那个时刻**完全一致**，否则闹钟会早响几毫秒。
    */
   private touchLastSeen(userId: string, now = Date.now()): void {
