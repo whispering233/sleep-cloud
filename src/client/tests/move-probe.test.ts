@@ -55,7 +55,7 @@ describe('p50 / p95 / max', () => {
     });
     expect(line).toBe(
       '[move-probe] leadMs p50=250 p95=260 max=260 | posAge p50=4 p95=9 max=9 | tickSpan p50=101 p95=102 max=102' +
-        ' | regressPx p50=0 p95=0 max=0 | reversals 0 | frameDelta p50=- p95=- max=- | selfStepPx p50=- p95=- max=-' +
+        ' | regressPx p50=0 p95=0 max=0 | reversals 0 | frameDelta p50=- p95=- max=- | loopDelta p50=- p95=- max=- | selfStepPx p50=- p95=- max=-' +
         ' | camStepPx p50=- p95=- max=- opposed=0/0 | isMovingFlips 0 | pathSwap 0 | suspendGap 0',
     );
   });
@@ -245,6 +245,15 @@ describe('帧级采样', () => {
     // 更小的一次不覆盖：窗口里留的是最大的那一次
     sampleFrame(accumulator, { point: at(140, 0), prediction: undefined, camera: at(140, 0), isMoving: false, now: 1_048 });
     expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false });
+  });
+
+  it('loopDelta 与 frameDelta 同帧采：挂起那一帧两个都不采', () => {
+    const accumulator = createAccumulator();
+    sampleFrame(accumulator, { point: at(0, 0), prediction, now: 1_000, loopDelta: 10 });
+    sampleFrame(accumulator, { point: at(3, 0), prediction, now: 1_016, loopDelta: 16 });
+    sampleFrame(accumulator, { point: at(900, 0), prediction, now: 191_016, loopDelta: 190 });
+    expect(accumulator.window.frameDelta).toEqual([16]);
+    expect(accumulator.window.loopDelta).toEqual([16]);
   });
 
   it('挂起后醒来的第一帧不算帧间隔也不算位移（记 suspendGap，轨迹重新起头）', () => {

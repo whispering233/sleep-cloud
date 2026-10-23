@@ -309,6 +309,8 @@ class WorldScene extends Phaser.Scene {
           serverNow,
         }),
       now: performance.now(),
+      // Phaser 交给动画与猫的帧时（§6.2 的 loopDelta）：与 frameDelta 一比就知道帧时有没有被平滑
+      loopDelta: this.game.loop.delta,
     });
   }
 

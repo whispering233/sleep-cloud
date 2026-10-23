@@ -282,10 +282,11 @@ anchorTs' = ts − ahead / v
 | `tickSpan` | 相邻两条 `pos` 的 `ts` 差 | p95 ≤ 150ms（`backlog.md`） |
 | `regressPx` | **倒退像素**：本帧把「上一帧画面点」与「本帧画面点」各投影到**同一条当前折线**上取弧长差，负的那部分累加 | **必须恒为 0**（§6.1 硬指标） |
 | `reversals` | `regressPx` 的变号次数（单次幅度 > 0.5px 才算，滤掉浮点噪声） | **必须为 0** |
-| `frameDelta` | 相邻两次 `update()` 的墙钟间隔（`performance.now()`，**与 Phaser 的 `loop.delta` 无关**）的 p50 / p95 / max | **p95 ≤ 25ms 且 p95/p50 ≤ 2** |
+| `frameDelta` | 相邻两次 `update()` 的**墙钟**间隔（`performance.now()`）的 p50 / p95 / max | **p95 ≤ 25ms 且 p95/p50 ≤ 2** |
+| `loopDelta` | 同一帧里 Phaser 的 `loop.delta` —— 小人动画与猫**真的**按它推进 | 与 `frameDelta` 应当 ≈ 相等（帧时直通，`60-interaction-shell.md` §5.2）。整屏页揭幕后若是 `loopDelta` 只有 `frameDelta` 的四成，就是帧时又被平滑了（猫会慢一半，持续 ~120 帧） |
 | `selfStepPx` | 本帧画面点的位移**长度**（`hypot`，px） | **max < 10px**（§6.1 的单帧位移硬指标，今天没有别的仪器） |
 | `camStepPx` | 本帧相机 scroll 增量；`opposed=k/n` = 与 `selfStepPx` **方向相反**（点积 < 0）的帧数 / 有样本的帧数 | **opposed / n ≤ 5%** |
-| `isMovingFlips` | 本帧摆动闸门 `isMoving(me)` 的翻转次数 | 一趟走动 **≤ 2** |
+| `isMovingFlips` | 本帧摆动闸门的翻转次数。闸门是 `isPictureMoving`（折线上还有路可走且外推没过保鲜期），**不是**服务端时间窗 `isMoving` —— 后者比画面晚关 `oneWay + MOTION_SLACK_MS`，会让小人站住后还在摆 | 一趟走动 **≤ 2** |
 | `pathSwap` | 采样窗内折线被换掉的次数（换目标 / 重锚剪枝） | 只用于解释那几帧的投影，不设门槛 |
 | `bigStep` | 采样窗内**超过 10px 的最大单帧位移**，带两个判别位：当时有没有外推（`pred`）、摆动闸门开没开（`moving`） | 只在越界时出现。`§6.1` 的单帧位移硬指标是 `< 10px`，越界就是坏实现；两个判别位用来分开「换目标时的重锚」「外推已丢、退回真值」与「纯粹帧时抖动」 |
 | `suspendGap` | 采样窗内世界被**挂起**过的次数（整屏页揭幕那一帧） | 不算帧间隔也不算位移（否则会读出「190s 的一帧」与跨整屏的假位移）；只用来解释样本为何变少 |

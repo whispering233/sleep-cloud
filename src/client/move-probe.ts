@@ -19,6 +19,8 @@ export interface ProbeWindow {
   tickSpan: number[];
   regressPx: number[];
   frameDelta: number[];
+  /** Phaser 的 `loop.delta`（动画与猫按它推进）；与 `frameDelta` 同帧同序，可逐帧对比 */
+  loopDelta: number[];
   selfStepPx: number[];
   camStepPx: number[];
   /** 与 `selfStepPx` 方向相反的帧数（`camStepPx` 判据的分子，分母是 `camStepPx` 的样本数） */
@@ -38,6 +40,7 @@ export const emptyWindow = (): ProbeWindow => ({
   tickSpan: [],
   regressPx: [],
   frameDelta: [],
+  loopDelta: [],
   selfStepPx: [],
   camStepPx: [],
   camOpposed: 0,
@@ -64,10 +67,15 @@ export interface ProbeFrame {
   prediction?: Prediction;
   /** 相机 scroll（世界像素） */
   camera?: Point;
-  /** 本帧的摆动闸门 `isMoving(me)` */
+  /** 本帧的摆动闸门（`isPictureMoving`：折线上还有路可走且外推没过保鲜期，见 `world.ts`） */
   isMoving?: boolean;
-  /** 本帧的 `performance.now()`（与 Phaser 的 `loop.delta` 无关） */
+  /** 本帧的 `performance.now()`（墙钟；与 Phaser 交给动画的 `loopDelta` 是两个量） */
   now?: number;
+  /**
+   * 本帧 Phaser 的 `loop.delta` —— 小人的动画与猫的推进**真的**按这么大的帧时在走。
+   * 与 `frameDelta` 一比就是「帧时有没有被平滑」：帧时直通（`60-interaction-shell.md` §5.2）下两者应当 ≈ 相等。
+   */
+  loopDelta?: number;
 }
 
 /** 一批关于自己的 `pos` 到达时给的观测输入（store 订阅）。 */
@@ -193,6 +201,7 @@ export function sampleFrame(accumulator: ProbeAccumulator, frame: ProbeFrame): v
         return;
       }
       accumulator.window.frameDelta.push(delta);
+      if (frame.loopDelta !== undefined) accumulator.window.loopDelta.push(frame.loopDelta);
     }
   }
 
@@ -277,7 +286,8 @@ export function summarizeWindow(window: ProbeWindow): string | undefined {
   return (
     `${regressed}[move-probe] leadMs ${stats(window.leadMs)} | posAge ${stats(window.posAge)}` +
     ` | tickSpan ${stats(window.tickSpan)} | regressPx ${stats(window.regressPx)} | reversals ${window.reversals}` +
-    ` | frameDelta ${stats(window.frameDelta)} | selfStepPx ${stats(window.selfStepPx)}` +
+    ` | frameDelta ${stats(window.frameDelta)} | loopDelta ${stats(window.loopDelta)}` +
+    ` | selfStepPx ${stats(window.selfStepPx)}` +
     ` | camStepPx ${stats(window.camStepPx)} opposed=${window.camOpposed}/${window.camStepPx.length}` +
     ` | isMovingFlips ${window.isMovingFlips} | pathSwap ${window.pathSwap} | suspendGap ${window.suspendGap}` +
     (window.bigStep === undefined
