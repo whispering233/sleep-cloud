@@ -78,9 +78,9 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 
 ### 5.1 `GET /api/admin/identities`
 
-查询参数：`limit` / `before` + `beforeId`（复合游标）/ `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）/ `name`（昵称**子串**匹配，`%` `_` `\` 已转义）。
+查询参数：`limit` / `before` + `beforeId`（复合游标）/ `ip`（精确匹配 `last_ip`，用于「这条网络还有谁」）/ `name`（昵称**子串**匹配，`%` `_` `\` 已转义）/ `userId`（**精确等值**，`user_id` 是主键）。
 
-**三者与游标可以同时给**：按 IP 或昵称反查时也要能翻页。
+**四者与游标可以同时给、彼此是 AND**：按 IP 或昵称反查时也要能翻页。`userId` 不做子串匹配——它对运维是不透明随机串，前缀搜索只会把「输错一个字符」变成静默的错误结果；它存在的理由是把举报 / 反馈 / 黑名单 / 审计里出现的 `userId` 原样粘进来看那一行（`../design/120-admin-console.md` §2.1）。
 
 | 字段 | 是否必选 | 数据类型 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -128,6 +128,8 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | `created` | `false` = 覆盖了既有的一条（改判，不是新增） |
 | `affected` | `{ identities: n, online: m }`。**封 IP 时必须让操作者看见自己在封一片人**：`identities` = 该 IP 名下记录过的身份数，`online` = 此刻在线的连接数 |
 
+`GET /api/admin/blocks` 的每行在落库字段（`kind` / `value` / `untilAt` / `reason` / `createdAt`）之外多一个 `nickname`：**`kind = "user"` 时读时现补** `identity.nickname`（已过 90 天留存期或从未写过 → `null`），`kind = "ip"` 恒为 `null`。**不存快照**——昵称的寿命（90 天）比永久封禁短，存副本就是多一份不受期限约束的个人信息（`../design/70-privacy-risk.md` §7）。
+
 副作用（由厅执行，与写库在同一个对象里，见 `../design/70-privacy-risk.md` §5.3）：**遍历命中的在线连接并关闭**（`close(1008, 'blocked')`），写一条审计。
 
 ### 5.4 `DELETE /api/admin/blocks/:kind/:value`
@@ -149,6 +151,7 @@ POST /api/admin/login   { "token": "<ADMIN_TOKEN>" }
 | `kind` / `value` | 作用对象 |
 | `untilAt` | `null` = 永久 |
 | `reason` | 解封时也可能带一条说明 |
+| `nickname` | `kind = "user"` 时读时现补；`kind = "ip"` 或已过留存期 → `null`。口径同 §5.3 |
 | `actor` | 首版恒为 `"admin"` |
 
 ### 5.6 `GET /api/admin/reports`

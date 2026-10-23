@@ -2,7 +2,7 @@ import { displayBedNoOf } from '../shared/layout';
 import * as log from '../shared/log';
 import { findOwnedBed, countOwnedBeds } from './bed-store';
 import { listFeedback } from './feedback';
-import { countRecentReportTargets, listReports, listReportTargets } from './report';
+import { countRecentReports, listReports, listReportTargets } from './report';
 import type { ReportRecord } from './report';
 import {
   blockDetailOf,
@@ -115,11 +115,13 @@ function identitiesPage(url: URL, ctx: AdminContext): Response {
   // 复合游标必须成对给：只给一半就分不清「没有下一页」还是「前端拼错了」，
   // 而静默当成第一页会让「下一页」原地打转（见 `docs/api/30-api-admin.md` §4）。
   if (before !== undefined && beforeId === undefined) return badRequest();
+  const userId = url.searchParams.get('userId') || undefined;
   const ip = url.searchParams.get('ip') ?? undefined;
   const name = url.searchParams.get('name') ?? undefined;
   // 多取一行只用来判断「还有没有下一页」
   const rows = listIdentities(ctx.sql, {
     limit: limit + 1,
+    ...(userId === undefined ? {} : { userId }),
     ...(ip === undefined ? {} : { ip }),
     ...(name === undefined ? {} : { name }),
     ...(before === undefined || beforeId === undefined ? {} : { before, beforeId }),
@@ -267,12 +269,26 @@ function reportTargetsPage(url: URL, ctx: AdminContext): Response {
   });
 }
 
+/** 封禁 / 审计里「值」那一格对应的人（§5.3、§5.5）：`kind = 'ip'` 或身份已被 90 天清空 → `null`。**不存快照**。 */
+function nicknameOf(sql: SqlStorage, kind: BlockKind, value: string): string | null {
+  return kind === 'user' ? (findIdentity(sql, value)?.nickname ?? null) : null;
+}
+
+function blocksPage(ctx: AdminContext): Response {
+  return json({
+    items: listBlocks(ctx.sql).map((row) => ({ ...row, nickname: nicknameOf(ctx.sql, row.kind, row.value) })),
+  });
+}
+
 function auditPage(url: URL, ctx: AdminContext): Response {
   const limit = limitOf(url);
   const rows = listAudit(ctx.sql, limit + 1, cursorOf(url, 'before'));
   const items = rows.slice(0, limit);
   const last: AuditRecord | undefined = items.at(-1);
-  return json({ items, next: rows.length > limit && last ? { before: last.id } : null });
+  return json({
+    items: items.map((row) => ({ ...row, nickname: nicknameOf(ctx.sql, row.kind, row.value) })),
+    next: rows.length > limit && last ? { before: last.id } : null,
+  });
 }
 
 /** 数据接口的入口（`/admin/...`，由 `Hall.fetch` 在校验内部头之后调用）。 */
@@ -300,7 +316,7 @@ function routeAdminRequest(request: Request, url: URL, ctx: AdminContext): Respo
     return second === undefined ? identitiesPage(url, ctx) : identityDetail(second, ctx);
   }
   if (resource === 'blocks') {
-    if (second === undefined && request.method === 'GET') return json({ items: listBlocks(ctx.sql) });
+    if (second === undefined && request.method === 'GET') return blocksPage(ctx);
     if (second === undefined && request.method === 'POST') return createBlock(request, ctx);
     if (second !== undefined && third !== undefined && request.method === 'DELETE') {
       return deleteBlock(second, third, ctx);
@@ -331,6 +347,6 @@ function statsView(ctx: AdminContext): Record<string, number> {
     online: ctx.live.length,
     ownedBeds: countOwnedBeds(ctx.sql, now),
     blocks: countActiveBlocks(ctx.sql, now),
-    reports24h: countRecentReportTargets(ctx.sql, now),
+    reports24h: countRecentReports(ctx.sql, now),
   };
 }

@@ -9,12 +9,12 @@ vi.mock('cloudflare:workers', () => ({
   },
 }));
 
-import { BED_OWNERSHIP_TTL_MS, HALL_ID, REPORT_DEDUP_MS } from '../../shared/constants';
+import { BED_OWNERSHIP_TTL_MS, HALL_ID, IDENTITY_FORGET_MS, REPORT_DEDUP_MS } from '../../shared/constants';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
 import { recordFeedback } from '../feedback';
 import { recordReport } from '../report';
-import { listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
+import { forgetStaleSources, listBlocks, recordIdentity, upsertBlock, writeAudit } from '../risk';
 import { freshSql, insertBed } from './sqlite';
 
 /** 假 socket：后台上只用到这里的三件事（附加数据、关闭、就绪态）。 */
@@ -106,7 +106,17 @@ interface AuditItem {
   value: string;
   untilAt: number | null;
   reason: string | null;
+  nickname: string | null;
   actor: string;
+}
+
+interface BlockItem {
+  kind: string;
+  value: string;
+  untilAt: number | null;
+  reason: string;
+  createdAt: number;
+  nickname: string | null;
 }
 
 interface ReportItem {
@@ -149,6 +159,8 @@ function adminSend(hall: Hall, path: string, method: string, body?: unknown): Pr
 const pageOf = async (res: Response): Promise<Page> => (await res.json()) as Page;
 const auditsOf = async (hall: Hall): Promise<AuditItem[]> =>
   ((await (await adminGet(hall, '/admin/audit')).json()) as { items: AuditItem[] }).items;
+const blocksOf = async (hall: Hall): Promise<BlockItem[]> =>
+  ((await (await adminGet(hall, '/admin/blocks')).json()) as { items: BlockItem[] }).items;
 
 test('没有内部头的 `/admin/*` 一律 404（客户端到不了厅对象，这里是显式拒绝）', async () => {
   const { hall } = newHall();
@@ -208,6 +220,33 @@ test('按昵称子串反查：命中 / 不命中，`%` 只是个百分号', asyn
   // 不转义的话 `%` 会当成通配符，把三条全返回
   const percent = await pageOf(await adminGet(hall, `/admin/identities?name=${encodeURIComponent('%')}`));
   expect(percent.items.map((item) => item.userId)).toEqual(['u_c']);
+});
+
+test('按 userId 精确查：只回那一行', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
+  recordIdentity(sql, { userId: 'u_b', ip: '1.1.1.1' }, NOW + 1);
+
+  const page = await pageOf(await adminGet(hall, '/admin/identities?userId=u_a'));
+  expect(page.items.map((item) => item.userId)).toEqual(['u_a']);
+  expect(page.next).toBeNull();
+});
+
+test('按 userId 精确查：不存在就回空页（不做前缀 / 子串匹配）', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_abc' }, NOW);
+
+  expect((await pageOf(await adminGet(hall, '/admin/identities?userId=u_abcd'))).items).toEqual([]);
+  expect((await pageOf(await adminGet(hall, '/admin/identities?userId=u_ab'))).items).toEqual([]);
+});
+
+test('userId 与 ip 同时给是 AND', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
+  recordIdentity(sql, { userId: 'u_b', ip: '1.1.1.1' }, NOW + 1);
+
+  const page = await pageOf(await adminGet(hall, '/admin/identities?ip=1.1.1.1&userId=u_a'));
+  expect(page.items.map((item) => item.userId)).toEqual(['u_a']);
 });
 
 test('bedNo 是显示床号（内部 0 → 1），online 只对已握手的连接为真', async () => {
@@ -324,6 +363,22 @@ test('每个写操作都写一条审计：action / kind / value / actor=admin，
   expect(items[0]).toMatchObject({ kind: 'ip', value: '1.1.1.1' });
 });
 
+test('黑名单列表：`user` 行的昵称读时现补，过了留存期与 `ip` 行都是 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_live', nickname: '夜猫子' }, NOW);
+  recordIdentity(sql, { userId: 'u_gone', nickname: '早睡' }, NOW - IDENTITY_FORGET_MS - 1);
+  forgetStaleSources(sql, NOW);
+  upsertBlock(sql, { kind: 'user', value: 'u_live', untilAt: null, reason: '刷屏' }, NOW);
+  upsertBlock(sql, { kind: 'user', value: 'u_gone', untilAt: null, reason: '刷屏' }, NOW + 1);
+  upsertBlock(sql, { kind: 'ip', value: '1.1.1.1', untilAt: null, reason: '整段刷屏' }, NOW + 2);
+
+  expect((await blocksOf(hall)).map(({ kind, value, nickname }) => ({ kind, value, nickname }))).toEqual([
+    { kind: 'ip', value: '1.1.1.1', nickname: null },
+    { kind: 'user', value: 'u_gone', nickname: null },
+    { kind: 'user', value: 'u_live', nickname: '夜猫子' },
+  ]);
+});
+
 test('身份详情：不存在 → 404；存在时给同网络的其他身份与该身份的审计', async () => {
   const { hall, sql } = newHall();
   recordIdentity(sql, { userId: 'u_a', ip: '1.1.1.1' }, NOW);
@@ -407,6 +462,22 @@ test('审计分页：next.before 是最后一条的 id，带 before 时只取更
   ).json()) as { items: AuditItem[]; next: { before: number } | null };
   expect(second.items).toHaveLength(1);
   expect(second.next).toBeNull();
+});
+
+test('审计列表：`user` 行的昵称读时现补，过了留存期与 `ip` 行都是 null', async () => {
+  const { hall, sql } = newHall();
+  recordIdentity(sql, { userId: 'u_live', nickname: '夜猫子' }, NOW);
+  recordIdentity(sql, { userId: 'u_gone', nickname: '早睡' }, NOW - IDENTITY_FORGET_MS - 1);
+  forgetStaleSources(sql, NOW);
+  writeAudit(sql, { action: 'block', kind: 'user', value: 'u_live', untilAt: null, reason: '刷屏' }, NOW);
+  writeAudit(sql, { action: 'block', kind: 'user', value: 'u_gone', untilAt: null, reason: '刷屏' }, NOW + 1);
+  writeAudit(sql, { action: 'block', kind: 'ip', value: '1.1.1.1', untilAt: null, reason: '整段刷屏' }, NOW + 2);
+
+  expect((await auditsOf(hall)).map(({ kind, value, nickname }) => ({ kind, value, nickname }))).toEqual([
+    { kind: 'ip', value: '1.1.1.1', nickname: null },
+    { kind: 'user', value: 'u_gone', nickname: null },
+    { kind: 'user', value: 'u_live', nickname: '夜猫子' },
+  ]);
 });
 
 interface FeedbackItem {
@@ -568,7 +639,7 @@ test('统计卡空库：四个 0（页面拿到的是数字，不是 undefined�
   expect(await statsOf(hall)).toEqual({ online: 0, ownedBeds: 0, blocks: 0, reports24h: 0 });
 });
 
-test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时被举报人数', async () => {
+test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 / 近 24 小时举报行数', async () => {
   const socket = new FakeSocket(liveConnection('u_live'));
   const { hall, sql } = newHall([socket]);
 
@@ -584,8 +655,9 @@ test('统计卡四条口径：已握手连接 / 未过期归属 / 生效封禁 /
 
   recordReport(sql, { reporterUserId: 'u_r1', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
   recordReport(sql, { reporterUserId: 'u_r2', targetUserId: 'u_t', reason: '刷屏', evidence: [] }, NOW);
-  // 刚好早过 24 小时窗口：同一个人再被举报，不重复计
+  // 刚好早过 24 小时窗口，不计入
   recordReport(sql, { reporterUserId: 'u_r3', targetUserId: 'u_old', reason: '刷屏', evidence: [] }, NOW - REPORT_DEDUP_MS - 1);
 
-  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 1 });
+  // 两个人报同一个人 = 2 行
+  expect(await statsOf(hall)).toEqual({ online: 1, ownedBeds: 1, blocks: 2, reports24h: 2 });
 });

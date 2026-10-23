@@ -143,15 +143,42 @@ test('listReports：id 倒序，before 是排他游标', () => {
   expect(listReports(sql, { limit: 2, before: 3 })).toHaveLength(2);
 });
 
-test('purgeExpiredReports：只删 last_at 超过 90 天的行', () => {  const sql = freshSql();
+test('purgeExpiredReports：只删 last_at 超过 90 天的行，没到期的行证据也还在', () => {
+  const sql = freshSql();
   const now = 1_700_000_000_000;
-  recordReport(sql, report('u_a', 'u_old'), now - REPORT_TTL_MS - 1);
-  recordReport(sql, report('u_a', 'u_edge'), now - REPORT_TTL_MS + 1);
-  recordReport(sql, report('u_a', 'u_new'), now);
+  recordReport(sql, report('u_a', 'u_old', '刷屏', [{ text: '过期行', at: now - REPORT_TTL_MS - 1 }]), now - REPORT_TTL_MS - 1);
+  recordReport(sql, report('u_a', 'u_edge', '刷屏', [{ text: '边界那一行', at: now - REPORT_TTL_MS + 1 }]), now - REPORT_TTL_MS + 1);
+  recordReport(sql, report('u_a', 'u_new', '刷屏', [{ text: '新行', at: now }]), now);
 
   purgeExpiredReports(sql, now);
 
-  expect(listReports(sql, { limit: 10 }).map((row) => row.targetUserId)).toEqual(['u_new', 'u_edge']);
+  const rows = listReports(sql, { limit: 10 });
+  expect(rows.map((row) => row.targetUserId)).toEqual(['u_new', 'u_edge']);
+  // 留下的两行 `created_at` 也都在 90 天内，所以证据一条不少
+  expect(rows.map((row) => row.evidence)).toEqual([
+    [{ text: '新行', at: now }],
+    [{ text: '边界那一行', at: now - REPORT_TTL_MS + 1 }],
+  ]);
+});
+
+test('purgeExpiredReports：同一对被重复举报刷新 last_at 后，行与 count 还在，证据仍按 created_at 过期', () => {
+  const sql = freshSql();
+  const now = 1_700_000_000_000;
+  const start = now - REPORT_TTL_MS - 1;
+  recordReport(sql, report('u_a', 'u_b', '第一次', [{ text: '第 0 天的原话', at: start }]), start);
+  // 同一对每天被重复举报：`last_at` 一路刷到今天，`created_at` 与事由留在第 0 天
+  let reports = 1;
+  for (let day = 1; day <= 90; day += 1) {
+    recordReport(sql, report('u_a', 'u_b', '后来的重复举报'), start + day * (REPORT_DEDUP_MS - 1));
+    reports += 1;
+  }
+
+  purgeExpiredReports(sql, now);
+
+  const rows = listReports(sql, { limit: 10 });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ createdAt: start, reason: '第一次', count: reports, evidence: [] });
+  expect(rows[0]?.lastAt).toBe(start + 90 * (REPORT_DEDUP_MS - 1));
 });
 
 test('evidence 是脏 JSON 时降级为空数组，不让整个列表抛异常', () => {

@@ -13,6 +13,7 @@ const statsStrip = document.getElementById('stats');
 
 const ipFilter = document.getElementById('ipFilter');
 const nameFilter = document.getElementById('nameFilter');
+const userIdFilter = document.getElementById('userIdFilter');
 const identityRows = document.getElementById('identities');
 const identitiesPrev = document.getElementById('identitiesPrev');
 const identitiesNext = document.getElementById('identitiesNext');
@@ -163,8 +164,11 @@ function blockText(block) {
 
 function identityRow(item) {
   const tr = document.createElement('tr');
+  // 昵称在第二格，这一格只印 userId（`nickname: null` 让 partyText 只出 userId）。
+  const id = document.createElement('td');
+  id.append(partyLink({ userId: item.userId, nickname: null }));
   tr.append(
-    cell(item.userId),
+    id,
     cell(item.nickname ?? '—'),
     cell(fmtTime(item.lastSeenAt)),
     cell(item.lastIp ?? '—'),
@@ -178,11 +182,21 @@ function identityRow(item) {
 
 function feedbackRow(item) {
   const tr = document.createElement('tr');
+  const submitter = document.createElement('td');
+  submitter.append(partyLink({ userId: item.userId, nickname: item.nickname }));
   const body = document.createElement('td');
   body.className = 'feedback-body';
   body.textContent = item.text;
-  tr.append(cell(fmtTime(item.createdAt)), cell(item.nickname ?? '—'), body);
+  tr.append(cell(fmtTime(item.createdAt)), submitter, body);
   return tr;
+}
+
+/** 黑名单 / 审计的「值」格（§5.3、§5.5）：`user` 行显示昵称并能点开抽屉；`ip` 行只是字面量（不编「该 IP 名下几个人」）。 */
+function valueCell(item) {
+  if (item.kind !== 'user') return cell(item.value);
+  const td = document.createElement('td');
+  td.append(partyLink({ userId: item.value, nickname: item.nickname }));
+  return td;
 }
 
 function auditRow(item) {
@@ -191,7 +205,7 @@ function auditRow(item) {
     cell(fmtTime(item.at)),
     cell(item.action),
     cell(item.kind),
-    cell(item.value),
+    valueCell(item),
     cell(fmtUntil(item.untilAt)),
     cell(item.reason ?? '—'),
     cell(item.actor),
@@ -203,7 +217,7 @@ function blockRow(item) {
   const tr = document.createElement('tr');
   tr.append(
     cell(item.kind),
-    cell(item.value),
+    valueCell(item),
     cell(fmtUntil(item.untilAt)),
     cell(item.reason),
     cell(fmtTime(item.createdAt)),
@@ -232,6 +246,10 @@ async function loadIdentityDetail(userId) {
   const res = await dataFetch(`/api/admin/identities/${encodeURIComponent(userId)}`);
   if (!res) {
     drawerBody.replaceChildren(htmlLine('读取失败。'));
+    return;
+  }
+  if (res.status === 404) {
+    drawerBody.replaceChildren(htmlLine('查不到这个身份'));
     return;
   }
   if (res.status !== 200) {
@@ -346,7 +364,7 @@ async function loadReports(index) {
   render(reportRows, data.items, reportRow, 6);
 }
 
-/** 反馈列表（`120-admin-console.md` §2.1）：按 `id` 倒序、只读；正文保留换行，不显示 `userId`。 */
+/** 反馈列表（`120-admin-console.md` §2.1）：按 `id` 倒序、只读；正文保留换行，提交者按 `partyText` 规则印「昵称 · userId」并能点开抽屉。 */
 async function loadFeedback(index) {
   const cursor = feedbackCursors[index] ?? null;
   const params = new URLSearchParams({ limit: String(PAGE) });
@@ -373,6 +391,8 @@ async function loadIdentities(index) {
   if (ip) params.set('ip', ip);
   const name = nameFilter.value.trim();
   if (name) params.set('name', name);
+  const userId = userIdFilter.value.trim();
+  if (userId) params.set('userId', userId);
   if (cursor) {
     params.set('before', String(cursor.before));
     params.set('beforeId', cursor.beforeId);
@@ -543,6 +563,7 @@ document.getElementById('ipSearch').addEventListener('click', () => {
 document.getElementById('ipClear').addEventListener('click', () => {
   ipFilter.value = '';
   nameFilter.value = '';
+  userIdFilter.value = '';
   identityCursors = [null];
   void loadIdentities(0);
 });
@@ -553,6 +574,10 @@ auditNext.addEventListener('click', () => void loadAudit(auditIndex + 1));
 reportsPrev.addEventListener('click', () => void loadReports(reportIndex - 1));
 reportsNext.addEventListener('click', () => void loadReports(reportIndex + 1));
 drawerClose.addEventListener('click', () => drawer.close());
+// `showModal()` 只给 Esc；点遮罩时事件目标是 dialog 本身，不接这一条就关不掉（见 `120-admin-console.md` §5）。
+drawer.addEventListener('click', (event) => {
+  if (event.target === drawer) drawer.close();
+});
 
 function showView(name) {
   for (const [key, view] of Object.entries(VIEWS)) {
