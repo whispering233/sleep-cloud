@@ -8,19 +8,6 @@
 
 ---
 
-## 卡 1 · 探针升级：可测的倒退 + 帧级采样
-
-**范围**：`src/client/move-probe.ts`、`src/client/world/world.ts`（`update()` 末尾一处只读调用）。**不动** `prediction.ts` / `motion.ts` / 协议 / 渲染。
-
-**做**：
-1. `regressPx` 换判据：保存上一帧的画面世界坐标，本帧把「上一帧点」与「本帧点」**都投影到当前折线**取弧长差；负值累加为 `regressPx`，变号（单次 > 0.5px）计数为 `reversals`。折线换掉的那一帧若上一帧点被夹在折线起点 → 记 `pathSwap` 并跳过。投影抽成纯函数。
-2. 每帧采 `frameDelta`（`performance.now()` 差）、`selfStepPx`、`camStepPx`、`isMovingFlips`。
-3. 输出仍 10s 一行，字段名与 `30-movement-sync.md` §6.2 逐字一致。
-
-**验收**：
-- `npm test` 绿：新增单测证明「同一折线上把点往回喂能测出倒退」（步长为负）、原地不动为 0、换折线那帧被跳过。
-- `npm run typecheck` 绿；不带 `?debug=1` 时探针仍不被 import（`src/client/main.tsx:22` 现状），别顺手改成静态 import。
-
 ## 卡 2 · `setPersonName` 签名守卫
 
 **范围**：`src/client/world/views.ts` 的 `setPersonName`，写法对齐同文件 `placeBed` 与 `setBubble`。
@@ -34,12 +21,6 @@
 **范围**：`src/client/world/world.ts` 的 `new Phaser.Game({...})` 加 `fps: { smoothStep: false }`。文档已在 `60-interaction-shell.md` §5.2 写定（理由与代价），本卡只改代码。
 
 **验收**：`npm run typecheck` 绿；模拟器上「游戏页 → 返回」后猫立刻按原速走（不需要 2~4 秒恢复），录屏前后各 ≤15s 对比。
-
-## 卡 4 · 500ms 压力基线的账目
-
-**范围**：只动文档（已落笔，本卡只做核对与补齐）：`test.md` §2、`30-movement-sync.md` §1.3 / §3.9 / §6.2。
-
-**验收**：`npm run lint:design` 0 error；文档之间没有互相矛盾的数字（§1.3 表仍是 RTT 500 名义基线，压力基线单向 500 有指路）；§6.2 的五个判据阈值与本次讨论一致（0.5px / 25ms / 5% / 2 次）。
 
 ## 卡 5 · 模拟器实测与定性（不改代码）
 

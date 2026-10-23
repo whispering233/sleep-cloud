@@ -18,6 +18,8 @@ import type { Person } from '../../shared/protocol';
 import atlasJson from '../assets/sprites/atlas.json';
 import atlasPngUrl from '../assets/sprites/atlas.png?url';
 import { errorTextFor } from '../error-text';
+import { sampleFrameProbe } from '../move-probe';
+import type { ProbeFrame } from '../move-probe';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
 import type { ClientState } from '../store';
@@ -214,6 +216,8 @@ class WorldScene extends Phaser.Scene {
   private insetElements: UiInsets = { top: null, bottom: null };
   private insets: ViewInsets = { top: 0, bottom: 0 };
   private insetsObserver: ResizeObserver | null = null;
+  /** `?debug=1` 的帧级观测入口（`docs/design/30-movement-sync.md` §6.2）：动态载入、只读，不调试时是 `undefined` */
+  private probe?: (frame: ProbeFrame) => void;
 
   constructor(host: HTMLElement, handlers: WorldHandlers, insetsOf: () => UiInsets) {
     super('world');
@@ -252,6 +256,11 @@ class WorldScene extends Phaser.Scene {
       this.insetsObserver = null;
     });
     this.bindInput();
+    // 帧级观测按需挂上（与 `main.tsx` 同一个 `?debug=1` 闸门）：不调试时每帧只多一次可选调用的判空。
+    // 注意这**不是**懒加载：`main.tsx` 已经静态 import 了同一个模块，字节数不会因此变化。
+    if (new URLSearchParams(location.search).get('debug') === '1') {
+      this.probe = sampleFrameProbe;
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -284,6 +293,14 @@ class WorldScene extends Phaser.Scene {
     this.follow(state, serverNow, delta, selfPoint);
     // 方位在相机这一帧动完之后算：拖拽/回中当帧就把字形换成对的
     this.syncBedDirection(state);
+    // 帧级观测（`30-movement-sync.md` §6.2）：只读、不参与任何判定；没开探针时这一行只是一次判空
+    this.probe?.({
+      point: selfPoint,
+      prediction: state.prediction,
+      camera: { x: this.cameras.main.scrollX, y: this.cameras.main.scrollY },
+      isMoving: state.me !== undefined && isMoving(state.me, state.motion.get(state.me.id), serverNow),
+      now: performance.now(),
+    });
   }
 
   // ——— 几何：床位索引与区域（几何来自共享纯函数，不落任何数据） ———
