@@ -1,7 +1,8 @@
 /**
  * 游戏契约（`docs/design/140-games-page.md` §4）：游戏页里每个游戏只实现这一层接口。
- * 它拿不到大厅的任何数据——`import` 任何大厅模块（`store` / `ws` / `world` / `audio` / `prefs`…）、
- * 发上行、读本地存储、读网络全部禁止，所以每个游戏都能独立删除，改大厅也不会连带改游戏。
+ * 它拿不到大厅的任何数据——发上行、读本地存储、读网络全部禁止，也禁止 `import` 任何大厅模块
+ * （`store` / `ws` / `world` / `audio` / `prefs`…）；唯一例外是游戏用 `import type` 引本文件的两张接口
+ * （产物里一行不剩）。所以每个游戏都能独立删除，改大厅也不会连带改游戏。
  */
 export interface GameModule {
   /** 画进 `el`，返回值为 `dispose`。必须自己管 rAF / 定时器 / 事件，并在 `dispose` 里停掉。 */

@@ -63,6 +63,8 @@ npm run dev                                               # 项目仍跑在 WSL 
 
 **点按钮不要用 `adb shell input tap`：它不合成 `click`。** 实测（API 37 / Chrome 145）：`pointerdown` / `pointerup` / `touchstart` / `touchend` 都会到，`click` 永远是 0，按 120ms 也一样；拿两颗临时按钮做过隔离实验（一颗在 `pointerdown` 里 `preventDefault()`、一颗没有），**两颗都收不到 `click`**，所以这与硬纪律 35 的 `preventDefault()` 无关，是注入方式的问题。改为走 CDP 的 `Input.dispatchTouchEvent`（`touchStart` → 停 70ms → `touchEnd`，坐标是 **CSS 像素**）就有 `click`。
 
+**键盘也不是绕路：里面没有「用 `adb` 把页面点开」的办法。** 实测（同一台 API 37 / Chrome 145）：`input keyevent 61`（Tab）把焦点交给地址栏、后续 `DPAD_DOWN` 也留在浏览器 UI，页面里拿不到键盘焦点；`adb shell input keyevent 4` 能按返回键（这个是真事件，见下），但它只能退、不能进。因此设备侧要驱动页面（点按钮、连入游戏页）**只能靠 CDP attach**：而默认 AVD 是 `user` 构建（`ro.build.type=user`），Chrome 不读 `/data/local/tmp/chrome-command-line`，`localabstract:chrome_devtools_remote` 也不在监听（实测 `curl /json/version` 连接被拒）。要 attach 得换一个 debuggable 的镜像（`google_apis` 系）。**返回键本身不用 CDP**：用自驱页（页面自己 `pushState`） + `input keyevent 4` + `screencap` 就能验「硬件返回键 → `popstate`」。
+
 **`Input.dispatchTouchEvent` 用 CSS 像素，`input tap` 用设备像素**：页内 `getBoundingClientRect()` 是视口 CSS 像素，tap 吃的是设备像素，中间隔着 Chrome 自己的外壳（地址栏，实测约 100 CSS px）。要发 pointer/touch 事件（测手势）时仍可用 tap，换算如下：
 
 ```text
