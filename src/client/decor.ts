@@ -28,7 +28,7 @@ export const DECOR_BLOCKS = {
 export const DECOR_BLOCK_ORDER: readonly DecorBlock[] = ['head', 'foot'];
 
 /** 所有候选 id 的并集（候选表摊平）：加一样装饰时它会自动长大，白名单不用逐个改。 */
-export type DecorId = (typeof DECOR_BLOCKS)[DecorBlock][number];
+type DecorId = (typeof DECOR_BLOCKS)[DecorBlock][number];
 
 /** 某一块能取的值 = **该块的**候选 ∪ `none`。跨块 id 在类型上就写不进去（`cat` 不能存进床头块）。 */
 export type DecorValue<B extends DecorBlock> = (typeof DECOR_BLOCKS)[B][number] | 'none';
