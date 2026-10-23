@@ -46,3 +46,10 @@
 .sprite-fire-5 { width: 96px; height: 99px; background-image: url('../assets/sprites/atlas.png'); background-position: -1px -2751px; }
 .sprite-fire-6 { width: 96px; height: 99px; background-image: url('../assets/sprites/atlas.png'); background-position: -98px -2751px; }
 .sprite-fire-out { width: 96px; height: 99px; background-image: url('../assets/sprites/atlas.png'); background-position: -1px -2851px; }
+.sprite-cat-pumpkin-1 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -98px -2851px; }
+.sprite-cat-pumpkin-2 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -1px -2953px; }
+.sprite-cat-pumpkin-3 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -110px -2953px; }
+.sprite-cat-pumpkin-4 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -1px -3055px; }
+.sprite-cat-pumpkin-5 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -110px -3055px; }
+.sprite-cat-pumpkin-6 { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -1px -3157px; }
+.sprite-pumpkin-out { width: 108px; height: 101px; background-image: url('../assets/sprites/atlas.png'); background-position: -110px -3157px; }

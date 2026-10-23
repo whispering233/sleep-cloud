@@ -53,7 +53,9 @@ const CAT_FRAMES = [
   ...numberedFrames('cat-nuzzle-', 6),
 ];
 const FIRE_FRAMES = numberedFrames('fire-', 6);
-const DECOR_FRAMES = [...CAT_FRAMES, ...FIRE_FRAMES, 'fire-out'];
+/** 南瓜灯：床头块第二个候选（6 帧亮 + 1 张灭帧，与篝火同一套视图，见 `../views.ts` 的 `HEAD_DECOR_SKINS`）。 */
+const PUMPKIN_FRAMES = numberedFrames('cat-pumpkin-', 6);
+const DECOR_FRAMES = [...CAT_FRAMES, ...FIRE_FRAMES, ...PUMPKIN_FRAMES, 'fire-out', 'pumpkin-out'];
 
 describe('图集与客户端的接口', () => {
   it('客户端会要的每一帧都在图集里（缺帧只会在画面里变成空白，靠目视发现太晚）', () => {
