@@ -195,12 +195,12 @@ export function writeSound(kind: SoundKind, storage?: PrefStorage): void {
   writePref(PREFS.sound, { v: PREFS_VERSION, kind }, storage);
 }
 
-/** `sc.about.seen` 的值形状：`seen` 是**公告版本**（与 `ANNOUNCE.version` 逐字比较，不是发布版本）。 */
+/** `sc.about.seen` 的值形状：`seen` 是**内容指纹**（与 `ABOUT_TOKEN` 逐字比较，不是发布版本）。 */
 type StoredAboutSeen = { v: number; seen: string };
 
 /**
  * 白名单：`seen` 是非空字符串且 ≤ 32 字符（`docs/design/40-client-storage.md` §3）。
- * **不校验版本号格式**：坏值唯一的后果是再弹一次面板（无副作用）。
+ * **不校验格式**：坏值唯一的后果是再弹一次面板（无副作用）。
  */
 function isStoredAboutSeen(value: unknown): value is StoredAboutSeen {
   if (typeof value !== 'object' || value === null) return false;
@@ -213,9 +213,9 @@ export function readAboutSeen(storage?: PrefStorage): string | undefined {
   return readPref<StoredAboutSeen | undefined>(PREFS.aboutSeen, isStoredAboutSeen, undefined, storage)?.seen;
 }
 
-/** 写 `sc.about.seen`：值就是那一刻的公告版本（只有自动路径且勾选着关才写）。 */
-export function writeAboutSeen(version: string, storage?: PrefStorage): void {
-  writePref(PREFS.aboutSeen, { v: PREFS_VERSION, seen: version }, storage);
+/** 写 `sc.about.seen`：值就是那一刻的内容指纹（只有自动路径且勾选着关才写）。 */
+export function writeAboutSeen(token: string, storage?: PrefStorage): void {
+  writePref(PREFS.aboutSeen, { v: PREFS_VERSION, seen: token }, storage);
 }
 
 /** 分类 id / 条目 id 的长度上限（与数据包校验、`40-client-storage.md` §3 白名单同一量）。 */

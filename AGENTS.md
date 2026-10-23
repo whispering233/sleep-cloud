@@ -22,7 +22,7 @@
 | 交互外壳：所有权表、输入会话状态机、Grid 两态、退场时序、画布冻结 | `docs/design/60-interaction-shell.md` |
 | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 | `docs/design/70-privacy-risk.md` |
 | 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
-| 说明面板：两个入口、已读语义、公告版本、层级 | `docs/design/90-about-panel.md` |
+| 说明面板：两个入口、已读语义、内容指纹、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
 | 求签 / 后台管理面板 / 反馈与建议 / 游戏页 | `docs/design/110-lot.md`、`docs/design/120-admin-console.md`、`docs/design/130-feedback.md`、`docs/design/140-games-page.md` |
 | 配置（常量 / 限制 / 密钥 / 词表）、运行构建部署发版、测试环境与流程 | `docs/design/config.md`、`docs/design/build.md`、`docs/design/test.md` |
@@ -147,7 +147,7 @@
 | 领先量（`lead`）/ 倒退（`regress`） | 预测量 / 回弹 | 画面领先真值的时间量（名义值 = 快照时的单向时延）；倒退 = 重锚让画面往回走的像素，**恒为 0** |
 | 连接态（`connecting`/`online`/`offline`） | 在线、在线状态 | **渲染层的显示态**，与「人在不在场」（服务端事实）无关 |
 | 在场状态 `act` / 头顶「\| 游戏中」 | 状态、mode、AFK | **我当下在看哪一页**（今天是「在游戏页里」）。客户端上行声明、服务端只放进连接附加数据并随 `state` 转发；**与显示态正交**，不进任何业务判定（不刷 `last_seen_at`、不碰自动睡着与归属），断线即丢（`docs/design/140-games-page.md` §5） |
-| 说明面板 / 公告版本 | 弹窗、公告、更新日志、`APP_VERSION` | 一页纯文档：这个厅是什么 + 最近一版更新了什么。两个入口（公告未确认时**进厅前自动一次** / 齿轮「关于失眠云」）、**唯一出口**「知道了」；**不是浮层、也不是插槽面板**。**公告版本** = 内容真的变了才升的那个号（`ANNOUNCE.version`，`sc.about.seen` 存的就是它），与 `package.json` 的发布版本**不是同一个数**（`docs/design/90-about-panel.md`） |
+| 说明面板 / 内容指纹 | 弹窗、公告、更新日志、`APP_VERSION` | 一页纯文档：这个厅是什么 + 最近一版更新了什么。两个入口（公告未确认时**进厅前自动一次** / 齿轮「关于失眠云」）、**唯一出口**「知道了」；**不是浮层、也不是插槽面板**。**内容指纹** = 由正文派生的短哈希（`ABOUT_TOKEN`，`sc.about.seen` 存的就是它）——**不是手写版本号**：改一个字就弹一次，不会出现「忘了升号 → 新内容永远不弹」。与 `package.json` 的发布版本**无关**（`docs/design/90-about-panel.md`） |
 | 插槽面板（slot panel）/ 触发源（slot source） | 浮层、遮罩、overlay、浮动面板；触发器、开关、provider | 一块**常驻可占用区**，挂在聊天面板**下沿**（`docs/design/50-slot-panel.md`）；位置 / 尺寸 / 层叠全由框架给，**不是浮层**。开关：**开与关由同一个源负责**（每源一个 `active`，面板显示 = 任一源 active），不写全局的「失焦即退场」 |
 | 类型文本（type text）/ `reading` | 冷笑话、内容、分类 | 插槽面板的第二个内容：按分类分组的一组短文本，抽一条读。**纯本地**——静态包 `public/fun/type-texts.vN.json`（文件名带版本号 + `immutable`，换内容必须改名）、**不发任何上行**、不进协议；`composer` 的 `reading` 值就是它，阅读进度只在 `sc.read.seen`（`docs/design/50-slot-panel.md` §附） |
 | 求签 / 签库 | 抽签、占卜、今日运势 | **一天一次**（本地键 `sc.lot = {v,date,no}`，比较设备本地日期，跨零点失效）、**只出吉签**（38 条观音灵签里的上上 / 大吉 / 上吉，下签不入库）、**纯本地**（不发上行、服务端不知道、不存历史）。出口只有页底「收起来」。HUD 那句 `今日宜 睡觉好梦` 是**固定文案**，不随签变（`docs/design/110-lot.md`） |
