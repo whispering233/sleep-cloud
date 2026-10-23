@@ -15,7 +15,7 @@ import { useState } from 'react';
 /** 入场层出错时的文案：通用的错误码到文案映射在错误反馈层，这里只留兜底。 */
 const errorText = (code: string) => errorTextFor(code) ?? ERROR_FALLBACK_TEXT;
 
-/** 图集帧名（`public/sprites/frames.css`，坐标由素材管线生成，不手抄）与可访问名。
+/** 图集帧名（`src/client/styles/frames.css`，坐标由素材管线生成，不手抄）与可访问名。
  * **选项只有预览图、不写可见文字**（写「男孩 / 女孩」是给画面加它没有的信息），所以这个名字只给屏幕阅读器；
  * 它描述的是素材差异（发型），不是性别——素材换了就要跟着改。
  * 两个表都是 `Record<Appearance, …>`：枚举加第三种时这里会直接编译不过。 */

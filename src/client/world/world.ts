@@ -15,6 +15,8 @@ import type { Point } from '../../shared/layout';
 import { advanceMover } from '../../shared/movement';
 import type { MoverState } from '../../shared/movement';
 import type { Person } from '../../shared/protocol';
+import atlasJson from '../assets/sprites/atlas.json';
+import atlasPngUrl from '../assets/sprites/atlas.png?url';
 import { errorTextFor } from '../error-text';
 import { predictionPointAt } from '../prediction';
 import { beginWalk, getState, setBedDirection, setSwitching, showNotice, setZoomMode as writeZoomMode } from '../store';
@@ -220,9 +222,12 @@ class WorldScene extends Phaser.Scene {
     this.insetsOf = insetsOf;
   }
 
-  /** 图集是一个文件、一次载入：`preload` 之后 `create` 才被调用，池子建出来时帧一定在 */
+  /**
+   * 图集是一个文件、一次载入：PNG 走构建产物的哈希 URL，JSON 由构建内联成本地对象
+   * （`load.atlas()` 的第三参是对象就不发请求）；`preload` 之后 `create` 才被调用，池子建出来时帧一定在
+   */
   preload(): void {
-    this.load.atlas(SPRITES_KEY, '/sprites/atlas.png', '/sprites/atlas.json');
+    this.load.atlas(SPRITES_KEY, atlasPngUrl, atlasJson);
   }
 
   create(): void {

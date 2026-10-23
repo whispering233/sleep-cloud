@@ -8,9 +8,10 @@
  * 2. **裁到墨迹 bbox**（bbox 由脚本算，不硬编码），并输出锚点：
  *    床 = 墨迹左上角对齐格左上角，小人 = 墨迹底边中心对齐站立点；
  *    （聊天气泡不走素材：圆角矩形 + 三角在客户端程序化画，见 DESIGN.md「气泡不走素材」）
- * 3. 顺带产出 `public/sprites/frames.css`：每帧一条 `background-position`，给入场层的形象
+ * 3. 顺带产出 `src/client/styles/frames.css`：每帧一条 `background-position`，给入场层的形象
  *    预览当图片用——图集坐标只能有这一份，别处不许手抄；
- * 4. 产物是**提交物**（`public/sprites/`），`npm run art` 重新生成；**不挂进 `npm run build`**。
+ * 4. 产物是**提交物**（`src/client/assets/sprites/` 与 `src/client/styles/frames.css`），`npm run art` 重新生成；
+ *    **不挂进 `npm run build`**。两个许可文件留在 `public/sprites/`（文档与 `AGENTS.md` 引用它）。
  *
  * 猫与篝火（`cat-sheet.png` / `cat-fire-out.png`）走另一条路：它们是**自绘 SVG 一次性离线栅格化**
  * 的产物（去纸底 / 去注记 / 去虚线格框 → `sharp` density 72），帧坐标来自
@@ -27,11 +28,14 @@ import { deflateSync, inflateSync } from 'node:zlib';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MASTERS = join(ROOT, 'tools', 'art', 'masters');
-const OUT_DIR = join(ROOT, 'public', 'sprites');
+/** 图集进构建（Vite 给它带内容哈希的 URL）；许可文件仍在 `public/sprites/`，路径被文档引用，不许动。 */
+const ATLAS_OUT_DIR = join(ROOT, 'src', 'client', 'assets', 'sprites');
+const LICENSE_OUT_DIR = join(ROOT, 'public', 'sprites');
 const DESIGN = join(ROOT, 'docs', 'ui', 'DESIGN.md');
 const CAT_ATLAS = join(MASTERS, 'cat-all-sprites-atlas.json');
-const LICENSE_OUT = join(OUT_DIR, 'LICENSE-wheatcloudsleep.txt');
-const CAT_LICENSE_OUT = join(OUT_DIR, 'LICENSE-cat-fire.txt');
+const FRAMES_CSS = join(ROOT, 'src', 'client', 'styles', 'frames.css');
+const LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-wheatcloudsleep.txt');
+const CAT_LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-cat-fire.txt');
 /** 图集宽度取 256（2 列床 = 2×122 + 间隙）：够宽、又不浪费填充率。 */
 const ATLAS_WIDTH = 256;
 const GAP = 1;
@@ -527,25 +531,27 @@ function main() {
       const at = placements[frame.name];
       return (
         `.sprite-${frame.name} { width: ${frame.w}px; height: ${frame.h}px;` +
-        ` background-image: url('./atlas.png'); background-position: -${at.x}px -${at.y}px; }`
+        // 相对 frames.css 自己的位置（src/client/styles/）：Vite 会改写成带内容哈希的 URL
+        ` background-image: url('../assets/sprites/atlas.png'); background-position: -${at.x}px -${at.y}px; }`
       );
     }),
     '',
   ].join('\n');
 
-  mkdirSync(OUT_DIR, { recursive: true });
-  writeFileSync(join(OUT_DIR, 'atlas.png'), atlasPng);
-  writeFileSync(join(OUT_DIR, 'atlas.json'), `${JSON.stringify(json, null, 2)}\n`);
-  writeFileSync(join(OUT_DIR, 'frames.css'), css);
+  mkdirSync(ATLAS_OUT_DIR, { recursive: true });
+  writeFileSync(join(ATLAS_OUT_DIR, 'atlas.png'), atlasPng);
+  writeFileSync(join(ATLAS_OUT_DIR, 'atlas.json'), `${JSON.stringify(json, null, 2)}\n`);
+  writeFileSync(FRAMES_CSS, css);
 
   const license = readFileSync(join(MASTERS, 'LICENSE'), 'utf8');
   for (const required of ['MIT License', 'Copyright (c) 2022 WheatBox']) {
     if (!license.includes(required)) throw new Error(`tools/art/masters/LICENSE 里缺「${required}」`);
   }
+  mkdirSync(LICENSE_OUT_DIR, { recursive: true });
   writeFileSync(
     LICENSE_OUT,
     [
-      '素材来源与用途：本目录下的 atlas.png / atlas.json / frames.css 由 WheatCloudSleep 的 5 张母图',
+      '素材来源与用途：src/client/assets/sprites/ 下的 atlas.png / atlas.json 由 WheatCloudSleep 的 5 张母图',
       '（Art/Legacy/Boy.png、Girl.png、bedEmpty.png、bedBoy.png、bedGirl.png；均原样存于 tools/art/masters/）构建而成，',
       '用于 sleep-cloud 世界层的床位与小人渲染。以下为上游许可原文（未改动）。',
       '',
@@ -554,7 +560,7 @@ function main() {
   );
 
   const catLicense = [
-    '素材来源与用途：atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4、',
+    '素材来源与用途：src/client/assets/sprites/atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4、',
     'cat-pat-1…6、cat-nuzzle-1…6）与',
     '篝火（fire-1…6、fire-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可',
     '（原文见仓库根目录 LICENSE），用于世界层的床尾猫与床头篝火。',
@@ -580,10 +586,10 @@ function main() {
   console.log(`素材管线：${DESIGN} 的色值 → ${MASTERS} 的 ${masters.size} 张母图`);
   console.log(report.join('\n'));
   console.log(
-    `图集：public/sprites/atlas.png ${ATLAS_WIDTH}×${height}（${atlasPng.length} 字节）、` +
-      `public/sprites/atlas.json（${JSON.stringify(json).length} 字节）`,
+    `图集：src/client/assets/sprites/atlas.png ${ATLAS_WIDTH}×${height}（${atlasPng.length} 字节）、` +
+      `src/client/assets/sprites/atlas.json（${JSON.stringify(json).length} 字节）`,
   );
-  console.log(`坐标：public/sprites/frames.css（${frames.length} 条规则）`);
+  console.log(`坐标：src/client/styles/frames.css（${frames.length} 条规则）`);
   console.log(`许可：public/sprites/LICENSE-wheatcloudsleep.txt 在位（${license.length} 字节，MIT / © 2022 WheatBox）`);
   console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫与篝火为项目自绘，MIT）`);
 }
