@@ -30,7 +30,7 @@ import {
   bedLook,
   bedMarkerOf,
   cameraBounds,
-  campfireLit,
+  decorLit,
   clampZoom,
   followStep,
   isMoving,
@@ -50,22 +50,22 @@ import {
   COLORS,
   SPRITES_KEY,
   createBedView,
-  createCampfireAnims,
-  createCampfireView,
+  createHeadDecorAnims,
+  createHeadDecorView,
   createPersonView,
   createPetAnims,
   createPetView,
   hideBed,
-  hideCampfire,
+  hideHeadDecor,
   hidePet,
   paintPerson,
   placeBed,
-  placeCampfire,
+  placeHeadDecor,
   placePet,
   setPersonChat,
   setPersonName,
 } from './views';
-import type { BedView, CampfireView, PersonView, PetView } from './views';
+import type { BedView, HeadDecorView, PersonView, PetView } from './views';
 import { WeatherScene } from './weather';
 
 /**
@@ -164,7 +164,7 @@ class WorldScene extends Phaser.Scene {
   private readonly beds: BedView[] = [];
   private readonly people = new Map<string, PersonView>();
   /** 我床头那堆火：全场只有一张（我的那张床），不进对象池 */
-  private campfire: CampfireView | undefined;
+  private headDecor: HeadDecorView | undefined;
   /** 我床尾那只猫的视图：全场只有一只（绑「我」不绑床），不进对象池 */
   private pet: PetView | undefined;
   /**
@@ -242,9 +242,9 @@ class WorldScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.outside);
     this.resizeToHost();
     this.ensurePool();
-    // 篝火只有一摊（我的床头）：动画注册一次、Sprite 建一次，画不画 / 亮不亮由 `syncCampfire` 逐帧决定
-    createCampfireAnims(this);
-    this.campfire = createCampfireView(this);
+    // 床头的装饰只有一摊（我的床头，篝火 / 南瓜灯单选）：动画注册一次、Sprite 建一次，画不画 / 亮不亮由 `syncHeadDecor` 逐帧决定
+    createHeadDecorAnims(this);
+    this.headDecor = createHeadDecorView(this);
     // 猫同理：全场只有一只，六个动画注册一次，目标与动画由 `syncPet` 逐帧决定
     createPetAnims(this);
     this.pet = createPetView(this);
@@ -288,7 +288,7 @@ class WorldScene extends Phaser.Scene {
     this.syncBeds(state);
     // **一帧只取一次位**：渲染、猫、跟随共用这个点（各取一次就会出现「相机追着上一帧的点」的稳态锯齿）
     const selfPoint = this.selfPoint(state, serverNow);
-    this.syncCampfire(state);
+    this.syncHeadDecor(state);
     this.syncPet(state, selfPoint);
     this.syncPeople(state, serverNow, selfPoint);
     this.follow(state, serverNow, delta, selfPoint);
@@ -402,21 +402,21 @@ class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * 我床头那摊篝火（`docs/design/80-reserve-decor.md` §2）：**只有我自己看得见**——不进 `people`、
-   * 不广播，服务端不知道它存在。不画的情形：床头块没选它（`head !== 'fire'`）、没有我、没有床、
+   * 我床头那一样装饰（篝火 / 南瓜灯，`docs/design/80-reserve-decor.md` §2 / §2.4）：**只有我自己看得见**——
+   * 不进 `people`、不广播，服务端不知道它存在。不画的情形：床头块选了「无装饰」、没有我、没有床、
    * 那张床不在视野里（与床位同一套裁剪口径）。
    *
    * 「我躺的那张床」：在床上就是那张（`bedNo`），在厅里走时是我拥有的那张（`ownedBedNo`）——
-   * 换床必然先起身，所以搬过去的那一刻它本来就是熄灭的，不存在「火苗搬家」（§2.1）。
+   * 换床必然先起身，所以搬过去的那一刻它本来就是熄灭的，不存在「火苗搬家」／「南瓜搬家」（§2.1）。
    *
    * 逐帧状态只住在这一层（场景字段 + 视图签名）：不写 store、不触发 React 重渲染（`AGENTS.md` 硬纪律 17）。
    */
-  private syncCampfire(state: ClientState): void {
-    const fire = this.campfire;
-    if (!fire) return;
-    // 床头块选到 `fire` 才画：「无装饰」= 整摊不画，它与「熄灭」（柴、灰、石圈还在）不是一回事（§2.1 / §4.2）
-    if (state.decor.head !== 'fire') {
-      hideCampfire(fire);
+  private syncHeadDecor(state: ClientState): void {
+    const decor = this.headDecor;
+    if (!decor) return;
+    // 「无装饰」= 整摊不画，它与「熄灭」（柴 / 石圈 / 不发光的老南瓜还在）不是一回事（§2.1 / §4.2）
+    if (state.decor.head === 'none') {
+      hideHeadDecor(decor);
       return;
     }
     const me = state.me;
@@ -432,11 +432,11 @@ class WorldScene extends Phaser.Scene {
       head.y + head.height < view.y - CULL_MARGIN_PX ||
       head.y > view.y + view.height + CULL_MARGIN_PX
     ) {
-      hideCampfire(fire);
+      hideHeadDecor(decor);
       return;
     }
     const y = head.y + head.height;
-    placeCampfire(fire, { x: head.x + head.width / 2, y, depth: DEPTH.person + y, lit: campfireLit(me) });
+    placeHeadDecor(decor, { x: head.x + head.width / 2, y, depth: DEPTH.person + y, lit: decorLit(me), skin: state.decor.head });
   }
 
   /**

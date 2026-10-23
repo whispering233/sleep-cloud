@@ -127,11 +127,13 @@ export function personFrame(appearance: Appearance): PersonFrame {
 }
 
 /**
- * 我床头那堆火此刻燃不燃（`docs/design/80-reserve-decor.md` §2.1）：**跟着我的显示态**走——
- * 躺着 / 睡着才燃，漫游 / 睡痕（以及还没有我）都熄。熄是**状态**不是消失：熄了留柴、灰与石圈，
- * 与「床有人 / 没人」靠形态而不是靠消失表达是同一条语言。
+ * 床头块那一样装饰此刻亮不亮（`docs/design/80-reserve-decor.md` §2.1 / §2.4）：**跟着我的显示态**走——
+ * 躺着 / 睡着才亮，漫游 / 睡痕（以及还没有我）都熄。熄是**状态**不是消失：熄了留柴、灰与石圈，
+ * 或者一颗不发光的老南瓜，与「床有人 / 没人」靠形态而不是靠消失表达是同一条语言。
+ *
+ * **篝火与南瓜灯共用这一条**：两样东西同一块单选、意味不一样但亮灭时机一样，各写一条只会有一天对不上。
  */
-export function campfireLit(me: SelfPerson | undefined): boolean {
+export function decorLit(me: SelfPerson | undefined): boolean {
   return me !== undefined && (me.state === 'lying' || me.state === 'asleep');
 }
 

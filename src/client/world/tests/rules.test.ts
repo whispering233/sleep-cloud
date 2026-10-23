@@ -15,7 +15,7 @@ import {
   bedMarkerOf,
   cameraBounds,
   clampZoom,
-  campfireLit,
+  decorLit,
   cameraStep,
   followStep,
   isMoving,
@@ -105,7 +105,7 @@ describe('我床头的篝火：亮灭跟着我的显示态', () => {
   const lying: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'lying', bedNo: 7, ownedBedNo: 7 };
   const roaming: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 300, y: 280, ownedBedNo: 7 };
 
-  it('躺着与睡着燃；漫游、睡痕与没有我都熄（五种输入）', () => {
+  it('躺着与睡着亮；漫游、睡痕与没有我都熄（五种输入）', () => {
     const cases: Array<[string, SelfPerson | undefined, boolean]> = [
       ['lying', lying, true],
       ['asleep', { ...lying, state: 'asleep' }, true],
@@ -113,7 +113,7 @@ describe('我床头的篝火：亮灭跟着我的显示态', () => {
       ['trace', { ...lying, state: 'trace' }, false],
       ['没有 me', undefined, false],
     ];
-    for (const [state, me, lit] of cases) expect(campfireLit(me), state).toBe(lit);
+    for (const [state, me, lit] of cases) expect(decorLit(me), state).toBe(lit);
   });
 });
 

@@ -20,7 +20,7 @@ export type DecorBlock = 'head' | 'foot';
  * 同时把「每块最多摆一样」写成形状——同一块的候选互斥，换候选就是换掉这一块的内容（§1 规则 5）。
  */
 export const DECOR_BLOCKS = {
-  head: ['fire'],
+  head: ['fire', 'pumpkin'],
   foot: ['cat'],
 } as const;
 
@@ -43,7 +43,7 @@ export type DecorPick = { [B in DecorBlock]: DecorValue<B> };
 export const DEFAULT_DECOR: DecorPick = { head: 'fire', foot: 'cat' };
 
 /** 每样装饰的中文名：`Record` 少一行就 typecheck 红，所以「加 id 忘加文案」不成立。 */
-const DECOR_LABELS: Record<DecorId, string> = { fire: '篝火', cat: '猫' };
+const DECOR_LABELS: Record<DecorId, string> = { fire: '篝火', cat: '猫', pumpkin: '南瓜灯' };
 
 /** 每块的标题（齿轮浮层里那两个 12px 纯文字标题，`docs/ui/DESIGN.md` 的 `decor-picker` 行）。 */
 const BLOCK_LABELS: Record<DecorBlock, string> = { head: '床头', foot: '床尾' };
