@@ -89,7 +89,7 @@ test('我的床归属未过期：落在自己床脚前，且不占床、不写�
   expect(rawRow(sql, 42)?.state).toBe('empty');
 });
 
-test('我的床归属已过期：落到最小可认领床，不是过期那张', () => {
+test('（单助调用 `resumeSession`）归属过期的 `empty` 行不在视野里：落到最小可认领床、行不动', () => {
   const { hall, sql } = newHall();
   const now = Date.now();
   insertBed(sql, 5, { state: 'empty', ownerUserId: 'u_me', lastSeenAt: now - BED_OWNERSHIP_TTL_MS - 1, updatedAt: now });
@@ -113,7 +113,7 @@ test('宽限内重连（床上睁眼躺着）：状态原样是 lying', () => {
   expect(resumed.bedNo).toBe(2);
 });
 
-test('归属已过期但行仍占着：按新人处理，落到出生点（不拿过期行续命）', () => {
+test('（单助调用 `resumeSession`）归属过期但还占着：落到出生点、行不动——真实入场由 `hello` 先写 `last_seen_at`，走不到这里', () => {
   const { hall, sql } = newHall();
   const now = Date.now();
   insertBed(sql, 5, { state: 'asleep', ownerUserId: 'u_me', lastSeenAt: now - BED_OWNERSHIP_TTL_MS - 1, updatedAt: now });

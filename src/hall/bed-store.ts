@@ -352,18 +352,18 @@ export interface RestoreBedInput {
 
 /**
  * 从睡痕恢复：**睡着的还原**（`state = 'asleep'`）。归属不动，只刷新名字快照（见 `docs/db/schema.md` §7「宽限已过后重连」）。
+ * `last_seen_at` **不在这里写**：它由入场那一写负责（`docs/db/schema.md` §7）。
  *
  * `sleep_started_at` **重新从这一刻起算**：不清的话，`wake.dwellMs` 会把「人不在线的那段」也算进去，
  * 手机后台被杀的常态会话会变成几小时的假样本、隔几天回来一次就是几万小时（`100-log.md` §3）。
  */
 export function restoreBedOccupancy(sql: SqlStorage, input: RestoreBedInput): void {
   sql.exec(
-    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, last_seen_at = ?, updated_at = ?,
+    `UPDATE bed SET state = 'asleep', owner_name = ?, owner_appearance = ?, updated_at = ?,
       sleep_started_at = ?
      WHERE bed_no = ?`,
     input.name,
     input.appearance,
-    input.now,
     input.now,
     input.now,
     input.bedNo,
