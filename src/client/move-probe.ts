@@ -30,8 +30,13 @@ export interface ProbeWindow {
   pathSwap: number;
   /** 世界被挂起过几次（那一帧不算帧间隔，也不算位移） */
   suspendGap: number;
-  /** 窗口内最大的一次单帧位移；只有超过 `BIG_STEP_PX` 时才记（带两个判别位：当时有没有外推、摆动闸门开没开） */
-  bigStep?: { px: number; hadPrediction: boolean; isMoving: boolean };
+  /** 窗口内最大的一次单帧位移；只有超过 `BIG_STEP_PX` 时才记（带两个判别位与这一帧的时长） */
+  bigStep?: { px: number; hadPrediction: boolean; isMoving: boolean; dtMs: number };
+  /**
+   * 窗口内最大的一次**倒退**，带这一帧的时长与「折线是不是刚换过」。
+   * 判据要除以时长：倒退量本身跟帧长成正比，30fps 下 5px 可能只是正常的一帧。
+   */
+  bigRegress?: { px: number; dtMs: number; pathChanged: boolean };
 }
 
 export const emptyWindow = (): ProbeWindow => ({
@@ -178,7 +183,11 @@ function sampleRegress(
   return Math.max(0, -step);
 }
 
-/** 超过它的单帧位移不是「走了一帧」，是某一处跳变（`§6.1` 的硬指标是 < 10px）。 */
+/**
+ * 超过它的单帧位移值得留样本（`§6.1` 的硬指标是 60fps 下 < 10px）。
+ * 注意这个门槛**按 60fps 定的**：30fps 下一帧正常就该走 7.3px，50ms 的一帧该走 11px ——
+ * 所以样本必须带上这一帧自己的时长（`dt`），否则分不清「跳变」与「就是慢帧」。
+ */
 const BIG_STEP_PX = 10;
 
 /** 大于它的帧间隔不是「卡顿」而是世界被挂起过（整屏页）：那一帧的间隔与位移都不是真实的一帧。 */
@@ -186,8 +195,11 @@ const SUSPEND_GAP_MS = 2_000;
 
 /** 一帧的观测（世界层每帧调用）：`regressPx` 起的各项（§6.2）。 */
 export function sampleFrame(accumulator: ProbeAccumulator, frame: ProbeFrame): void {
+  /** 这一帧的墙钟时长：`bigStep` / `bigRegress` 要带它，否则分不清「跳变」与「慢帧」 */
+  let frameDelta: number | undefined;
   if (frame.now !== undefined) {
     const delta = accumulator.frameTs === undefined ? undefined : frame.now - accumulator.frameTs;
+    frameDelta = delta;
     accumulator.frameTs = frame.now;
     if (delta !== undefined) {
       // 挂起 / 恢复会隔几秒甚至几分钟：记一次 `suspendGap`，把轨迹、镜头、摆动与方向符号全部重新起头——
@@ -213,17 +225,28 @@ export function sampleFrame(accumulator: ProbeAccumulator, frame: ProbeFrame): v
 
   if (frame.point !== undefined) {
     const regress = sampleRegress(accumulator, previous, frame.point, frame.prediction);
-    if (regress !== undefined) accumulator.window.regressPx.push(regress);
+    if (regress !== undefined) {
+      accumulator.window.regressPx.push(regress);
+      const worstRegress = accumulator.window.bigRegress;
+      if (worstRegress === undefined || regress > worstRegress.px) {
+        accumulator.window.bigRegress = {
+          px: regress,
+          dtMs: frameDelta ?? 0,
+          pathChanged: previous !== undefined && previous.path !== frame.prediction?.path,
+        };
+      }
+    }
     if (step !== undefined) {
       const stepPx = Math.hypot(step.x, step.y);
       accumulator.window.selfStepPx.push(stepPx);
-      // 单帧位移的硬指标是 < 10px（§6.1）：超了就留一个最大样本，带「当时有没有外推 / 摆动开没开」
+      // 单帧位移的硬指标是 < 10px（§6.1，60fps 口径）：留一个最大样本，带判别位与这一帧的时长
       const worst = accumulator.window.bigStep;
       if (stepPx > BIG_STEP_PX && (worst === undefined || stepPx > worst.px)) {
         accumulator.window.bigStep = {
           px: stepPx,
           hadPrediction: frame.prediction !== undefined,
           isMoving: frame.isMoving === true,
+          dtMs: frameDelta ?? 0,
         };
       }
     }
@@ -292,7 +315,10 @@ export function summarizeWindow(window: ProbeWindow): string | undefined {
     ` | isMovingFlips ${window.isMovingFlips} | pathSwap ${window.pathSwap} | suspendGap ${window.suspendGap}` +
     (window.bigStep === undefined
       ? ''
-      : ` | bigStep ${round(window.bigStep.px)}px pred=${window.bigStep.hadPrediction ? 1 : 0} moving=${window.bigStep.isMoving ? 1 : 0}`)
+      : ` | bigStep ${round(window.bigStep.px)}px pred=${window.bigStep.hadPrediction ? 1 : 0} moving=${window.bigStep.isMoving ? 1 : 0} dt=${round(window.bigStep.dtMs)}ms`) +
+    (window.bigRegress === undefined || window.bigRegress.px === 0
+      ? ''
+      : ` | bigRegress ${round(window.bigRegress.px)}px dt=${round(window.bigRegress.dtMs)}ms pathChanged=${window.bigRegress.pathChanged ? 1 : 0}`)
   );
 }
 

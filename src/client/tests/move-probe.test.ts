@@ -240,11 +240,11 @@ describe('帧级采样', () => {
     expect(accumulator.window.bigStep).toBeUndefined();
 
     sampleFrame(accumulator, { point: at(120, 0), prediction, camera: at(120, 0), isMoving: false, now: 1_032 });
-    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false });
+    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false, dtMs: 16 });
 
     // 更小的一次不覆盖：窗口里留的是最大的那一次
     sampleFrame(accumulator, { point: at(140, 0), prediction: undefined, camera: at(140, 0), isMoving: false, now: 1_048 });
-    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false });
+    expect(accumulator.window.bigStep).toEqual({ px: 116, hadPrediction: true, isMoving: false, dtMs: 16 });
   });
 
   it('loopDelta 与 frameDelta 同帧采：挂起那一帧两个都不采', () => {
@@ -254,6 +254,32 @@ describe('帧级采样', () => {
     sampleFrame(accumulator, { point: at(900, 0), prediction, now: 191_016, loopDelta: 190 });
     expect(accumulator.window.frameDelta).toEqual([16]);
     expect(accumulator.window.loopDelta).toEqual([16]);
+  });
+
+  it('倒退样本带这一帧的时长与「折线是不是刚换过」', () => {
+    const accumulator = createAccumulator();
+    const first = predictionOn([at(0, 0), at(200, 0)]);
+    sampleFrame(accumulator, { point: at(100, 0), prediction: first, now: 1_000 });
+    // 同一根折线上往回退 6px
+    sampleFrame(accumulator, { point: at(94, 0), prediction: first, now: 1_048 });
+    expect(accumulator.window.bigRegress).toEqual({ px: 6, dtMs: 48, pathChanged: false });
+
+    // 换一根几何相同的新折线（`anchorPrediction` 每拍都换数组）：倒退照算，但要标出折线刚换过
+    sampleFrame(accumulator, { point: at(80, 0), prediction: predictionOn([at(0, 0), at(200, 0)]), now: 1_064 });
+    expect(accumulator.window.bigRegress).toEqual({ px: 14, dtMs: 16, pathChanged: true });
+  });
+
+  it('倒退样本带这一帧的时长与「折线是不是刚换过」', () => {
+    const accumulator = createAccumulator();
+    const first = predictionOn([at(0, 0), at(200, 0)]);
+    sampleFrame(accumulator, { point: at(100, 0), prediction: first, now: 1_000 });
+    // 同一根折线上往回退 6px
+    sampleFrame(accumulator, { point: at(94, 0), prediction: first, now: 1_048 });
+    expect(accumulator.window.bigRegress).toEqual({ px: 6, dtMs: 48, pathChanged: false });
+
+    // 换一根几何相同的新折线（`anchorPrediction` 每拍都换数组）：倒退照算，但要标出折线刚换过
+    sampleFrame(accumulator, { point: at(80, 0), prediction: predictionOn([at(0, 0), at(200, 0)]), now: 1_064 });
+    expect(accumulator.window.bigRegress).toEqual({ px: 14, dtMs: 16, pathChanged: true });
   });
 
   it('挂起后醒来的第一帧不算帧间隔也不算位移（记 suspendGap，轨迹重新起头）', () => {
