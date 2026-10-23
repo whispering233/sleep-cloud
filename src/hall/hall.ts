@@ -294,6 +294,9 @@ export class Hall extends DurableObject<Env> {
             this.reject(ws, '5002', 'hello', blocked.untilAt);
             return;
           }
+          // 归属计时必须在判定出生点与恢复床位**之前**刷新：过期但还没被每日唤醒释放的行，先判定就会被当成
+          // 「不是我的」，同一个握手于是给出两个答案（`10-hall-runtime.md` §4.6、§9 步 0）
+          this.touchLastSeen(connection.userId, now);
           // 入场前判定升级：已用率到阈值就先长一档，新来的人有床可躺（`10-hall-runtime.md` §8）
           this.growIfNeeded();
           const resumed = this.resumeSession(connection);
@@ -320,7 +323,6 @@ export class Hall extends DurableObject<Env> {
           // 一个人同时只保留最新的一条连接（同一个人开两个标签页时，旧的会被顶掉）
           this.replaceOlderConnections(ws, ready.userId);
           ws.serializeAttachment(ready satisfies ConnectionState);
-          this.touchLastSeen(ready.userId);
           // 唤醒后可能有别人在途（这条循环不只为我自己起）
           this.startTicking();
           // 厅里有人了 → `tick` 那条循环开始跑（最后一条连接关闭时清除，见 `stopTickLogging`）
@@ -373,7 +375,7 @@ export class Hall extends DurableObject<Env> {
    * 握手时的状态恢复与出生点（见 `docs/design/10-hall-runtime.md` §9、§13）：
    * 床位行还占着（**行是唯一权威**，不论隔了多久）→ 行上的状态原样还原、位置退回床边；
    * 行本来是睡痕（别人画的是暗的）→ 先恢复占用，再推一条「我醒了」（其余情况不广播：别人画面本来没变）；
-   * 已有**未过期归属**的床 → 站在自己床脚前的横走道（跨厅走不动，人先落在自己的位置，见 §9 步 0）；
+   * 已有归属的床（`last_seen_at` 已由 `hello` 先写）→ 站在自己床脚前的横走道（跨厅走不动，人先落在自己的位置，见 §9 步 0）；
    * 否则出现在「编号最小的可认领床」前方走道。整厅没有可认领的床（且已触顶）→ 不入场。
    */
   private resumeSession(connection: ConnectionState): ConnectionState | undefined {
@@ -1161,6 +1163,8 @@ export class Hall extends DurableObject<Env> {
   /**
    * 每次连接建立时更新 `last_seen_at`（归属释放的依据，也是宽限推导的「最后在线时刻」）。
    * **不随心跳更新**——那是写放大；断开时的更新在宽限处理里做（避免每抖动一次写一行）。
+   * 认领 / 在自己床上再躺由 `putInBed` 写这一列；入场这一次**必须早于任何「归属是否过期」的判定**
+   * （`10-hall-runtime.md` §4.6），否则过期但还没被每日唤醒释放的行会被读成「不是我的」。
    * 时刻由调用方给：关连接时它必须与写进事件堆的那个时刻**完全一致**，否则闹钟会早响几毫秒。
    */
   private touchLastSeen(userId: string, now = Date.now()): void {

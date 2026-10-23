@@ -18,7 +18,7 @@ export interface OccupiedBedRow {
   /** 最近一次上床时的昵称快照（睡痕条目显示用） */
   ownerName: string | null;
   ownerAppearance: string | null;
-  /** 最后一次在线时刻（连接建立/断开时写）。为空只可能是历史行 */
+  /** 最后一次在线时刻（认领 / 连接建立 / 断开时写）。为空只可能是历史行 */
   lastSeenAt: number | null;
 }
 

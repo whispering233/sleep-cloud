@@ -14,10 +14,10 @@ import { LAYOUT_VERSION } from '../../shared/layout';
 import type { ErrorMessage } from '../../shared/protocol';
 import type { ConnectionState } from '../connection';
 import { Hall } from '../hall';
-import { writeBedCount } from '../bed-store';
+import { writeBedCount, writeDailyWakeAt } from '../bed-store';
 import { upsertBlock } from '../risk';
 import { META_KEYS } from '../schema';
-import { insertBed, freshSql } from './sqlite';
+import { insertBed, freshSql, rawRow } from './sqlite';
 
 /** 假 socket：只用到这里用到的五件事（附加数据、发送、关闭、就绪态）。 */
 class FakeSocket {
@@ -197,4 +197,30 @@ test('hello 命中封禁时不触发升级（判定排在 growIfNeeded 之前）
   await hello(open.hall, openWs);
 
   expect(bedCountMeta(open.sql)).toBe(150);
+});
+
+test('hello：归属已过期但行还没释放，先写 last_seen_at 再判定——恢复的仍是自己那张睡痕床', async () => {
+  const userId = 'u_stale';
+  const ws = new FakeSocket(connection(userId));
+  const { hall, sql } = newHall([ws]);
+  const lastSeenAt = Date.now() - 31 * 24 * 3600 * 1000;
+  // 今天的 20:00 已经结算过：否则入场重建会当场补跑每日唤醒，先把这条过期行释放掉
+  writeDailyWakeAt(sql, Date.now());
+  // 3 号床是过期但还没被每日唤醒释放的睡痕行；没有别的行 → 最小可认领床（出生点）是 0 号
+  insertBed(sql, 3, {
+    state: 'trace',
+    ownerUserId: userId,
+    lastSeenAt,
+    sleepStartedAt: lastSeenAt - 3600_000,
+    updatedAt: lastSeenAt,
+  });
+  const before = Date.now();
+
+  await hello(hall, ws);
+
+  const row = rawRow(sql, 3) ?? {};
+  expect(row.owner_user_id).toBe(userId); // 没被当成生人
+  expect((ws.deserializeAttachment() as ConnectionState).bedNo).toBe(3); // 恢复的是 3 号床，不是最小可认领床（出生点）
+  expect(row.state).toBe('asleep'); // 睡痕恢复 = 睡着的还原
+  expect(Number(row.last_seen_at)).toBeGreaterThanOrEqual(before); // 入场那一写把 30 天重新起算
 });

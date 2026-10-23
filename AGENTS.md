@@ -14,7 +14,7 @@
 | :--- | :--- |
 | 产品形态、空间模型、状态机、范围边界 | `docs/design/00-master-design.md` |
 | 技术栈、分包、布局纯函数、平台配额 | `docs/design/architecture.md` |
-| 运行时：唤醒恢复、三种时间机制、广播、睡痕、每日唤醒、级表升降级、出生点 | `docs/design/10-hall-runtime.md` |
+| 运行时：唤醒恢复、三种时间机制、一次成功入场刷新哪些期限、广播、睡痕、每日唤醒、级表升降级、出生点 | `docs/design/10-hall-runtime.md` |
 | 厅的空间模型、床位与格子规格、级表与厅的边界、布局契约 | `docs/design/20-layout.md` |
 | 端云位置同步：时延归属、重锚公式、别人滞后、验收口径与已知代价 | `docs/design/30-movement-sync.md` |
 | 客户端本地持久化：准入判据、键协议、键登记表 | `docs/design/40-client-storage.md` |
