@@ -203,7 +203,7 @@ export const FEEDBACK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 /** 类型文本（`docs/design/50-slot-panel.md` §附）单条长度上限（**trim 后**按字符计）。 */
 export const TYPE_TEXT_MAX_LEN = 200;
 
-/** 单条最多**段数**（连续空行分段）。长度与段数超限都是**丢掉那一条**，不截断。 */
+/** 单条最多**段数**（任何换行都分一次）。长度与段数超限由**构建期单测**拦（`src/client/tests/type-texts.test.ts`），运行时不丢弃也不截断。 */
 export const TYPE_TEXT_MAX_PARAS = 8;
 
 /**

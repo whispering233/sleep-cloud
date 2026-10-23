@@ -114,7 +114,7 @@
 | 脚本形态 | 经典 `<script defer>`（**不用 ES module**） | 少一次模块图解析、少一类 MIME/路径问题；后台不需要 tree-shaking |
 | 依赖 | **零**：不引 CDN、不引字体、图标用内联 SVG | 后台被墙外 CDN 拖慢的代价比省下的代码大；字体用系统栈 |
 | 语法检查 | 构建期对 `admin.js` 跑一次 `node --check` | 静态文件没有打包器，语法错误否则只能在浏览器里发现 |
-| 缓存 | **沿用默认**（`max-age=0` + `must-revalidate` + ETag），**不加 `immutable`** | 后台是运维面，改动要立刻生效；`public/_headers` 只给 `/audio/*` 加长缓存 |
+| 缓存 | **沿用默认**（`max-age=0` + `must-revalidate` + ETag），**不加 `immutable`** | 后台是运维面，改动要立刻生效；`public/_headers` 只给 `/assets/*`、`/audio/*` 加长缓存 |
 | 页面壳 | 仍然**不含任何数据**；登录前只显示登录表单 | 与 `30-api-admin.md` §1 的隔离前提一致 |
 
 **不引入构建链**：没有 Tailwind、没有 bundler、没有 `npm run admin`。后台的样式量级（一张 CSS 文件）用不上这些。
