@@ -310,6 +310,15 @@ anchorTs' = ts − ahead / v
 
 响应式与触摸类验收默认在宿主 Android 模拟器里做（真实 Chrome / IME / 触摸分发）；哪类测试该用哪个环境、为什么桌面手机视口只是降级选项见 `test.md`。
 
+**本轮实测记录**（宿主模拟器 `Medium_Phone_UX`（393×772 CSS）+ `tools/dev/latency-proxy.mjs` 单向 500ms；五趟走动，每窗 10s）：
+
+| 环境 | `frameDelta` p95 | `selfStepPx` max | `regressPx` max | `camStepPx` opposed | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 硬件 GPU（60fps） | 18.3ms | 4.2px | 0.7~1.5px | 2%（12/600） | 位置 / 帧时 / 相机都干净 |
+| 软件渲染 `-gpu swiftshader_indirect`（~30fps） | 50~55ms | 12.1px，带 `dt=54.6ms` ⇒ **221.6px/s** | 0.9px，带 `pathChanged=1` | 1.8%（5/282） | 同上：12.1px 只是**慢帧**，不是跳变；0.9px 是重锚处的弧长微动 |
+
+`loopDelta` 与 `frameDelta` 在同帧上同步（30fps 下 33.3 / 50.1 / 366.7 对 32.7 / 52.4 / 380.8）⇒ 退出整屏页后帧时直通，猫按真实帧时推进（`60-interaction-shell.md` §5.2）。
+
 ## 7. 明确不做
 
 | 不做 | 理由 | 什么时候才做 |
