@@ -91,9 +91,13 @@ describe('parseAbout（docs/design/90-about-panel.md §4）', () => {
 });
 
 describe('内容指纹（docs/design/90-about-panel.md §3.1）', () => {
-  it('只改空白（连续空白、行尾换行、缩进）→ 指纹不变', () => {
-    expect(aboutToken('第一段\n\n第二段\n')).toBe(aboutToken('  第一段  第二段  '));
-    expect(aboutToken('a\r\nb\r\n')).toBe(aboutToken('a b'));
+  it('只改空白（空行、行内 / 行尾空白）→ 指纹不变', () => {
+    expect(aboutToken('a\n\nb\n')).toBe(aboutToken('  a  \n b '));
+    expect(aboutToken('a\r\nb\r\n')).toBe(aboutToken('a\nb\n'));
+  });
+
+  it('换行切分变 → 指纹变', () => {
+    expect(aboutToken('一\n二')).not.toBe(aboutToken('一 二'));
   });
 
   it('改一个字 → 指纹变', () => {

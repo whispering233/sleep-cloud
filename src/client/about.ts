@@ -91,14 +91,19 @@ export function parseAbout(raw: string): AboutBlock[] {
 }
 
 /**
- * 正文 → 内容指纹（§3.1）：先归一化空白（整体 `trim` + 连续空白折成一个空格），
+ * 正文 → 内容指纹（§3.1）：先按行归一化（折行内空白、去行首尾、丢空行、**保留换行**——换行是结构），
  * 再逐 **UTF-16 码元**算 FNV-1a 32 位（`Math.imul`，初值 `0x811c9dc5`、质数 `0x01000193`），取 base36。
  *
- * 归一化的理由：CRLF 与文件末尾多一个换行不该让全体被多弹一次——**只改排版不算改内容**。
+ * 归一化的理由：CRLF 与行内多余空白不该让全体被多弹一次——**只改排版不算改内容**。
  * **算法写死、不许改**：换算法 / 换参数等于全体用户再弹一次面板；改指纹就当成一次内容变更对待。
+ * 口径一变全体会与内容更新一起再弹一次。
  */
 export function aboutToken(raw: string): string {
-  const normalized = raw.replace(/\s+/g, ' ').trim();
+  const normalized = raw
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line !== '')
+    .join('\n');
   let hash = 0x811c9dc5;
   for (let index = 0; index < normalized.length; index += 1) {
     hash ^= normalized.charCodeAt(index);
