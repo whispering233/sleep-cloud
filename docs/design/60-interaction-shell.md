@@ -27,7 +27,7 @@
 ```text
 idle ──focusin(可编辑控件)──▶ typing
 idle ──点「举报」（已选中某人）──▶ report
-idle ──点阅读入口──▶ reading（不拉键盘，所以不靠 focusin）
+idle ──点礼物托盘里的「随机阅读」──▶ reading（不拉键盘，所以不靠 focusin）
 idle ──点齿轮「反馈与建议」──▶ feedback（拉键盘，焦点进事由框）
 report ──focusin──▶ report（不降级：事由框换焦点不该把它换成快捷用语）
 feedback ──focusin──▶ feedback（不降级：同 report，否则会卸载表单、丢掉已写的字）
@@ -39,7 +39,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 ```
 
 - **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading' | 'feedback'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
-- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗书本图标胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
+- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗在**礼物托盘里**（`gift-tray`，不是动作行上的一颗）的阅读胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
 - **出口唯一**：`exitComposer()`。它必须满足三条：
   1. **幂等**（重复调用无副作用）；
   2. **不看 `activeElement` 是谁**（当前实现正是因为它只看输入框，才在输入框被卸载后彻底失效）；
@@ -47,7 +47,8 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 - **焦点对账**：shell 级 `focusout` → **下一帧**（rAF）检查活跃元素是否仍落在 `.chat-panel` 或 `.slot-panel` 的可编辑控件内；不在就 `exitComposer()`。这一条覆盖两类真实故障：
   - 控件被卸载而**不发 `blur`**（表情行原地替换输入行就是这一种）；
   - 别的控件抢走焦点（`GO`、将来任何弹层）。
-- **`composer !== 'idle'` 必须有常驻可见出口**：空闲态动作行**右端那一组五颗（睡不着留言板 / 求签 / 游戏 / 随机阅读 / 齿轮）整体换成一颗 44px「收起」胶囊**，点它 = `exitComposer()`（typing 与 report 都一样）；左端（床号 / `GO`）不受影响。**不能**把「点面板空白」当唯一出口——隐性出口在出错时等于没有出口。
+  - **`reading` 是唯一例外**：它里面**没有任何可编辑控件**（见 `50-slot-panel.md` §附），这条对账没有可对的东西，收到 `lost-focus` 保持原态。不豁免就会出现「面板只活 1 帧」：从礼物托盘进 `reading`，`hidePopover()` 先把焦点还给礼物那颗，而它随右端整组被换成「收起」而卸载 → `focusout` → 对账把它当成退场。
+- **`composer !== 'idle'` 必须有常驻可见出口**：空闲态动作行**右端那一组两颗（礼物 / 齿轮）整体换成一颗 44px「收起」胶囊**，点它 = `exitComposer()`（typing 与 report 都一样）；左端（床号 / `GO`）不受影响。所以打字态里礼物与齿轮**一起不可达**，开着的托盘也跟着关。**不能**把「点面板空白」当唯一出口——隐性出口在出错时等于没有出口。
   两处实现细节是实测踩出来的：① 胶囊在 `pointerdown` 里 `preventDefault()`（否则它一聚焦就触发对账、面板当场换位）；② 胶囊与它替换掉的右端那一组**必须带各自的 `key`**（React 会原地复用同一颗 `<button>`，而点击的「激活行为」（`popovertarget` 开浮层）在事件处理器之后才跑，于是按「收起」会顺手弹出设置浮层）。
 - **断线**（连接态转 `offline`）也走 `exitComposer()`：那一刻没有可发的东西，界面必须先把世界还给人。
 
@@ -84,8 +85,8 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
   2. 在 `pointerdown` 里 `preventDefault()`（浏览器据此不再派发兼容鼠标事件；顺带保住焦点）。
 - **世界层 tap 不变式**：`pointer.downElement !== game.canvas` 一律不派发。Phaser 4 只在 `downElement === canvas` 时才发 `POINTER_DOWN`（否则只发 `POINTER_DOWN_OUTSIDE`）。注意**它挡不住合成鼠标事件**（那种事件的目标本来就是 canvas），所以上面第二条约的是 DOM 侧的手势纪律，二者互补。
 - **退场不淡出。** 撤下 `data-open` 的那一帧盒子就换成 idle 那一行、内容同时卸掉，160ms 的 `opacity` 只作用在一块与聊天面板重合的空盒子上（实测数字见 `50-slot-panel.md` §5）。所以**别按「淡出期间还看得见 ⇒ 还挡得住」来做设计**，也别拿这条写测试（这正是旧 I7 测不到东西的原因）。
-- **有 Popover 时齿轮浮层用 `popover`**：顶层渲染、light-dismiss、焦点管理全部由平台给，不再手写 `aria-expanded` + 点外关闭。
-- **没有 Popover API 时退回自己管开关**（Chromium <114，如夸克 / UC 内核 = Chromium 100，见 `architecture.md` §1 的兼容基线）：`ToneLayer` 不写 `popover` 属性、不调 `showPopover`、不装 `toggle` 重排监听——它本来就是 `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与浮层之上；齿轮菜单退回 `menuOpen` state + `pointerdown` 点外关闭 + `Esc` 关闭 + 关时焦点回齿轮，`aria-expanded` 手写。两条路径只由 `src/client/popover.ts` 的 `HAS_POPOVER` 分叉，组件里不各写一份能力判断。降级菜单的 light-dismiss 与原生不逐字等价（焦点返回、点击穿透细节），靠手工在开发者工具里删掉三个 popover 方法后过一遍（见 `test.md` §1「降级路径的回归」）。
+- **有 Popover 时齿轮浮层用 `popover`**：顶层渲染、light-dismiss、焦点管理全部由平台给，不再手写 `aria-expanded` + 点外关闭。**但不要把布局规则写在 `[popover]` 元素本身上**：作者样式压过 UA 的 `[popover]:not(:popover-open) { display: none }`，给浮层根写 `display`（`grid` / `flex`）会让关着的浮层照旧可见——布局规则挂到一个内部容器上（礼物托盘就这样：`.hud-menu-action` 的横排与间距挂在里面的 `.hud-menu-group`）。
+- **没有 Popover API 时退回自己管开关**（Chromium <114，如夸克 / UC 内核 = Chromium 100，见 `architecture.md` §1 的兼容基线）：`ToneLayer` 不写 `popover` 属性、不调 `showPopover`、不装 `toggle` 重排监听——它本来就是 `position: fixed; inset: 0` 且是 `.app-shell` 的最后一个子节点，按 DOM 顺序照样压在面板与浮层之上；齿轮菜单与礼物托盘退回同一个 `openMenu: 'none' | 'gift' | 'gear'` + `pointerdown` 点外关闭 + `Esc` 关闭 + 关时焦点回触发源，`aria-expanded` 手写（联合类型顺带保证两个浮层不会同时开）。两条路径只由 `src/client/popover.ts` 的 `HAS_POPOVER` 分叉，组件里不各写一份能力判断。降级菜单的 light-dismiss 与原生不逐字等价（焦点返回、点击穿透细节），靠手工在开发者工具里删掉三个 popover 方法后过一遍（见 `test.md` §1「降级路径的回归」）。
 
 ## 5. 画布：尺寸与渲染的生命周期
 
@@ -115,7 +116,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 | # | 不变式 |
 | :--- | :--- |
 | I1 | `composer` 只能由 store 改；界面不得从 DOM 事件推导停靠态 |
-| I2 | 从 `typing` / `report` / `reading` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`——穷举长度 ≤ 4 的序列证明没有卡住的路 |
+| I2 | 从 `typing` / `report` / `feedback` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`；从 `reading` 出发，`exit` / `offline` 到 `idle`、`lost-focus` **保持 `reading`**（里面没有可编辑控件）——穷举长度 ≤ 4 的序列证明没有卡住的路 |
 | I3 | `exitComposer()` 幂等，且不依赖 `document.activeElement` 的具体类型 |
 | I4 | `composer !== 'idle'` 时屏幕内始终存在一个可见的 44px 出口控件 |
 | I5 | 任何可编辑控件获得焦点 → `composer` 为 `typing` 或 `report`（无例外，含 `GO` 床号与举报事由）；**`report` 不会被焦点事件降级成 `typing`** |

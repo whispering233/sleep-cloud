@@ -5,7 +5,7 @@
  * 所以状态住 store，进出都走这里的两条纯函数。**纯状态、不碰 DOM**。
  *
  * `reading`（类型文本）与 `feedback`（反馈与建议）是**不从聊天输入框焦点进来**的两种会话：
- * 前者点动作行的「!」就到、里面没有可编辑控件；后者从齿轮菜单进、里面有 `autoFocus` 的反馈框
+ * 前者点礼物托盘里的「随机阅读」就到、里面没有可编辑控件；后者从齿轮菜单进、里面有 `autoFocus` 的反馈框
  * （`docs/design/50-slot-panel.md` §附）。
  */
 export type ComposerState = 'idle' | 'typing' | 'report' | 'reading' | 'feedback';
@@ -35,9 +35,13 @@ export function composerReducer(state: ComposerState, event: ComposerEvent): Com
     case 'read':
       return 'reading';
     case 'exit':
-    case 'lost-focus':
     case 'offline':
       return 'idle';
+    // `reading` 里没有可编辑控件（`50-slot-panel.md` §附），焦点对账没有可对的东西：这条对账本来只服务
+    // 「输入框被卸载 / 被抢焦点」，而 `reading` 的油门在点击那一刻就落了地。还留着它，就会在托盘那颗
+    // 触发源随面板卸载时误判成退场（实测：面板只活 1 帧）
+    case 'lost-focus':
+      return state === 'reading' ? 'reading' : 'idle';
     default:
       return state;
   }

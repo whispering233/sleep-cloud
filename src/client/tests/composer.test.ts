@@ -11,7 +11,6 @@ const EVENTS: ComposerEvent[] = [
   { kind: 'lost-focus' },
   { kind: 'offline' },
 ];
-const EXIT_EVENT_KINDS = new Set(['exit', 'lost-focus', 'offline']);
 
 /** 长度 1..maxLength 的全部事件序列（7 种事件，长度 4 共 7^4 = 2401 条）。 */
 function sequences(maxLength: number): ComposerEvent[][] {
@@ -28,22 +27,33 @@ function run(events: ComposerEvent[]): ComposerState {
   return events.reduce<ComposerState>((state, event) => composerReducer(state, event), 'idle');
 }
 
+/** 段内状态：只看段里最后一个非焦点事件（`focus-in` 不换主体，只把 `read` 降成 `typing`）。 */
+function stateOfSegment(segment: ComposerEvent[]): ComposerState {
+  const last = [...segment].reverse().find((event) => event.kind !== 'focus-in');
+  if (last === undefined) return segment.length === 0 ? 'idle' : 'typing';
+  if (last.kind === 'report' || last.kind === 'feedback') return last.kind;
+  if (last.kind === 'read') return segment[segment.length - 1].kind === 'focus-in' ? 'typing' : 'reading';
+  return 'idle';
+}
+
+/** `lost-focus` 只在**不是 `reading`** 时算退场事件（`reading` 里没有可编辑控件，没有可对的东西）。 */
+function isExitEvent(event: ComposerEvent, segment: ComposerEvent[]): boolean {
+  if (event.kind === 'exit' || event.kind === 'offline') return true;
+  return event.kind === 'lost-focus' && stateOfSegment(segment) !== 'reading';
+}
+
 /**
- * 由序列直接推出的终态（不复用 reducer，免得两边一起错）：
- * 先找到尾巴（最后一次退出类事件之后）里最后一个**非焦点**事件：
- * 没有就只剩 `focus-in` → `typing`；是 `report` / `feedback` → 原态（这两种会话下的 `focus-in` 不降级）；
- * 是 `read` → 后面再有 `focus-in` 就降级成 `typing`，否则停在 `reading`。
+ * 由序列直接推出终态（不复用 reducer，免得两边一起错）：把序列切成段，退场事件把段清空并开新段，
+ * 终态就是最后一段的段内状态。
  */
 function expectedState(events: ComposerEvent[]): ComposerState {
-  let lastExit = -1;
-  events.forEach((event, index) => {
-    if (EXIT_EVENT_KINDS.has(event.kind)) lastExit = index;
-  });
-  const tail = events.slice(lastExit + 1);
-  const lastNonFocus = [...tail].reverse().find((event) => event.kind !== 'focus-in');
-  if (lastNonFocus === undefined) return tail.length === 0 ? 'idle' : 'typing';
-  if (lastNonFocus.kind === 'report' || lastNonFocus.kind === 'feedback') return lastNonFocus.kind;
-  return tail[tail.length - 1].kind === 'focus-in' ? 'typing' : 'reading';
+  let segment: ComposerEvent[] = [];
+  for (const event of events) {
+    if (isExitEvent(event, segment)) segment = [];
+    // 不是退场的 `lost-focus`（只能发生在 `reading` 里）什么都不做
+    else if (event.kind !== 'lost-focus') segment = [...segment, event];
+  }
+  return stateOfSegment(segment);
 }
 
 describe('输入会话状态机', () => {
@@ -52,9 +62,6 @@ describe('输入会话状态机', () => {
     expect(all).toHaveLength(7 + 49 + 343 + 2401);
     for (const events of all) {
       expect(run(events)).toBe(expectedState(events));
-      // 剪到第一次退出为止必须已经回到 idle（幂等的前半句）
-      const exitAt = events.findIndex((event) => EXIT_EVENT_KINDS.has(event.kind));
-      if (exitAt >= 0) expect(run(events.slice(0, exitAt + 1))).toBe('idle');
     }
   });
 
@@ -101,15 +108,18 @@ describe('输入会话状态机', () => {
     expect(composerReducer('idle', { kind: 'offline' })).toBe('idle');
   });
 
-  it('reading 会话：入口只有 read，焦点进输入框降级为 typing，三条退场都回 idle', () => {
+  it('reading 会话：入口只有 read，焦点进输入框降级为 typing，exit / offline 回 idle', () => {
     expect(composerReducer('idle', { kind: 'read' })).toBe('reading');
     // 重复点入口不算状态变化
     expect(composerReducer('reading', { kind: 'read' })).toBe('reading');
     // 读的时候去输入就是「收起阅读」：焦点进来一律降级
     expect(run([{ kind: 'read' }, { kind: 'focus-in' }])).toBe('typing');
-    for (const kind of EXIT_EVENT_KINDS) {
-      expect(run([{ kind: 'read' }, { kind } as ComposerEvent])).toBe('idle');
-    }
+    // 焦点对账对 `reading` 是空操作（里面没有可编辑控件，见 `50-slot-panel.md` §附）：
+    // 留着它就会在礼物托盘那颗触发源随面板卸载时把刚打开的面板当场退掉
+    expect(run([{ kind: 'read' }, { kind: 'lost-focus' }])).toBe('reading');
+    // 明确退场与断线照旧
+    expect(run([{ kind: 'read' }, { kind: 'exit' }])).toBe('idle');
+    expect(run([{ kind: 'read' }, { kind: 'offline' }])).toBe('idle');
   });
 
   it('reducer 是纯函数：同一输入两次调用结果相同', () => {
