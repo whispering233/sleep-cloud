@@ -164,11 +164,13 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 | 步骤 | 动作 |
 | :--- | :--- |
-| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期>` 之下，并留一个空的 `[Unreleased]` 段 |
+| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期>` 之下，并留一个空的 `[Unreleased]` 段；**同时把这一版「最近更新」写进 `src/client/about.json`**（`90-about-panel.md` §4） |
 | 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
 | 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
 | 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
 | 5 | 全绿即完成；任一环红了的失败形态与恢复见 §4.4 |
+
+**「改 `about.json`」为什么挂在这一步**：说明面板的自动弹出判据是正文的内容指纹（`90-about-panel.md` §3），**忘了改正文 = 装上新版的人什么都看不到，而且没有任何症状**（字没变 → 指纹不变 → 不弹）。这是本项目唯一一条没有测试兜底的发版纪律，只能靠这一步。
 
 **顺序为什么从「部署在 tag 之前」改成「tag 触发一切」**：标签仍是公开且难撤的产物，但「有没有发布」的判据从「tag 是否存在」换成「Release 是否存在」——Release 只在部署与冒烟都通过后才建，所以部署失败时仓库里仍不会出现「标了发布但没上线」的版本。代价是 tag 会先存在（可删可重推），恢复方式是修好后**只重跑失败的 job**（`verify` 红要改代码，那一步只能删 tag 重推，见 §4.4），不一定要删 tag。
 
