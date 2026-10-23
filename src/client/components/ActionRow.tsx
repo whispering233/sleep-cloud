@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 
 import { parseJumpTarget } from '../bed-jump';
 import { unlock as unlockAudio } from '../audio';
+import { DECOR_BLOCK_ORDER, blockLabel, decorOptionsOf } from '../decor';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, openFeedback, openGames, openLot, setComposer, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openFeedback, openGames, openLot, setComposer, setDecor, setRain, setSound, setSwitching, showNotice } from '../store';
 import { APP_VERSION } from '../version';
 import { soundLabel, weatherLabel } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
@@ -78,7 +79,7 @@ const ICON_ENTRIES = [
 
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
- * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **天气** / **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
+ * （`床号 n ↑` / `GO`）、右 = 阅读入口与设置齿轮（点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **装饰**（二级视图）/ **天气** / **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那一组换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
@@ -90,6 +91,8 @@ const ICON_ENTRIES = [
  * 它既是世界缩放的单指入口（WCAG 2.5.1：多指手势必须有单指替代，而且捏合没有可发现性），
  * 也是档位状态的一处显示；**常驻的那一处显示在顶部 HUD**（`缩放 0.75×`）——两个跳能各归一外，
  * 动作行才腾得下一行排五颗图标（`zoom-picker` 行）。点一档不关浮层：可以连续比。
+ * **装饰**紧在缩放之下，同样进二级（`decor-picker`）：每块单选 + 「无装饰」，点一项立即生效、也不关浮层
+ * （`docs/design/80-reserve-decor.md` §4.3）。它是纯本地偏好，无上行。
  *
  * **换床模式**（`bed-switch-mode`）：齿轮浮层里那项进 / 出；模式期间可点击组**收起 `GO`**
  * （它是「看一眼」的，换床是「搬过去」，摆在一起必混），门控行换成换床提示（互斥）。
@@ -106,8 +109,9 @@ export function ActionRow() {
   const [draft, setDraft] = useState('');
   /** 降级路径（无 Popover，见 `../popover.ts`）的菜单开关：有 Popover 时不用它，开关归平台 */
   const [menuOpen, setMenuOpen] = useState(false);
-  /** 浮层当前显示哪一级：`root` = 设置列表，`zoom` = 缩放档位二级（`zoom-picker`）。关掉浮层就回 `root` */
-  const [menuView, setMenuView] = useState<'root' | 'zoom'>('root');
+  /** 浮层当前显示哪一级：`root` = 设置列表，`zoom` = 缩放档位二级（`zoom-picker`），`decor` = 装饰二级
+      （`decor-picker`）。关掉浮层就回 `root` */
+  const [menuView, setMenuView] = useState<'root' | 'zoom' | 'decor'>('root');
   /** 菜单本体 */
   const menuRef = useRef<HTMLDivElement>(null);
   /** 齿轮：降级路径打开时它要交班焦点给菜单首项，关闭时接回来 */
@@ -338,10 +342,12 @@ export function ActionRow() {
 
               {/* 菜单：有 Popover 时 `popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，
                   所以没有遮罩、也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
-                  **根视图六项**：**更换床位**（可点，胶囊外观）、**缩放**（进二级）、**天气开关**（文案 = 当前天气）、
-                  **雨声开关**与**关于失眠云**，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
+                  **根视图七项**：**更换床位**（可点，胶囊外观）、**缩放**（进二级）、**装饰**（同样进二级：
+                  每块单选 + 「无装饰」，见 `decor-picker`）、**天气开关**（文案 = 当前天气）、
+                  **雨声开关**、**反馈与建议**与**关于失眠云**，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
-                  **二级视图**（`zoom-picker`）只换框里的内容：五个档位 + 一行返回。
+                  **二级视图**（`zoom-picker` / `decor-picker`）只换框里的内容：前者五档 + 一行返回，
+                  后者每块一个标题 + 候选与「无装饰」+ 一行返回。
                   没有 Popover 时退回手写的开关：无 `popover` 属性，按 `menuOpen` 条件渲染 */}
               {HAS_POPOVER || menuOpen ? (
                 <div className="hud-menu" id="hud-menu" ref={menuRef} popover={HAS_POPOVER ? 'auto' : undefined}>
@@ -354,7 +360,7 @@ export function ActionRow() {
                           type="button"
                           className={
                             sameZoomMode(option, view.zoomMode)
-                              ? 'hud-action hud-menu-action zoom-option-selected'
+                              ? 'hud-action hud-menu-action menu-option-selected'
                               : 'hud-action hud-menu-action'
                           }
                           aria-pressed={sameZoomMode(option, view.zoomMode)}
@@ -366,6 +372,45 @@ export function ActionRow() {
                         </button>
                       ))}
                       {/* 返回根：与上面五个档位同一套外观（都是 44px 胶囊），不另造一种「次级按钮」 */}
+                      <button
+                        type="button"
+                        className="hud-action hud-menu-action"
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => setMenuView('root')}
+                      >
+                        返回
+                      </button>
+                    </div>
+                  ) : menuView === 'decor' ? (
+                    // 装饰（`decor-picker`，`docs/design/80-reserve-decor.md` §4.3）：**每块单选 + 「无装饰」**。
+                    // 标题是纯文字（不可点，也不占 44px）；候选项与选中态沿用缩放那一套单选语言。
+                    // 点一项**立即生效、不关浮层**：可以连着换，也能一眼看出两个块现在的样子
+                    <div className="hud-menu-group">
+                      {DECOR_BLOCK_ORDER.map((block) => (
+                        <div className="decor-block" key={block}>
+                          <p className="decor-block-title">{blockLabel(block)}</p>
+                          {decorOptionsOf(block).map((option) => {
+                            const selected = view.decor[block] === option.id;
+                            return (
+                              <button
+                                key={option.id}
+                                type="button"
+                                className={
+                                  selected
+                                    ? 'hud-action hud-menu-action menu-option-selected'
+                                    : 'hud-action hud-menu-action'
+                                }
+                                aria-pressed={selected}
+                                onPointerDown={(event) => event.preventDefault()}
+                                onClick={() => setDecor(block, option.id)}
+                              >
+                                {selected ? `✓ ${option.label}` : option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                      {/* 返回根：与候选同一套外观（都是 44px 胶囊） */}
                       <button
                         type="button"
                         className="hud-action hud-menu-action"
@@ -401,6 +446,17 @@ export function ActionRow() {
                           onClick={() => setMenuView('zoom')}
                         >
                           缩放 · {zoomShortLabel(view.zoomMode)}
+                        </button>
+                        {/* 装饰：同样进二级（`decor-picker`），同样**不关浮层**。root 只写「装饰」：
+                            选没选在世界里本来就看得见（猫在不在、火燃不燃），这里不必再说一遍 */}
+                        <button
+                          key="decor"
+                          type="button"
+                          className="hud-action hud-menu-action"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={() => setMenuView('decor')}
+                        >
+                          装饰
                         </button>
                         {/* 天气开关：文案 = 当前天气，`aria-pressed` 表达开 / 关。点它**不关浮层**
                             ——天气是可连续切换的设置（不像「更换床位」那样是模式入口）。

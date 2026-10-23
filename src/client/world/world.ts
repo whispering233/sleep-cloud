@@ -370,7 +370,8 @@ class WorldScene extends Phaser.Scene {
 
   /**
    * 我床头那摊篝火（`docs/design/80-reserve-decor.md` §2）：**只有我自己看得见**——不进 `people`、
-   * 不广播，服务端不知道它存在。不画的情形：没有我、没有床、那张床不在视野里（与床位同一套裁剪口径）。
+   * 不广播，服务端不知道它存在。不画的情形：床头块没选它（`head !== 'fire'`）、没有我、没有床、
+   * 那张床不在视野里（与床位同一套裁剪口径）。
    *
    * 「我躺的那张床」：在床上就是那张（`bedNo`），在厅里走时是我拥有的那张（`ownedBedNo`）——
    * 换床必然先起身，所以搬过去的那一刻它本来就是熄灭的，不存在「火苗搬家」（§2.1）。
@@ -380,6 +381,11 @@ class WorldScene extends Phaser.Scene {
   private syncCampfire(state: ClientState): void {
     const fire = this.campfire;
     if (!fire) return;
+    // 床头块选到 `fire` 才画：「无装饰」= 整摊不画，它与「熄灭」（柴、灰、石圈还在）不是一回事（§2.1 / §4.2）
+    if (state.decor.head !== 'fire') {
+      hideCampfire(fire);
+      return;
+    }
     const me = state.me;
     const bedNo = me === undefined ? undefined : me.state === 'roaming' ? me.ownedBedNo : me.bedNo;
     // 锚点 = 床头块的**底边中心**（素材锚点也是墨迹底边中心，火堆就压在那条线上）；
@@ -403,7 +409,7 @@ class WorldScene extends Phaser.Scene {
   /**
    * 我床尾那只猫（`docs/design/80-reserve-decor.md` §3）：**只有我自己看得见**——绑「我」不绑床
    * （没有床时也跟），不进 `people` / `state.bubbles` / `spots`（命中走 `petHitAt` 的圆判据，不是可选中的对象），
-   * 服务端不知道它存在。
+   * 服务端不知道它存在。**床尾块没选到猫（`foot !== 'cat'`）时它不存在**：不画、不推进、不可点（§4.2）。
    *
    * 目标每帧由**我的显示态**现算（`petTargetFor`）：躺下 / 睡着 → 窝，其余（含还没有床）→ 我身后 60px。
    * 摸猫的 1.5 秒由 `petAffectionUntil` 冻结在原地（§3.6）。
@@ -412,6 +418,14 @@ class WorldScene extends Phaser.Scene {
   private syncPet(state: ClientState, self: Point | undefined): void {
     const pet = this.pet;
     if (!pet) return;
+    // 床尾块选到 `cat` 才存在：不画、不推进、不可点，问候也不发（§4.2）。
+    // **位置与折线一起丢**：再打开时从窝（有床）或起跑点出现，而不是从关掉前那个位置跨厅跑过来
+    if (state.decor.foot !== 'cat') {
+      this.petMove = undefined;
+      this.petTargetPoint = undefined;
+      hidePet(pet);
+      return;
+    }
     const me = state.me;
     const bedCount = this.loadedBedCount;
     if (me === undefined || self === undefined || bedCount === undefined) {
@@ -931,6 +945,13 @@ class WorldScene extends Phaser.Scene {
     const bedCount = this.loadedBedCount;
     const bedNo = bedNoAt(point.x, point.y, bedCount);
     const state = getState();
+    // 猫**只在这一帧真的画了**（`PetView.sprite.visible`）时才参与命中：关掉猫 / 被裁剪 / 睡痕……
+    // 看不见的猫不该抢走点击（§4.2：画、命中、问候走同一条判据）。
+    // 位置从场景字段现取，不写 store、不触发 React 重渲染（`AGENTS.md` 硬纪律 17）
+    const pet =
+      this.pet?.sprite.visible === true && this.petMove !== undefined
+        ? { x: this.petMove.x, y: this.petMove.y }
+        : undefined;
 
     const target = tapTargetFor({
       point,
@@ -943,7 +964,7 @@ class WorldScene extends Phaser.Scene {
       switching: state.switching,
       walkTarget: nearestStreetPoint(point, bedCount),
       // 猫可能压在床角上：它先于床位判定，但只演一个本地动作、不产生上行
-      pet: this.petMove ? { x: this.petMove.x, y: this.petMove.y } : undefined,
+      pet,
     });
 
     switch (target.kind) {

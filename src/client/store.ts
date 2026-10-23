@@ -21,15 +21,18 @@ import { shouldShowAbout } from './about';
 import { composerReducer } from './composer';
 import type { ComposerEvent, ComposerState } from './composer';
 import type { Connection, HaltReason } from './conn-state';
+import type { DecorBlock, DecorPick, DecorValue } from './decor';
 import { errorTextFor } from './error-text';
 import { nextMotion } from './motion';
 import type { Motion } from './motion';
 import {
   readAboutSeen,
+  readDecor,
   readProgress as loadReadProgress,
   readSound,
   readWeather,
   readZoomMode,
+  writeDecor,
   writeProgress as saveReadProgress,
   writeSound,
   writeWeather,
@@ -142,6 +145,11 @@ export interface ClientState {
    */
   sound: boolean;
   /**
+   * **预留位装饰**（客户端本地偏好，不进协议、不进快照）：每块选了哪一样，`none` = 我关了（一等值）。
+   * 世界层逐帧只**读**它（画不画火与猫的判据），界面层读它画选中态（`docs/design/80-reserve-decor.md` §4）。
+   */
+  decor: DecorPick;
+  /**
    * **说明面板**（客户端本地状态，不进协议、不进快照）：`null` = 关着，否则是打开的原因。
    * **一个字段**同时表达「开没开、为什么开」：拆成两个布尔就会出现「开着却不知道为什么」的状态，
    * 而勾选框与「关掉时记不记已读」都只由原因决定。
@@ -201,9 +209,11 @@ const emptyState = (): ClientState => ({
   reportedIds: new Set(),
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
   // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
+  // 装饰不一样：它本来就是「每块一个 id」，所以 store 直接存那份值（世界层逐帧读的就是它）
   zoomMode: readZoomMode(),
   rain: readWeather() === 'rain',
   sound: readSound() === 'rain',
+  decor: readDecor(),
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
   gamesOpen: false,
   lotOpen: false,
@@ -439,6 +449,17 @@ export function setSound(on: boolean): void {
   if (state.sound === on) return;
   setState({ sound: on });
   writeSound(on ? 'rain' : 'none');
+}
+
+/**
+ * 写一块装饰（见 `ClientState.decor`）：同值不写；写 store + 本地偏好（选回默认值 / `none` 也照写，
+ * 写入路径只一条）。**只动这一块**：另一块的选择原样保留。
+ */
+export function setDecor<B extends DecorBlock>(block: B, id: DecorValue<B>): void {
+  if (state.decor[block] === id) return;
+  const decor: DecorPick = { ...state.decor, [block]: id };
+  setState({ decor });
+  writeDecor(decor);
 }
 
 /** 打开说明面板（见 `ClientState.aboutOpen`）：同值不写。 */

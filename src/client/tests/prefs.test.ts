@@ -6,12 +6,14 @@ import { LOT_POOL_SIZE } from '../lots';
 import {
   PREFS,
   readAboutSeen,
+  readDecor,
   readLot,
   readProgress,
   readSound,
   readWeather,
   readZoomMode,
   writeAboutSeen,
+  writeDecor,
   writeLot,
   writeProgress,
   writeSound,
@@ -315,6 +317,73 @@ describe('求签（`sc.lot`，`docs/design/110-lot.md` §3）', () => {
     storage.data.set(PREFS.lot, JSON.stringify({ v: 2, date: '2026-10-22', no: 7 }));
     expect(readLot(storage)).toBeUndefined();
     expect(storage.data.has(PREFS.lot)).toBe(false);
+  });
+});
+
+describe('预留位装饰（`sc.decor`，`docs/design/80-reserve-decor.md` §4）', () => {
+  it('缺键 → 全回默认（篝火 + 猫 = 选择上线前的行为），且不因此写入一条键', () => {
+    const storage = fakeStorage();
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'cat' });
+    expect(storage.data.has(PREFS.decor)).toBe(false);
+  });
+
+  it('写后原样读回；落盘形状是 `{ v: 1, head, foot }`（一个键管所有块）', () => {
+    const storage = fakeStorage();
+    writeDecor({ head: 'none', foot: 'cat' }, storage);
+    expect(JSON.parse(storage.data.get(PREFS.decor) ?? '')).toEqual({ v: 1, head: 'none', foot: 'cat' });
+    expect(readDecor(storage)).toEqual({ head: 'none', foot: 'cat' });
+  });
+
+  it('`none` 能存能读回（它是「我关了」，不是「没写过」）', () => {
+    const storage = fakeStorage();
+    writeDecor({ head: 'fire', foot: 'none' }, storage);
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'none' });
+    writeDecor({ head: 'none', foot: 'none' }, storage);
+    expect(readDecor(storage)).toEqual({ head: 'none', foot: 'none' });
+  });
+
+  it('坏 JSON / 版本不符 / 根本不是对象 → **全回默认**，且该键已被删（与其它键同一条口径）', () => {
+    const raws = [
+      '{不是 JSON',
+      JSON.stringify({ v: 2, head: 'none', foot: 'none' }),
+      JSON.stringify(['fire', 'cat']),
+      JSON.stringify('fire'),
+    ];
+    for (const raw of raws) {
+      const storage = fakeStorage();
+      storage.data.set(PREFS.decor, raw);
+      expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'cat' });
+      expect(storage.data.has(PREFS.decor)).toBe(false);
+    }
+  });
+
+  it('表外 id 只回**该块**默认，另一块保留（坏值的粒度是块，键不删）', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, head: 'lamp', foot: 'none' }));
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'none' });
+    // 不是整键判废：另一块的选择得留着，下次写入也不会把用户的选择抹平
+    expect(storage.data.has(PREFS.decor)).toBe(true);
+
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, head: 'none', foot: 'dog' }));
+    expect(readDecor(storage)).toEqual({ head: 'none', foot: 'cat' });
+  });
+
+  it('**跨块 id** 不通过：猫搬不到床头块、火搬不到床尾块，两块各自回自己的默认', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, head: 'cat', foot: 'none' }));
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'none' });
+
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, head: 'none', foot: 'fire' }));
+    expect(readDecor(storage)).toEqual({ head: 'none', foot: 'cat' });
+  });
+
+  it('缺块 / 非字符串的值也只影响自己那一块', () => {
+    const storage = fakeStorage();
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, foot: 'none' }));
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'none' });
+
+    storage.data.set(PREFS.decor, JSON.stringify({ v: 1, head: 7, foot: 'cat' }));
+    expect(readDecor(storage)).toEqual({ head: 'fire', foot: 'cat' });
   });
 });
 

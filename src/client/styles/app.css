@@ -312,13 +312,32 @@
     gap: var(--spacing-sm);
   }
 
-  /* 浮层二级里选中那一档 = **实心 + 墨线**（与入场层形象选中同一套规矩，见 `.appearance-option-selected`）：
-     实心底用 `primary`（与 `.appearance-option` 同源），多出来的 1px 墨线用内阴影凑，不动 1px 边框 */
-  .zoom-option-selected {
+  /* 浮层二级里选中那一项 = **实心 + 墨线**（与入场层形象选中同一套规矩，见 `.appearance-option-selected`）：
+     实心底用 `primary`（与 `.appearance-option` 同源），多出来的 1px 墨线用内阴影凑，不动 1px 边框。
+     缩放档位与装饰候选共用它：两者都是**单选**，所以「实心 + ✓」这套语言只属于它们
+     （开 / 关类的项不给选中态，只有 `aria-pressed`） */
+  .menu-option-selected {
     color: var(--color-neutral);
     background-color: var(--color-primary);
     border-color: var(--color-neutral);
     box-shadow: inset 0 0 0 1px var(--color-neutral);
+  }
+
+  /* 装饰选择（`decor-picker`）：每块一组——一个 12px **纯文字**标题 + 该块的候选竖排。
+     标题不是按钮（它只分组，不可点），所以它拿 `text-caption` + `neutral-muted`，
+     也不占 44px 的触摸目标（`docs/ui/DESIGN.md` 的 `decor-picker` 行） */
+  .decor-block {
+    display: grid;
+    gap: var(--spacing-sm);
+  }
+
+  .decor-block-title {
+    margin: 0;
+    color: var(--color-neutral-muted);
+    font-family: var(--font-caption);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    letter-spacing: var(--tracking-caption);
   }
 
   /* 床号输入：与聊天框同一规格（`.input-field` 已是 44px / 16px），宽度上封一个数（桌面上不该拉成一整条） */

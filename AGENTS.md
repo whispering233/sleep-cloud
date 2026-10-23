@@ -21,7 +21,7 @@
 | 插槽面板：内容契约、快捷用语、类型文本（阅读）、已知代价 | `docs/design/50-slot-panel.md` |
 | 交互外壳：所有权表、输入会话状态机、Grid 两态、退场时序、画布冻结 | `docs/design/60-interaction-shell.md` |
 | 隐私与风控：三层身份、数据清单与留存、封禁语义、告知与删除口径 | `docs/design/70-privacy-risk.md` |
-| 我的预留位装饰：篝火与猫的行为、跟走与命中、已知边角 | `docs/design/80-reserve-decor.md` |
+| 我的预留位装饰：篝火与猫的行为、跟走与命中、装饰选择与已知边角 | `docs/design/80-reserve-decor.md` |
 | 说明面板：两个入口、已读语义、内容指纹、层级 | `docs/design/90-about-panel.md` |
 | 日志与可观测性：事件契约、字段白名单、额度预算、保存查询配方 | `docs/design/100-log.md` |
 | 求签 / 后台管理面板 / 反馈与建议 / 游戏页 | `docs/design/110-lot.md`、`docs/design/120-admin-console.md`、`docs/design/130-feedback.md`、`docs/design/140-games-page.md` |
@@ -98,7 +98,7 @@
 38. **天气与雨声是两个个人偏好，都不进协议。** 天气只有**雨天 / 无雨**两态，**只管雨层画面**；**雨声是隔壁那颗独立开关**，只管声音——两态互不覆盖、不做联动（无雨也能只听雨，雨天也能静音）。两颗胶囊缺键时都是关：无雨、静音（默认值是常量，不读日期），用户切过之后各自永久生效。服务端不知道，所以同厅两个人可能一个下雨一个不下。**只有开 / 关，没有音量**（理由见 `docs/design/backlog.md`）。
 39. **雨层是屏幕空间的并行 Scene。** 自带相机、原点左上、`zoom` = 画布 DPR（取 `1 / scale.zoom`，不要读 `window.devicePixelRatio`——画布才是事实源），因此不随世界缩放、可用视口、面板换位变化，也**不是第二层明暗**（覆盖率约 1.2%）。颗粒是运行时 `generateTexture` 的 2×14 细线，**不走 `npm run art`**。
 40. **音频用原生 WebAudio，不用 Phaser 的 SoundManager**（`audio: { noAudio: true }`，否则每页白建一个 `AudioContext`）。**静音时连 context 都不建**；**解锁必须在手势的同步路径里**（进场提交、或齿轮里点开雨声——由 store 的 effect 建 context 已在手势之外，Safari 会把它永远挂在 `suspended`）；音频字节走 HTTP 缓存（`public/_headers` 的 `immutable` + **文件名版本号**），不进本地存储。
-41. **自己的装饰只活在客户端，摆放靠纯函数。** 床头篝火与床尾的猫只在世界层画：不进 `people` / `state.bubbles` / `spots`，不发上行，服务端不知道它们存在。篝火亮灭 = **我的显示态**；猫**跟在我身后 60px**（走道放不下并排），点猫走纯函数命中圆、不开 `setInteractive`（硬度 21）；1.5 秒原地演完、不发上行。**同一动作的所有帧共用一个裁框**——逐帧裁 bbox 会让锚点随帧宽漂移，静止时像抽动。见 `docs/design/80-reserve-decor.md`。
+41. **自己的装饰只活在客户端，摆放靠纯函数。** 床头篝火与床尾的猫只在世界层画：不进 `people` / `state.bubbles` / `spots`，不发上行，服务端不知道它们存在。**选哪一样是本地偏好 `sc.decor`（每块单选，含「无装饰」）**：没选中的不画、**也没有可点的命中**；关掉猫时连它的位置与折线一起丢（重开从窝或起跑点出现，不从旧位置跨厅跑）。篝火亮灭 = **我的显示态**；猫**跟在我身后 60px**（走道放不下并排），点猫走纯函数命中圆、不开 `setInteractive`（硬度 21）；1.5 秒原地演完、不发上行。**同一动作的所有帧共用一个裁框**——逐帧裁 bbox 会让锚点随帧宽漂移，静止时像抽动。见 `docs/design/80-reserve-decor.md`。
 
 **身份与风控**
 
