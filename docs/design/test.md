@@ -61,6 +61,21 @@ npm run dev                                               # 项目仍跑在 WSL 
 
 `forward` 的端口绑在**宿主 Windows 的 127.0.0.1** 上，WSL 里连不上（`curl 127.0.0.1:9222` refused）。所以驱动脚本跑在 Windows 侧（`/mnt/c/Program Files/nodejs/node.exe <脚本>`，Node ≥ 22 自带 `WebSocket`），或者用 `/mnt/c/Windows/System32/curl.exe` 读 `/json/list`。
 
+**性能基线：链路上注入单向 500ms（RTT ≈ 1000ms）。** 走 CDP 的 `Network.emulateNetworkConditions`，只作用于这台设备、不改任何代码：
+
+```text
+"$ADB" forward tcp:9222 localabstract:chrome_devtools_remote
+# 宿主 Windows 侧（Node ≥ 22，与上面同一条 WebSocket 连接）：
+#   Network.enable {}
+#   Network.emulateNetworkConditions {offline:false, latency:<L>, downloadThroughput:-1, uploadThroughput:-1}
+```
+
+`-1` = **不限带宽**：带宽是另一个变量，不许顺手一起改。
+
+**参数值必须实测校准，不许信「填 500 就等于单向 500」。** 官方语义是「请求发出到收到响应头的最小延迟」，它到底落在单程还是往返只能量：先按 `L = 1000` 注入，然后触发**一次聊天或一次探活**（`rttMs` 只有这两个来源，见 `src/client/latency.ts` 文件头），读 HUD 上的「延迟」——读到 ≈1000 就是对了；读到 500 说明 `latency` 落在单程（`L` 要 2000）；读到 2000 说明它被算了两遍（`L` 要 500）。**验收口径锚在页内实测 `rttMs`，不锚在注入参数上。**
+
+**必须先确认 CDP 的 `latency` 也作用于 WebSocket 帧。** 帧的 RTT 若不跟着变（HTTP 变、`rttMs` 不变），这套基线就地作废——那说明只能靠 WS 代理（要改 vite proxy，属代码改动），不能拿它当「链路 500ms」的证据。这一步 5 分钟。
+
 **点按钮不要用 `adb shell input tap`：它不合成 `click`。** 实测（API 37 / Chrome 145）：`pointerdown` / `pointerup` / `touchstart` / `touchend` 都会到，`click` 永远是 0，按 120ms 也一样；拿两颗临时按钮做过隔离实验（一颗在 `pointerdown` 里 `preventDefault()`、一颗没有），**两颗都收不到 `click`**，所以这与硬纪律 35 的 `preventDefault()` 无关，是注入方式的问题。改为走 CDP 的 `Input.dispatchTouchEvent`（`touchStart` → 停 70ms → `touchEnd`，坐标是 **CSS 像素**）就有 `click`。
 
 **键盘也不是绕路：里面没有「用 `adb` 把页面点开」的办法。** 实测（同一台 API 37 / Chrome 145）：`input keyevent 61`（Tab）把焦点交给地址栏、后续 `DPAD_DOWN` 也留在浏览器 UI，页面里拿不到键盘焦点；`adb shell input keyevent 4` 能按返回键（这个是真事件，见下），但它只能退、不能进。因此设备侧要驱动页面（点按钮、连入游戏页）**只能靠 CDP attach**：而默认 AVD 是 `user` 构建（`ro.build.type=user`），Chrome 不读 `/data/local/tmp/chrome-command-line`，`localabstract:chrome_devtools_remote` 也不在监听（实测 `curl /json/version` 连接被拒）。要 attach 得换一个 debuggable 的镜像（`google_apis` 系）。**返回键本身不用 CDP**：用自驱页（页面自己 `pushState`） + `input keyevent 4` + `screencap` 就能验「硬件返回键 → `popstate`」。

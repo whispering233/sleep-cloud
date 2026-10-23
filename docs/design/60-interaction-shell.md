@@ -106,6 +106,9 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 - **`hasSession` 也算进公式**：`/api/me` 没回来时四页都还没画（都等 `session`），只看 `!entered` 就会停在一块什么都没盖的屏上。
 - **为什么停**：整屏页盖住的是 **2.7 Mpx** 画布（393 CSS px × DPR 3 = 1179×2316）。谁也看不见它，它却照旧吃满合成与 WebGL 的那一份预算。宿主 Android 模拟器（SwiftShader，≈23fps）实测：说明页开着时整条帧管线堵到**一次 tap 排队 31 → 270 ms、rAF 停顿 1.8 ~ 3.7 s**；真机 Via 上的形态正是这个——**「点知道了没反应、1-2 秒后大厅直接出现」，卡的不是关闭动作（面板出 DOM 只要 2 ~ 12 ms），是关闭之前那段时间管线已经堵住**。
 - **恢复必须重锚**：`loop.wake()` 只重启 rAF，**不清 `lastTime`**；`step()` 里 `delta = time - lastTime` 于是会算出「暂停了多久」那么大的一个 delta，`advanceMover` 与相机跟随都会一次跳一屏。顺序恒为 `resetDelta()` → `wake()`（`resetDelta()` 把 `time` / `lastTime` 一起打回 `performance.now()`，首帧 delta ≈ 0）。位置本身不需要补偿：服务端时间戳与外推都是 `f(t)`，醒来那一帧自然就是「当下」。
+- **帧时直通（`fps: { smoothStep: false }`）**：Phaser 默认的 `smoothDelta()` 会把帧时过一遍平滑——`resetDelta()` 顺手把内部的冷却计数拉到 `panicMax`（默认 120 帧），这段时间里凡帧时 > `1000/targetFps`（60fps 下 16.67ms）的帧都被**夹小**，再取 10 帧历史平均。delta 驱动的东西于是跟着慢下来：猫的 `advanceMover`、所有 Phaser 动画按帧时推进，30fps 的设备上猫会在 2~4 秒内慢一半——症状正是「退出整屏页后卡几帧、猫变慢」。所以世界层关掉平滑，**帧时是多少就是多少**。
+  - **代价**：一次大卡顿的 delta 也直通（1.5s 的系统冻结会让猫一帧走 330px）。这段保护由 `setWorldSuspended` + `resetDelta()` 显式接管，**不另加一层夹取机制**。
+  - **为什么不直接碰 Phaser 的私有字段**：`_coolDown` 只在 `TimeStep` 内部声明（`@private`），`phaser.d.ts` 里根本没有它 ⇒ 哪天改名，类型检查照样过、运行也不报错，症状只回到「猫又开始变慢」。用公开配置，升级改名会被 `npm run typecheck` 抓到。
 - **幂等**：世界层自留一个 `suspended` 布尔，只有状态真翻转才 sleep / wake（`wake()` 在 `running` 时虽会早退，但 `resetDelta()` 会打乱 FPS 统计）。
 - **首次创建时 loop 还没跑起来**：`new Phaser.Game()` 之后要先等 `TextureManager` 把三张 base64 贴图 `onload` 完才 `loop.start()`，而世界 chunk 是动态 import 的——注册那一刻 `running === false`，直接 `sleep()` 就是空操作。所以停不下时挂一次 `poststep`、在首帧尾巴上再睡（醒来前又盖上的情况由 `suspended` 兜住）；`!started` 时**不 wake**：那时 `wake()` 会在 `callback` 设上之前就重启 rAF。
 - **界面层不关心世界层起没起来**：世界层是懒加载块（入场层不该等它下载完），App 的 effect 可能比它先跑。所以 `src/client/world-handle.ts` **模块级记住最后一次请求**，`setWorldHandle()` 注册时把当前值套上去。
