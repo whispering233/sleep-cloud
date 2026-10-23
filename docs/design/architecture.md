@@ -119,7 +119,7 @@ bedNo → { row, col } → { x, y }        （与当前床位数无关；床位�
 
 ```text
 src/shared/   协议、布局、寻路与位置推进、常量、错误码、内容过滤、布局版本号
-games/        各游戏条目（`<id>/meta.ts` + `<id>/index.ts`，构建期扫描；游戏零项目 import）
+games/        各游戏条目（`<id>/meta.ts` + `<id>/index.ts`，构建期扫描；游戏零运行时项目 import）
 src/client/   世界层（world/）+ UI 层（components/、styles/）+ 游戏页外壳与扫描器（games/，逐条动态 import）+ 客户端偏好、天气与音频（prefs.ts、weather.ts、audio.ts）
 src/hall/     房间服务层
 src/worker/   入口层

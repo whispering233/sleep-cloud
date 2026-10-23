@@ -1062,14 +1062,6 @@
     letter-spacing: var(--tracking-caption);
   }
 
-  /* 空态：一条弱文字（首版已有条目，只为将来兜底） */
-  .games-empty {
-    margin: 0;
-    color: var(--color-neutral-muted);
-    font-size: var(--text-body);
-    line-height: var(--text-body--line-height);
-  }
-
   /* ——— 形象二选一 ——— */
 
   .appearance-row {

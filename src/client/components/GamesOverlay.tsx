@@ -111,34 +111,29 @@ export function GamesOverlay() {
       <div className="entry-card">
         <h1 className="entry-title">游戏</h1>
 
-        {GAMES.length === 0 ? (
-          // 空态只为将来兜底（首版就有条目，列表不会空着）
-          <p className="games-empty">还在做</p>
-        ) : (
-          <ul className="games-list">
-            {GAMES.map((entry) => (
-              <li key={entry.id}>
-                {/* 整行可点 = 描边胶囊（可点的才画成胶囊）。`pointerdown` 拦默认行为：
-                    挂上游戏那一刻整页盖过来，聚焦触发的 `focusout` 对账会当场换位（硬纪律 35） */}
-                <button
-                  type="button"
-                  className="hud-action games-entry"
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={(event) => {
-                    entryRef.current = event.currentTarget;
-                    hostRef.current?.show(entry);
-                    pushLevel('game');
-                    setLevel('game');
-                  }}
-                >
-                  <span>{entry.title}</span>
-                  <span className="games-entry-blurb">{entry.blurb}</span>
-                  {entry.base.w > entry.base.h ? <span className="games-entry-wide">横屏更好</span> : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ul className="games-list">
+          {GAMES.map((entry) => (
+            <li key={entry.id}>
+              {/* 整行可点 = 描边胶囊（可点的才画成胶囊）。`pointerdown` 拦默认行为：
+                  挂上游戏那一刻整页盖过来，聚焦触发的 `focusout` 对账会当场换位（硬纪律 35） */}
+              <button
+                type="button"
+                className="hud-action games-entry"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  entryRef.current = event.currentTarget;
+                  hostRef.current?.show(entry);
+                  pushLevel('game');
+                  setLevel('game');
+                }}
+              >
+                <span>{entry.title}</span>
+                <span className="games-entry-blurb">{entry.blurb}</span>
+                {entry.base.w > entry.base.h ? <span className="games-entry-wide">横屏更好</span> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* 舞台铺满整页、裁掉溢出。列表层上它是空的（`host.close()`），挂上游戏后只有那块
