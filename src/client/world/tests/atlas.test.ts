@@ -85,10 +85,10 @@ describe('图集与客户端的接口', () => {
   });
 
   it('frames.css 每帧一条规则，坐标与图集同源（入场层的形象预览按它取图）', () => {
-    const css = readFileSync(join(process.cwd(), 'public', 'sprites', 'frames.css'), 'utf8');
+    const css = readFileSync(join(process.cwd(), 'src', 'client', 'styles', 'frames.css'), 'utf8');
     const rules = [
       ...css.matchAll(
-        /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\.\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
+        /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\/sprites\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
       ),
     ];
     expect(rules.length).toBe(Object.keys(atlas.frames).length);

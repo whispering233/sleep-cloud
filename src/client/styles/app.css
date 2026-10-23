@@ -1156,7 +1156,7 @@
     outline-offset: 1px;
   }
 
-  /* 两张素材等高不同宽（`boy_stand` 67、`girl_stand` 97，见 `public/sprites/frames.css`）：
+  /* 两张素材等高不同宽（`boy_stand` 67、`girl_stand` 97，见 `src/client/styles/frames.css`）：
      统一放进 97×113 的框里居中，宽度差就不会被读成「两种尺寸的东西」。不缩放——113 就是素材原高。 */
   .appearance-frame {
     display: flex;
@@ -1166,7 +1166,7 @@
     height: 113px;
   }
 
-  /* 图集的帧是背景图，行内元素吃不到宽高（`sprites/frames.css` 只给 width/height/background-position） */
+  /* 图集的帧是背景图，行内元素吃不到宽高（`frames.css` 只给 width/height/background-position） */
   .appearance-preview {
     display: block;
   }

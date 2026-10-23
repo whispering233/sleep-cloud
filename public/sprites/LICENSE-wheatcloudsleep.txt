@@ -1,4 +1,4 @@
-素材来源与用途：本目录下的 atlas.png / atlas.json / frames.css 由 WheatCloudSleep 的 5 张母图
+素材来源与用途：本目录下的 atlas.png / atlas.json 由 WheatCloudSleep 的 5 张母图
 （Art/Legacy/Boy.png、Girl.png、bedEmpty.png、bedBoy.png、bedGirl.png；均原样存于 tools/art/masters/）构建而成，
 用于 sleep-cloud 世界层的床位与小人渲染。以下为上游许可原文（未改动）。
 
