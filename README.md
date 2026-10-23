@@ -101,6 +101,8 @@
 
 先读 [`AGENTS.md`](AGENTS.md)（硬纪律与术语）与 [`docs/design/tasks.md`](docs/design/tasks.md)（当前任务卡片）。
 
+游戏住在仓库根的 `games/<id>/`（`meta.ts` 给列表读、`index.ts` 是本体）：**加一个游戏 = 加一个文件夹**，注册由构建期扫描产生，`src/` 里没有手写条目表。
+
 本地运行（**干净克隆后先 `npm run tokens`**：`typecheck` 与 `test` 都依赖它的生成物）：
 
 ```bash
