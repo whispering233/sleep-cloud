@@ -22,7 +22,7 @@ import type { BedLook, BedMarker } from './rules';
  * 「一个东西长什么样」：色值、几何常量、床与小人的贴图怎么用。
  * 「该画哪些、画在哪」在 `world.ts`（可视窗口 + 对象池），这样贴图的细节不掺进相机与输入。
  *
- * 床与小人都来自构建期产出的图集（`public/sprites/atlas.json`，生成器见 `tools/art/build-sprites.mjs`）：
+ * 床与小人都来自构建期产出的图集（`src/client/assets/sprites/atlas.json`，生成器见 `tools/art/build-sprites.mjs`）：
  * 帧已经**裁到墨迹 bbox**，锚点写在帧元数据里（床 = 墨迹左上角、小人 = 墨迹底边中心），
  * Phaser 载入时按帧的 `anchor` 设原点，所以摆位只需给「格子左上角」与「站立点」这两个点。
  *
@@ -88,7 +88,7 @@ const EYE_HALF_SPACING_PX = 6;
 const WALK_SWAY = 0.03;
 const WALK_SWAY_HZ = 4.5;
 
-/** 图集 key：`public/sprites/atlas.png` + `atlas.json`（构建期产物，见 `tools/art/build-sprites.mjs`）。 */
+/** 图集 key：`src/client/assets/sprites/atlas.png` + `atlas.json`（构建期产物，见 `tools/art/build-sprites.mjs`）。 */
 export const SPRITES_KEY = 'sprites';
 
 /**

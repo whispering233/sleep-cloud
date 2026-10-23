@@ -12,7 +12,7 @@ import type { BedLook } from '../rules';
  * 客户端会要的每一帧都在、尺寸与 `BED_W`/`BED_H` 对得上、锚点就是约定值。
  * 图集缺帧或换了尺寸时，靠目视验收发现太晚。
  */
-const atlas = JSON.parse(readFileSync(join(process.cwd(), 'public', 'sprites', 'atlas.json'), 'utf8')) as {
+const atlas = JSON.parse(readFileSync(join(process.cwd(), 'src', 'client', 'assets', 'sprites', 'atlas.json'), 'utf8')) as {
   frames: Record<
     string,
     {
@@ -88,7 +88,7 @@ describe('图集与客户端的接口', () => {
     const css = readFileSync(join(process.cwd(), 'src', 'client', 'styles', 'frames.css'), 'utf8');
     const rules = [
       ...css.matchAll(
-        /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\/sprites\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
+        /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\.\.\/assets\/sprites\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
       ),
     ];
     expect(rules.length).toBe(Object.keys(atlas.frames).length);
