@@ -172,7 +172,7 @@
 # 干净克隆后先跑一次：typecheck 与 test 都依赖生成物 src/client/styles/tokens.*
 npm run tokens
 # 每个 worktree 先建 .dev.vars（照 .dev.vars.example，占位密钥、不入库）：缺了它 /api/me 报 9001、入场层不渲染
-# 美术素材管线（5 张母图 → 8 张贴图 → 图集 + frames.css；产物入库，不挂进 build）
+# 美术素材管线（5 张母图 → 8 张贴图 → 构建输入：atlas.* + frames.css；产物入库，不挂进 build）
 npm run art
 # 内容过滤词表（上游固定 commit + tools/words/curated.txt → src/shared/blocked-words.json）
 npm run words
@@ -196,4 +196,4 @@ npm run tokens
 
 ## 版本与变更
 
-- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推 main → 推 tag → CI 部署与 Release）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`。
+- `CHANGELOG.md` 遵循 Keep a Changelog，同时是 GitHub Release 正文来源。**变更记录里不写任务卡语义**（「卡 1」「批次 2」这类）；代码行为随卡落地时补条目；发版顺序（版本号 → CHANGELOG → 推 main → 推 tag → CI 部署与 Release）见 `build.md` §4.3。根 `LICENSE` 为 MIT；**美术素材另有出处**（`WheatCloudSleep`，MIT，© 2022 WheatBox），改动 `public/sprites/` 时必须保留 `public/sprites/LICENSE-wheatcloudsleep.txt`（图集本体已是构建输入，许可文本仍留在这里）。

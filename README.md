@@ -125,7 +125,7 @@ npm run lint:design   # 基线：0 error / 0 warning
 
 [MIT](LICENSE)
 
-**美术素材**：`public/sprites/` 下的图集与贴图由 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 的 5 张母图（床与小人，在 `Art/Legacy/`）构建而成，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
+**美术素材**：图集（`atlas.png` / `atlas.json`）与逐帧坐标样式（`frames.css`）是 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 5 张母图（床与小人，在 `Art/Legacy/`）的**构建输入产物**，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
 
 **雨声素材**：`public/audio/` 下的两个 WAV 由 [`Rain and Thunders`](https://opengameart.org/content/rain-and-thunders)（作者 `kindland`，**CC0 1.0**，无署名要求）加工而成：避开雷声、拼成无缝循环、单声道 32 kHz。完整加工链见 `public/audio/LICENSE-rain-and-thunders.txt`。
 
