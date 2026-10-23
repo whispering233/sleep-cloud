@@ -1118,6 +1118,10 @@ export function createWorld(host: HTMLElement, handlers: WorldHandlers, insetsOf
     audio: { noAudio: true },
     // 手势交给相机（单指拖拽平移、双指捏合拉远），不让浏览器把页面拽走
     canvasStyle: 'display: block; touch-action: none;',
+    // 帧时直通：Phaser 默认把帧时过一道平滑——`resetDelta()`（唤醒时）顺手把内部冷却计数拉到 120 帧，
+    // 那段时间里凡帧时 > 16.67ms 的帧都被夹小，delta 驱动的猫与动画于是慢下来（30fps 机上 2~4 秒才恢复）。
+    // 代价与判据见 `docs/design/60-interaction-shell.md` §5.2。
+    fps: { smoothStep: false },
     // **必须显式申请 2 个触摸指针**：Phaser 默认 `input.activePointers = 1`（`core/Config.js`），而
     // `InputManager.onTouchStart` 只在 `pointers[1..]` 里找空闲槽位、`pointers[0]` 归鼠标——默认配置下
     // 第二根手指找不到槽位就被直接丢掉，双指捏合永远进不了缩放分支（首指还会被当成单指拖拽把相机平移）。

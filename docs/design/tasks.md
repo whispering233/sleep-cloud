@@ -8,13 +8,9 @@
 
 ---
 
-## 卡 3 · 帧时直通（`fps: { smoothStep: false }`）
-
-**范围**：`src/client/world/world.ts` 的 `new Phaser.Game({...})` 加 `fps: { smoothStep: false }`。文档已在 `60-interaction-shell.md` §5.2 写定（理由与代价），本卡只改代码。
-
-**验收**：`npm run typecheck` 绿；模拟器上「游戏页 → 返回」后猫立刻按原速走（不需要 2~4 秒恢复），录屏前后各 ≤15s 对比。
-
 ## 卡 5 · 模拟器实测与定性（不改代码）
+
+**代码已全部落地**（探针 / 名字守卫 / 帧时直通），本卡只验不改：卡 3 的验收由下面第 4 项承担。
 
 **前置**：建 `.dev.vars` 与 `.android-env`（都不入库）；`npm run build`。
 
