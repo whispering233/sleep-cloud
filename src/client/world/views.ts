@@ -92,11 +92,18 @@ const WALK_SWAY_HZ = 4.5;
 export const SPRITES_KEY = 'sprites';
 
 /**
- * 篝火的两支状态（`docs/design/80-reserve-decor.md` §2.2）：燃烧 = 6 帧循环，熄灭 = 单帧（柴 + 灰 + 石圈）。
- * 动画 key 不带 `world-` 前缀：它是全局 `AnimationManager` 里的一支，与「组件名」不是同一类东西。
+ * 床头块的两样装饰共用一套视图与一条亮灭判据（`docs/design/80-reserve-decor.md` §2 / §2.4）：
+ * 差别只有帧前缀、帧率与熄灭帧。动画 key 不带 `world-` 前缀：它是全局 `AnimationManager` 里的一支，
+ * 与「组件名」不是同一类东西。
  */
-export const FIRE_BURNING_ANIM = 'fire-burning';
-export const FIRE_OUT_FRAME = 'fire-out';
+export type HeadDecorSkin = 'fire' | 'pumpkin';
+
+const HEAD_DECOR_SKINS: Record<HeadDecorSkin, { anim: string; prefix: string; end: number; frameRate: number; out: string }> = {
+  // 燃烧 = 6 帧 / 8fps；熄灭 = 单帧（柴 + 灰 + 石圈）
+  fire: { anim: 'fire-burning', prefix: 'fire-', end: 6, frameRate: 8, out: 'fire-out' },
+  // 亮 = 6 帧 / 10fps（帧率取自素材声明）；灭 = 单帧（不发光的老南瓜）
+  pumpkin: { anim: 'pumpkin-lit', prefix: 'cat-pumpkin-', end: 6, frameRate: 10, out: 'pumpkin-out' },
+};
 
 export const COLORS = {
   floor: color('primary'),
@@ -580,64 +587,72 @@ function fitNameLine(nameText: Phaser.GameObjects.Text, name: string, suffix: st
 }
 
 /**
- * 我床头的那堆火（`docs/design/80-reserve-decor.md` §2）：**只有我自己看得见**——不进 `people`、
+ * 我床头那一样装饰（`docs/design/80-reserve-decor.md` §2 / §2.4）：**只有我自己看得见**——不进 `people`、
  * 不广播，服务端不知道它存在。全场只有这一摊（我的那张床），所以不进对象池。
  *
  * 位置与深度由调用方给（世界坐标就是它自己的坐标，不套容器）：遮挡与小人同一条
  * ——画面上更靠下 = 更靠前（`DEPTH.person + y`，见 `world.ts`）。
  */
-export interface CampfireView {
-  /** 必须是 `Sprite`：燃烧是 6 帧循环动画，`Image` 播不了（`anims` 只在 Sprite 上） */
+export interface HeadDecorView {
+  /** 必须是 `Sprite`：亮着是帧循环动画，`Image` 播不了（`anims` 只在 Sprite 上） */
   readonly sprite: Phaser.GameObjects.Sprite;
   /** 上一次的亮灭（`undefined` = 还没画过）：不变就跳过换贴图与起停动画 */
   lit: boolean | undefined;
+  /** 上一次画的是哪一样（换装饰时强制重落位：两样的动画与熄灭帧都不同） */
+  skin: HeadDecorSkin | undefined;
 }
 
-/** 燃烧循环：`fire-1…6`、8fps、无限重复。**全局 `AnimationManager` 只注册一次**（重复 create 会告警并原样返回）。 */
-export function createCampfireAnims(scene: Phaser.Scene): void {
-  if (scene.anims.exists(FIRE_BURNING_ANIM)) return;
-  scene.anims.create({
-    key: FIRE_BURNING_ANIM,
-    frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: 'fire-', start: 1, end: 6 }),
-    frameRate: 8,
-    repeat: -1,
-  });
+/** 两样装饰的循环各自注册一次。**全局 `AnimationManager` 只注册一次**（重复 create 会告警并原样返回）。 */
+export function createHeadDecorAnims(scene: Phaser.Scene): void {
+  for (const skin of Object.values(HEAD_DECOR_SKINS)) {
+    if (scene.anims.exists(skin.anim)) continue;
+    scene.anims.create({
+      key: skin.anim,
+      frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: skin.prefix, start: 1, end: skin.end }),
+      frameRate: skin.frameRate,
+      repeat: -1,
+    });
+  }
 }
 
-export function createCampfireView(scene: Phaser.Scene): CampfireView {
-  // 初始贴图给熄灭帧：还没有我的时候它本来就是一堆柴；火燃起来才换帧
-  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, FIRE_OUT_FRAME).setScale(ART_SCALE).setVisible(false);
-  return { sprite, lit: undefined };
+export function createHeadDecorView(scene: Phaser.Scene): HeadDecorView {
+  // 初始贴图给熄灭帧：还没有我的时候它本来就是一堆柴；亮起来才换帧
+  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, HEAD_DECOR_SKINS.fire.out).setScale(ART_SCALE).setVisible(false);
+  return { sprite, lit: undefined, skin: undefined };
 }
 
-/** 一帧的摆放：**底边中心**的世界坐标（素材锚点也是墨迹底边中心，火堆就压在那条线上）、深度、亮灭。 */
-export interface CampfirePaint {
+/** 一帧的摆放：**底边中心**的世界坐标（素材锚点也是墨迹底边中心，火堆 / 南瓜就压在那条线上）、深度、亮灭、画哪一样。 */
+export interface HeadDecorPaint {
   x: number;
   y: number;
   depth: number;
   lit: boolean;
+  skin: HeadDecorSkin;
 }
 
-/** 摆一帧（逐帧调用）：位置与深度每帧写，亮灭只在翻转时换贴图 / 起停动画。 */
-export function placeCampfire(view: CampfireView, paint: CampfirePaint): void {
+/** 摆一帧（逐帧调用）：位置与深度每帧写，亮灭 / 换装饰只在翻转时换贴图 / 起停动画。 */
+export function placeHeadDecor(view: HeadDecorView, paint: HeadDecorPaint): void {
   view.sprite.setVisible(true).setPosition(paint.x, paint.y).setDepth(paint.depth);
-  if (view.lit === paint.lit) return;
+  if (view.lit === paint.lit && view.skin === paint.skin) return;
   view.lit = paint.lit;
+  view.skin = paint.skin;
+  const skin = HEAD_DECOR_SKINS[paint.skin];
   if (paint.lit) {
-    view.sprite.play(FIRE_BURNING_ANIM);
+    view.sprite.play(skin.anim);
     return;
   }
-  // 熄灭 = 停动画 + 换成单帧，**不隐藏**：留下柴、灰与石圈（「熄灭」是状态，不是消失）
+  // 熄灭 = 停动画 + 换成单帧，**不隐藏**：留下柴、灰与石圈 / 一颗不发光的老南瓜（「熄灭」是状态，不是消失）
   view.sprite.anims.stop();
-  view.sprite.setTexture(SPRITES_KEY, FIRE_OUT_FRAME);
+  view.sprite.setTexture(SPRITES_KEY, skin.out);
 }
 
-/** 不画（没有我 / 没有床 / 那张床不在视野里）：藏起来并停掉动画，亮灭签名清空——下次出现时重新落位。 */
-export function hideCampfire(view: CampfireView): void {
+/** 不画（床头选到「无装饰」/ 没有我 / 没有床 / 那张床不在视野里）：藏起来并停掉动画，签名清空——下次出现时重新落位。 */
+export function hideHeadDecor(view: HeadDecorView): void {
   if (!view.sprite.visible) return;
   view.sprite.setVisible(false);
   view.sprite.anims.stop();
   view.lit = undefined;
+  view.skin = undefined;
 }
 
 /**

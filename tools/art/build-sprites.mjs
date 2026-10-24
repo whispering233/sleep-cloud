@@ -13,9 +13,9 @@
  * 4. 产物是**提交物**（`src/client/assets/sprites/` 与 `src/client/styles/frames.css`），`npm run art` 重新生成；
  *    **不挂进 `npm run build`**。两个许可文件留在 `public/sprites/`（文档与 `AGENTS.md` 引用它）。
  *
- * 猫与篝火（`cat-sheet.png` / `cat-fire-out.png`）走另一条路：它们是**自绘 SVG 一次性离线栅格化**
+ * 猫、篝火与南瓜灯走另一条路：它们是**自绘 SVG 一次性离线栅格化**
  * 的产物（去纸底 / 去注记 / 去虚线格框 → `sharp` density 72），帧坐标来自
- * `cat-all-sprites-atlas.json`。本脚本只读那两张 PNG，**不引入任何 SVG 依赖**。
+ * `cat-all-sprites-atlas.json`。本脚本只读那几张 PNG，**不引入任何 SVG 依赖**。
  *
  * 色值只从 `docs/ui/DESIGN.md` 的 frontmatter 读（脚本里不写第二份）。
  * 不新增依赖：PNG 读写用 `node:zlib` 自己做（8-bit RGBA、非隔行——母图就是这种格式）。
@@ -40,11 +40,15 @@ const CAT_LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-cat-fire.txt');
 const ATLAS_WIDTH = 256;
 const GAP = 1;
 /**
- * 猫与篝火只打这七组进图集（站着：idle / walk / run / pat / nuzzle；躺着：sleep；道具：fire）；顺序 = 图集里帧的顺序。
- * 帧名按组推：`cat-<组>-<序号>`，篝火是 `fire-<序号>`（`generateFrameNames` 按前缀取帧）。
+ * 猫、篝火与南瓜灯只打这八组进图集（站着：idle / walk / run / pat / nuzzle；躺着：sleep；道具：fire / pumpkin）；
+ * 顺序 = 图集里帧的顺序。
+ * 帧名按组推：`cat-<组>-<序号>`（篝火是 `fire-<序号>`），`generateFrameNames` 按前缀取帧。
+ * **南瓜灯走自己的母图**（`cat-pumpkin.png`）：组里声明 `sheet`，坐标就换到那张图的空间——新增素材不必重做已有那张。
  */
 /** 篝火熄灭帧：整格母图，同一张图里火苗 / 火星 / 辉光已经屏掉。 */
 const FIRE_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
+/** 南瓜灯灭帧：整格母图，同一张图里光晕 / 地面光池已经去掉、挖洞填成墨色。 */
+const PUMPKIN_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
 
 /**
  * 8 张贴图（`docs/ui/DESIGN.md`「构建期要产出的变体」）：
@@ -64,7 +68,7 @@ const VARIANTS = [
 /** 锚点：床贴图的墨迹左上角 = 格子左上角；小人贴图的墨迹底边中心 = 站立点。 */
 const BED_ANCHOR = { x: 0, y: 0 };
 const STAND_ANCHOR = { x: 0.5, y: 1 };
-/** 猫与篝火：墨迹底边中心（猫与小人的站立点同一条；篝火 = 火堆压地那条线）。 */
+/** 床头 / 床尾的装饰：墨迹底边中心（猫与小人的站立点同一条；篝火 = 火堆压地那条线，南瓜灯同）。 */
 const DECOR_ANCHOR = { x: 0.5, y: 1 };
 
 // ————————————————————————— 设计令牌（唯一来源：DESIGN.md frontmatter） —————————————————————————
@@ -266,7 +270,8 @@ function crop(image, rect) {
 
 /**
  * 多色素材的「两支映射」：只有**近白纸**与**近黑墨**两类像素被换成令牌，其余（橙火、光晕、
- * 腮粉、木、灰，以及它们之间的抗锯齿过渡）**原样保留**——否则猫与篝火会被压成灰阶、火就不像火。
+ * 腮粉、木、灰，以及它们之间的抗锯齿过渡）**原样保留**——否则猫、篝火与南瓜灯会被压成灰阶
+ * （火就不像火、南瓜也不像南瓜）。
  *
  * 两支判据：`sat = (max−min)/max`（max 为 0 时按 0）、`lum = 0.299r+0.587g+0.114b`；
  * 两支都不命中时保留母图 RGB。alpha 一律照抄母图（不做空芯、不乘系数）。
@@ -424,7 +429,7 @@ function main() {
     });
   }
 
-  // 猫与篝火：先把每格裁出来，再**按组求墨迹 bbox 的并集**，整组共用同一个裁框。
+  // 床头 / 床尾的装饰：先把每格裁出来，再**按组求墨迹 bbox 的并集**，整组共用同一个裁框。
   // 逐帧各自裁自己的 bbox 会让「本帧底边中心」这个锚点随帧宽漂移（idle 帧宽 78↔93px），
   // 同一个动作里身体会左右抽动约 4 世界像素（实测）——所以同一组必须共框。
   const pieceOf = (master, rect) => crop(load(master), rect);
@@ -446,7 +451,8 @@ function main() {
     if (!group) throw new Error(`cat-all-sprites-atlas.json 里没有 ${groupId} 组`);
     return group.frames.map((rect, index) => ({
       name: groupId === 'fire' ? `fire-${index + 1}` : `cat-${groupId}-${index + 1}`,
-      master: 'cat-sheet',
+      // 组自己声明母图；没声明就是那张合计图（猫与篝火）
+      master: group.sheet ?? 'cat-sheet',
       rect,
     }));
   };
@@ -455,6 +461,7 @@ function main() {
     [...cellsOf('idle'), ...cellsOf('walk'), ...cellsOf('run'), ...cellsOf('pat'), ...cellsOf('nuzzle')],
     cellsOf('sleep'),
     [...cellsOf('fire'), { name: 'fire-out', master: 'cat-fire-out', rect: FIRE_OUT_RECT }],
+    [...cellsOf('pumpkin'), { name: 'pumpkin-out', master: 'cat-pumpkin-out', rect: PUMPKIN_OUT_RECT }],
   ];
   for (const cells of decorGroups) {
     const pieces = cells.map((cell) => ({ ...cell, piece: pieceOf(cell.master, cell.rect) }));
@@ -561,12 +568,12 @@ function main() {
 
   const catLicense = [
     '素材来源与用途：src/client/assets/sprites/atlas.png 里的猫（cat-idle-1…8、cat-walk-1…4、cat-run-1…4、cat-sleep-1…4、',
-    'cat-pat-1…6、cat-nuzzle-1…6）与',
-    '篝火（fire-1…6、fire-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可',
-    '（原文见仓库根目录 LICENSE），用于世界层的床尾猫与床头篝火。',
+    'cat-pat-1…6、cat-nuzzle-1…6）、',
+    '篝火（fire-1…6、fire-out）与南瓜灯（cat-pumpkin-1…6、cat-pumpkin-out）都是 sleep-cloud 项目自绘的原创素材，与本仓库其余代码同为 MIT 许可',
+    '（原文见仓库根目录 LICENSE），用于世界层的床尾猫、床头篝火与床头南瓜灯。',
     '',
     '生成方式：先写成 SVG，再一次性离线栅格化为 PNG（去纸底 / 去注记 / 去格框，density 72）；',
-    '母图存于 tools/art/masters/（cat-sheet.png、cat-fire-out.png，帧坐标见 cat-all-sprites-atlas.json），',
+    '母图存于 tools/art/masters/（cat-sheet.png、cat-fire-out.png、cat-pumpkin.png、cat-pumpkin-out.png，帧坐标见 cat-all-sprites-atlas.json），',
     '构建期脚本只读 PNG，不引入任何 SVG 依赖。',
     '',
   ].join('\n');
@@ -591,7 +598,7 @@ function main() {
   );
   console.log(`坐标：src/client/styles/frames.css（${frames.length} 条规则）`);
   console.log(`许可：public/sprites/LICENSE-wheatcloudsleep.txt 在位（${license.length} 字节，MIT / © 2022 WheatBox）`);
-  console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫与篝火为项目自绘，MIT）`);
+  console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫 / 篝火 / 南瓜灯为项目自绘，MIT）`);
 }
 
 main();

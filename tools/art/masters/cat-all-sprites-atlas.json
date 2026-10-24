@@ -1,7 +1,7 @@
 {
   "id": "cat-all-sprites",
   "name": "猫咪精灵图合集",
-  "image": "cat-all-sprites-sheet.svg",
+  "image": "cat-sheet.png",
   "imageSize": {
     "w": 1160,
     "h": 1072
@@ -25,7 +25,6 @@
         {
           "index": 0,
           "name": "cat-pet-1",
-          "src": "cat-frames/cat-pet-1.svg",
           "x": 112,
           "y": 152,
           "w": 128,
@@ -34,7 +33,6 @@
         {
           "index": 1,
           "name": "cat-pet-2",
-          "src": "cat-frames/cat-pet-2.svg",
           "x": 240,
           "y": 152,
           "w": 128,
@@ -43,7 +41,6 @@
         {
           "index": 2,
           "name": "cat-pet-3",
-          "src": "cat-frames/cat-pet-3.svg",
           "x": 368,
           "y": 152,
           "w": 128,
@@ -52,7 +49,6 @@
         {
           "index": 3,
           "name": "cat-pet-4",
-          "src": "cat-frames/cat-pet-4.svg",
           "x": 496,
           "y": 152,
           "w": 128,
@@ -61,7 +57,6 @@
         {
           "index": 4,
           "name": "cat-pet-5",
-          "src": "cat-frames/cat-pet-5.svg",
           "x": 624,
           "y": 152,
           "w": 128,
@@ -70,7 +65,6 @@
         {
           "index": 5,
           "name": "cat-pet-6",
-          "src": "cat-frames/cat-pet-6.svg",
           "x": 752,
           "y": 152,
           "w": 128,
@@ -90,7 +84,6 @@
         {
           "index": 6,
           "name": "cat-nuzzle-1",
-          "src": "cat-frames/cat-nuzzle-1.svg",
           "x": 112,
           "y": 280,
           "w": 128,
@@ -99,7 +92,6 @@
         {
           "index": 7,
           "name": "cat-nuzzle-2",
-          "src": "cat-frames/cat-nuzzle-2.svg",
           "x": 240,
           "y": 280,
           "w": 128,
@@ -108,7 +100,6 @@
         {
           "index": 8,
           "name": "cat-nuzzle-3",
-          "src": "cat-frames/cat-nuzzle-3.svg",
           "x": 368,
           "y": 280,
           "w": 128,
@@ -117,7 +108,6 @@
         {
           "index": 9,
           "name": "cat-nuzzle-4",
-          "src": "cat-frames/cat-nuzzle-4.svg",
           "x": 496,
           "y": 280,
           "w": 128,
@@ -126,7 +116,6 @@
         {
           "index": 10,
           "name": "cat-nuzzle-5",
-          "src": "cat-frames/cat-nuzzle-5.svg",
           "x": 624,
           "y": 280,
           "w": 128,
@@ -135,7 +124,6 @@
         {
           "index": 11,
           "name": "cat-nuzzle-6",
-          "src": "cat-frames/cat-nuzzle-6.svg",
           "x": 752,
           "y": 280,
           "w": 128,
@@ -155,7 +143,6 @@
         {
           "index": 12,
           "name": "cat-walk-1",
-          "src": "cat-frames/cat-walk-1.svg",
           "x": 112,
           "y": 408,
           "w": 128,
@@ -164,7 +151,6 @@
         {
           "index": 13,
           "name": "cat-walk-2",
-          "src": "cat-frames/cat-walk-2.svg",
           "x": 240,
           "y": 408,
           "w": 128,
@@ -173,7 +159,6 @@
         {
           "index": 14,
           "name": "cat-walk-3",
-          "src": "cat-frames/cat-walk-3.svg",
           "x": 368,
           "y": 408,
           "w": 128,
@@ -182,7 +167,6 @@
         {
           "index": 15,
           "name": "cat-walk-4",
-          "src": "cat-frames/cat-walk-4.svg",
           "x": 496,
           "y": 408,
           "w": 128,
@@ -202,7 +186,6 @@
         {
           "index": 16,
           "name": "cat-run-1",
-          "src": "cat-frames/cat-run-1.svg",
           "x": 112,
           "y": 536,
           "w": 128,
@@ -211,7 +194,6 @@
         {
           "index": 17,
           "name": "cat-run-2",
-          "src": "cat-frames/cat-run-2.svg",
           "x": 240,
           "y": 536,
           "w": 128,
@@ -220,7 +202,6 @@
         {
           "index": 18,
           "name": "cat-run-3",
-          "src": "cat-frames/cat-run-3.svg",
           "x": 368,
           "y": 536,
           "w": 128,
@@ -229,7 +210,6 @@
         {
           "index": 19,
           "name": "cat-run-4",
-          "src": "cat-frames/cat-run-4.svg",
           "x": 496,
           "y": 536,
           "w": 128,
@@ -249,7 +229,6 @@
         {
           "index": 20,
           "name": "cat-sleep-1",
-          "src": "cat-frames/cat-sleep-1.svg",
           "x": 112,
           "y": 664,
           "w": 128,
@@ -258,7 +237,6 @@
         {
           "index": 21,
           "name": "cat-sleep-2",
-          "src": "cat-frames/cat-sleep-2.svg",
           "x": 240,
           "y": 664,
           "w": 128,
@@ -267,7 +245,6 @@
         {
           "index": 22,
           "name": "cat-sleep-3",
-          "src": "cat-frames/cat-sleep-3.svg",
           "x": 368,
           "y": 664,
           "w": 128,
@@ -276,7 +253,6 @@
         {
           "index": 23,
           "name": "cat-sleep-4",
-          "src": "cat-frames/cat-sleep-4.svg",
           "x": 496,
           "y": 664,
           "w": 128,
@@ -296,7 +272,6 @@
         {
           "index": 24,
           "name": "cat-fire-1",
-          "src": "cat-frames/cat-fire-1.svg",
           "x": 112,
           "y": 792,
           "w": 128,
@@ -305,7 +280,6 @@
         {
           "index": 25,
           "name": "cat-fire-2",
-          "src": "cat-frames/cat-fire-2.svg",
           "x": 240,
           "y": 792,
           "w": 128,
@@ -314,7 +288,6 @@
         {
           "index": 26,
           "name": "cat-fire-3",
-          "src": "cat-frames/cat-fire-3.svg",
           "x": 368,
           "y": 792,
           "w": 128,
@@ -323,7 +296,6 @@
         {
           "index": 27,
           "name": "cat-fire-4",
-          "src": "cat-frames/cat-fire-4.svg",
           "x": 496,
           "y": 792,
           "w": 128,
@@ -332,7 +304,6 @@
         {
           "index": 28,
           "name": "cat-fire-5",
-          "src": "cat-frames/cat-fire-5.svg",
           "x": 624,
           "y": 792,
           "w": 128,
@@ -341,7 +312,6 @@
         {
           "index": 29,
           "name": "cat-fire-6",
-          "src": "cat-frames/cat-fire-6.svg",
           "x": 752,
           "y": 792,
           "w": 128,
@@ -362,7 +332,6 @@
         {
           "index": 30,
           "name": "cat-idle-1",
-          "src": "cat-frames/cat-idle-1.svg",
           "x": 112,
           "y": 920,
           "w": 128,
@@ -371,7 +340,6 @@
         {
           "index": 31,
           "name": "cat-idle-2",
-          "src": "cat-frames/cat-idle-2.svg",
           "x": 240,
           "y": 920,
           "w": 128,
@@ -380,7 +348,6 @@
         {
           "index": 32,
           "name": "cat-idle-3",
-          "src": "cat-frames/cat-idle-3.svg",
           "x": 368,
           "y": 920,
           "w": 128,
@@ -389,7 +356,6 @@
         {
           "index": 33,
           "name": "cat-idle-4",
-          "src": "cat-frames/cat-idle-4.svg",
           "x": 496,
           "y": 920,
           "w": 128,
@@ -398,7 +364,6 @@
         {
           "index": 34,
           "name": "cat-idle-5",
-          "src": "cat-frames/cat-idle-5.svg",
           "x": 624,
           "y": 920,
           "w": 128,
@@ -407,7 +372,6 @@
         {
           "index": 35,
           "name": "cat-idle-6",
-          "src": "cat-frames/cat-idle-6.svg",
           "x": 752,
           "y": 920,
           "w": 128,
@@ -416,7 +380,6 @@
         {
           "index": 36,
           "name": "cat-idle-7",
-          "src": "cat-frames/cat-idle-7.svg",
           "x": 880,
           "y": 920,
           "w": 128,
@@ -425,9 +388,69 @@
         {
           "index": 37,
           "name": "cat-idle-8",
-          "src": "cat-frames/cat-idle-8.svg",
           "x": 1008,
           "y": 920,
+          "w": 128,
+          "h": 128
+        }
+      ]
+    },
+    {
+      "id": "pumpkin",
+      "name": "南瓜灯",
+      "nameEn": "PUMPKIN",
+      "sheet": "cat-pumpkin",
+      "source": "cat-all-sprites-sheet.svg 第 8 行（x = 112 + i*128, y = 1048）；母图见 masters/cat-pumpkin.png",
+      "row": 8,
+      "fps": 10,
+      "loop": true,
+      "frameCount": 6,
+      "frames": [
+        {
+          "index": 0,
+          "name": "cat-pumpkin-1",
+          "x": 0,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "index": 1,
+          "name": "cat-pumpkin-2",
+          "x": 128,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "index": 2,
+          "name": "cat-pumpkin-3",
+          "x": 256,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "index": 3,
+          "name": "cat-pumpkin-4",
+          "x": 384,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "index": 4,
+          "name": "cat-pumpkin-5",
+          "x": 512,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "index": 5,
+          "name": "cat-pumpkin-6",
+          "x": 640,
+          "y": 0,
           "w": 128,
           "h": 128
         }

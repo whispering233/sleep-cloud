@@ -69,7 +69,7 @@
 | `sc.zoom.mode` | `{"v":1,"mode": "free"｜0.175｜0.5｜0.75｜1}` | `free`（缺键即默认） | `mode` 等于 `"free"`，或**恰好等于 `ZOOM_TIERS` 里的某一个比例** | v1 |
 | `sc.weather` | `{"v":1,"kind":"none"｜"rain"｜"snow"}` | `none`（缺键即默认，见下） | `kind` 必须在合法天气 id 表里（当前 `none` / `rain` / `snow`）；**单选**——一个键只装一个天气，不可能既雨又雪 | v1 |
 | `sc.sound` | `{"v":1,"kind":"none"｜"rain"}` | `none`（缺键即默认，见下） | `kind` 必须在合法声道 id 表里（当前只有 `none` / `rain`） | v1 |
-| `sc.decor` | `{"v":1,"head":"fire"｜"none","foot":"cat"｜"none"}` | 每块回自己的默认（床头篝火 + 床尾猫 = 选择上线前的行为） | 每个块的值 ∈ **该块的候选表** ∪ `"none"`（`DECOR_BLOCKS`）；**单块不合 → 只回该块默认**，另一块保留 | v1 |
+| `sc.decor` | `{"v":1,"head":"fire"｜"pumpkin"｜"none","foot":"cat"｜"none"}` | 每块回自己的默认（床头篝火 + 床尾猫 = 选择上线前的行为） | 每个块的值 ∈ **该块的候选表** ∪ `"none"`（`DECOR_BLOCKS`）；**单块不合 → 只回该块默认**，另一块保留 | v1 |
 | `sc.about.seen` | `{"v":1,"seen":"1k9f3a2"}` | 缺键 = 从未确认过任何公告（首访） | `seen` 是**非空字符串且 ≤ 32 字符**（不校验格式——它是内容指纹，只与 `ABOUT_TOKEN` 比字面相等） | v1 |
 | `sc.read.seen` | `{"v":1,"seen":{"joke":["j1","j7"]},"current":{"joke":"j7"}}` | 缺键 = 一条都没读过 | `seen` / `current` 都是「分类 id → 字符串数组 / 字符串」的扁平映射：分类 id 非空 ≤ 32 字符、每条 id ≤ 32 字符、每类 ≤ `TYPE_TEXTS_PER_CATEGORY` 条；多出来的字段不读 | v1 |
 | `sc.lot` | `{"v":1,"date":"2026-10-22","no":7}` | 缺键 = 今天没求过 | `date` 匹配 `^\d{4}-\d{2}-\d{2}$`、`no` 是 `0…LOT_POOL_SIZE-1` 的整数；任一不符 → 删该键 + 当没求过。**不校验 `date` 是不是真日期**（它只与今天的字面值比较，坏值唯一后果是再求一次） | v1 |
