@@ -1,7 +1,7 @@
 {
   "id": "cat-all-sprites",
   "name": "猫咪精灵图合集",
-  "image": "cat-all-sprites-sheet.svg",
+  "image": "cat-sheet.png",
   "imageSize": {
     "w": 1160,
     "h": 1072
