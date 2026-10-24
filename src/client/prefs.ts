@@ -157,7 +157,8 @@ export type WeatherKind = 'none' | 'rain' | 'snow';
 /** 声道 id（`sc.sound` 的 `kind`）：加一种白噪音同理。 */
 export type SoundKind = 'none' | 'rain';
 
-const WEATHER_KINDS: readonly WeatherKind[] = ['none', 'rain', 'snow'];
+/** 天气 id 表：**加一种天气只改这一行**，不开新键。界面那份候选（`weatherOptionsOf()`）直接吃它，顺序就是列表顺序。 */
+export const WEATHER_KINDS: readonly WeatherKind[] = ['none', 'rain', 'snow'];
 const SOUND_KINDS: readonly SoundKind[] = ['none', 'rain'];
 
 /** 白名单：`kind` 必须在这张 id 表里（**不接受表外字符串**，也不接受旧的布尔形状）。 */
