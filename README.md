@@ -127,8 +127,8 @@ npm run lint:design   # 基线：0 error / 0 warning
 
 [MIT](LICENSE)
 
-**美术素材**：图集（`src/client/assets/sprites/atlas.png` / `atlas.json`）与入场层的逐帧坐标样式（`src/client/styles/frames.css`）由 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 的 5 张母图（床与小人，在 `Art/Legacy/`）经 `npm run art` 生成、随仓库入库，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
+**美术素材**：图集（`src/client/assets/sprites/atlas.png` / `atlas.json`）与入场层预览那两帧的坐标样式（`src/client/styles/frames.css`）由 [`WheatCloudSleep`](https://github.com/WheatBox/WheatCloudSleep) 的 5 张母图（床与小人，在 `Art/Legacy/`）经 `npm run art` 生成、随仓库入库，同样以 **MIT** 授权（Copyright © 2022 WheatBox），许可声明随附于 `public/sprites/LICENSE-wheatcloudsleep.txt`。使用前请一并保留该声明。
 
 **雨声素材**：`public/audio/` 下的两个 WAV 由 [`Rain and Thunders`](https://opengameart.org/content/rain-and-thunders)（作者 `kindland`，**CC0 1.0**，无署名要求）加工而成：避开雷声、拼成无缝循环、单声道 32 kHz。完整加工链见 `public/audio/LICENSE-rain-and-thunders.txt`。
 
-图集里的**猫、篝火与南瓜灯**为**本项目自绘**，同样以 **MIT** 授权，声明见 `public/sprites/LICENSE-cat-fire.txt`。
+图集里的**猫、篝火与南瓜灯**为**本项目自绘**，同样以 **MIT** 授权，声明见 `public/sprites/LICENSE-cat-fire.txt`。自绘素材的动画元数据（每组的帧名、帧率、是否循环与熄灭帧）只写在 `tools/art/masters/cat-all-sprites-atlas.json`，`npm run art` 把它转写进 `atlas.json` 的 `animations` 段——改帧率 / 循环 / 帧名只改那一张表，别处不手抄。

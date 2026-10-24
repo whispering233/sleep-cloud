@@ -8,8 +8,8 @@
  * 2. **裁到墨迹 bbox**（bbox 由脚本算，不硬编码），并输出锚点：
  *    床 = 墨迹左上角对齐格左上角，小人 = 墨迹底边中心对齐站立点；
  *    （聊天气泡不走素材：圆角矩形 + 三角在客户端程序化画，见 DESIGN.md「气泡不走素材」）
- * 3. 顺带产出 `src/client/styles/frames.css`：每帧一条 `background-position`，给入场层的形象
- *    预览当图片用——图集坐标只能有这一份，别处不许手抄；
+ * 3. 顺带产出 `src/client/styles/frames.css`：只产入场层预览用到的帧，每帧一条 `background-position`——
+ *    图集坐标只能有这一份，别处不许手抄；
  * 4. 产物是**提交物**（`src/client/assets/sprites/` 与 `src/client/styles/frames.css`），`npm run art` 重新生成；
  *    **不挂进 `npm run build`**。两个许可文件留在 `public/sprites/`（文档与 `AGENTS.md` 引用它）。
  *
@@ -34,6 +34,8 @@ const LICENSE_OUT_DIR = join(ROOT, 'public', 'sprites');
 const DESIGN = join(ROOT, 'docs', 'ui', 'DESIGN.md');
 const CAT_ATLAS = join(MASTERS, 'cat-all-sprites-atlas.json');
 const FRAMES_CSS = join(ROOT, 'src', 'client', 'styles', 'frames.css');
+/** `frames.css` 只产入场层预览用到的帧（其余帧走画布，不用 CSS）；名字不在图集里就当场报错。 */
+const CSS_FRAMES = ['boy_stand', 'girl_stand'];
 const LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-wheatcloudsleep.txt');
 const CAT_LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-cat-fire.txt');
 /** 图集宽度取 256（2 列床 = 2×122 + 间隙）：够宽、又不浪费填充率。 */
@@ -41,14 +43,9 @@ const ATLAS_WIDTH = 256;
 const GAP = 1;
 /**
  * 猫、篝火与南瓜灯只打这八组进图集（站着：idle / walk / run / pat / nuzzle；躺着：sleep；道具：fire / pumpkin）；
- * 顺序 = 图集里帧的顺序。
- * 帧名按组推：`cat-<组>-<序号>`（篝火是 `fire-<序号>`），`generateFrameNames` 按前缀取帧。
- * **南瓜灯走自己的母图**（`cat-pumpkin.png`）：组里声明 `sheet`，坐标就换到那张图的空间——新增素材不必重做已有那张。
+ * 顺序 = 图集里帧的顺序。**帧名、母图、熄灭帧全取自 `cat-all-sprites-atlas.json`**：每组自带 `sheet`
+ * （必填，没有默认），坐标就落在那张母图的空间里——新增素材不必重做已有那张。
  */
-/** 篝火熄灭帧：整格母图，同一张图里火苗 / 火星 / 辉光已经屏掉。 */
-const FIRE_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
-/** 南瓜灯灭帧：整格母图，同一张图里光晕 / 地面光池已经去掉、挖洞填成墨色。 */
-const PUMPKIN_OUT_RECT = { x: 0, y: 0, w: 128, h: 128 };
 
 /**
  * 8 张贴图（`docs/ui/DESIGN.md`「构建期要产出的变体」）：
@@ -449,20 +446,32 @@ function main() {
   const cellsOf = (groupId) => {
     const group = catAtlas.animations.find((animation) => animation.id === groupId);
     if (!group) throw new Error(`cat-all-sprites-atlas.json 里没有 ${groupId} 组`);
-    return group.frames.map((rect, index) => ({
-      name: groupId === 'fire' ? `fire-${index + 1}` : `cat-${groupId}-${index + 1}`,
-      // 组自己声明母图；没声明就是那张合计图（猫与篝火）
-      master: group.sheet ?? 'cat-sheet',
-      rect,
-    }));
+    if (!group.sheet) throw new Error(`cat-all-sprites-atlas.json 的 ${groupId} 组缺 sheet（母图必须显式声明）`);
+    const cells = group.frames.map((frame) => ({ name: frame.name, master: group.sheet, rect: frame }));
+    // 熄灭帧是组的一部分：它和亮帧共用同一个裁框，所以排在该组最后一格
+    return group.out ? [...cells, { name: group.out.name, master: group.out.sheet, rect: group.out.rect }] : cells;
   };
-  // 站立的三个动作用同一个裁框（idle ⇄ walk ⇄ run 切换时身体不跳）；睡与火各一组，火含熄灭帧
+  /**
+   * 组标识 = 组内帧名的**主干**（`cat-idle-1` → `cat-idle`、`fire-1` → `fire`）：世界层的动画 key 就是它，
+   * 所以`cat-idle` 这类名字不必在客户端再拄一份。同组帧名主干不一致就当场报错（猜一个更难查）。
+   */
+  const stemOf = (group) => {
+    const stems = [...new Set(group.frames.map((frame) => frame.name.replace(/-\d+$/, '')))];
+    const stem = stems[0];
+    if (stems.length !== 1 || !stem || stem === group.frames[0].name) {
+      throw new Error(`cat-all-sprites-atlas.json 的 ${group.id} 组帧名不带统一的 \`-<序号>\` 后缀：${stems.join(' / ')}`);
+    }
+    return stem;
+  };
+  // 打包顺序与并集裁框分组是**打包策略**（不是每帧数据），所以写在这里：
+  // 站立的五组共用一框（idle ⇄ walk ⇄ run ⇄ 摸头 / 蹭手切换时身体不跳）；睡单独一框；
+  // 篝火 / 南瓜灯各含自己的熄灭帧，所以各一框（切亮灭时柴堆 / 南瓜不位移）。
   const decorGroups = [
-    [...cellsOf('idle'), ...cellsOf('walk'), ...cellsOf('run'), ...cellsOf('pat'), ...cellsOf('nuzzle')],
-    cellsOf('sleep'),
-    [...cellsOf('fire'), { name: 'fire-out', master: 'cat-fire-out', rect: FIRE_OUT_RECT }],
-    [...cellsOf('pumpkin'), { name: 'pumpkin-out', master: 'cat-pumpkin-out', rect: PUMPKIN_OUT_RECT }],
-  ];
+    ['idle', 'walk', 'run', 'pat', 'nuzzle'],
+    ['sleep'],
+    ['fire'],
+    ['pumpkin'],
+  ].map((groupIds) => groupIds.flatMap(cellsOf));
   for (const cells of decorGroups) {
     const pieces = cells.map((cell) => ({ ...cell, piece: pieceOf(cell.master, cell.rect) }));
     const box = unionOf(pieces.map((entry) => inkBox(entry.piece)));
@@ -515,6 +524,14 @@ function main() {
         ];
       }),
     ),
+    // 动画元数据只写一份（`cat-all-sprites-atlas.json`），这里只做转写：世界层按组标识取
+    animations: catAtlas.animations.map((group) => ({
+      group: stemOf(group),
+      frames: group.frames.map((frame) => frame.name),
+      frameRate: group.fps,
+      loop: group.loop,
+      ...(group.out ? { out: group.out.name } : {}),
+    })),
     meta: {
       app: 'tools/art/build-sprites.mjs',
       version: '1.0',
@@ -523,21 +540,17 @@ function main() {
       size: { w: ATLAS_WIDTH, h: height },
       scale: '1',
     },
-    masters: Object.fromEntries(
-      [...masters].map(([name, image]) => {
-        const box = inkBox(image);
-        return [name, { file: `masters/${name}.png`, ink: box }];
-      }),
-    ),
   };
 
   // 入场层的形象预览要拿图集里的帧当 CSS 图片用：坐标从这里出，别处不手抄
   const css = [
-    '/* 由 `npm run art` 生成（tools/art/build-sprites.mjs）：图集坐标的唯一来源，不要手改。 */',
-    ...frames.map((frame) => {
-      const at = placements[frame.name];
+    '/* 由 `npm run art` 生成（tools/art/build-sprites.mjs）：只产入场层预览用到的帧，不要手改。 */',
+    ...CSS_FRAMES.map((name) => {
+      const frame = frames.find((entry) => entry.name === name);
+      const at = placements[name];
+      if (!frame || !at) throw new Error(`frames.css 要出的 ${name} 不在图集里`);
       return (
-        `.sprite-${frame.name} { width: ${frame.w}px; height: ${frame.h}px;` +
+        `.sprite-${name} { width: ${frame.w}px; height: ${frame.h}px;` +
         // 相对 frames.css 自己的位置（src/client/styles/）：Vite 会改写成带内容哈希的 URL
         ` background-image: url('../assets/sprites/atlas.png'); background-position: -${at.x}px -${at.y}px; }`
       );
@@ -596,7 +609,7 @@ function main() {
     `图集：src/client/assets/sprites/atlas.png ${ATLAS_WIDTH}×${height}（${atlasPng.length} 字节）、` +
       `src/client/assets/sprites/atlas.json（${JSON.stringify(json).length} 字节）`,
   );
-  console.log(`坐标：src/client/styles/frames.css（${frames.length} 条规则）`);
+  console.log(`坐标：src/client/styles/frames.css（${CSS_FRAMES.length} 条规则）`);
   console.log(`许可：public/sprites/LICENSE-wheatcloudsleep.txt 在位（${license.length} 字节，MIT / © 2022 WheatBox）`);
   console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫 / 篝火 / 南瓜灯为项目自绘，MIT）`);
 }

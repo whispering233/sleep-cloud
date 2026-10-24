@@ -1,70 +1,51 @@
 {
   "id": "cat-all-sprites",
   "name": "猫咪精灵图合集",
-  "image": "cat-sheet.png",
-  "imageSize": {
-    "w": 1160,
-    "h": 1072
-  },
-  "frameSize": {
-    "w": 128,
-    "h": 128
-  },
-  "origin": "top-left",
-  "readingOrder": "rows-top-to-bottom, frames-left-to-right",
   "animations": [
     {
       "id": "pat",
       "name": "摸摸头",
-      "nameEn": "PAT",
-      "row": 1,
+      "sheet": "cat-sheet",
       "fps": 4,
-      "loop": true,
-      "frameCount": 6,
+      "loop": false,
       "frames": [
         {
-          "index": 0,
-          "name": "cat-pet-1",
+          "name": "cat-pat-1",
           "x": 112,
           "y": 152,
           "w": 128,
           "h": 128
         },
         {
-          "index": 1,
-          "name": "cat-pet-2",
+          "name": "cat-pat-2",
           "x": 240,
           "y": 152,
           "w": 128,
           "h": 128
         },
         {
-          "index": 2,
-          "name": "cat-pet-3",
+          "name": "cat-pat-3",
           "x": 368,
           "y": 152,
           "w": 128,
           "h": 128
         },
         {
-          "index": 3,
-          "name": "cat-pet-4",
+          "name": "cat-pat-4",
           "x": 496,
           "y": 152,
           "w": 128,
           "h": 128
         },
         {
-          "index": 4,
-          "name": "cat-pet-5",
+          "name": "cat-pat-5",
           "x": 624,
           "y": 152,
           "w": 128,
           "h": 128
         },
         {
-          "index": 5,
-          "name": "cat-pet-6",
+          "name": "cat-pat-6",
           "x": 752,
           "y": 152,
           "w": 128,
@@ -75,14 +56,11 @@
     {
       "id": "nuzzle",
       "name": "蹭手撒娇",
-      "nameEn": "NUZZLE",
-      "row": 2,
+      "sheet": "cat-sheet",
       "fps": 4,
-      "loop": true,
-      "frameCount": 6,
+      "loop": false,
       "frames": [
         {
-          "index": 6,
           "name": "cat-nuzzle-1",
           "x": 112,
           "y": 280,
@@ -90,7 +68,6 @@
           "h": 128
         },
         {
-          "index": 7,
           "name": "cat-nuzzle-2",
           "x": 240,
           "y": 280,
@@ -98,7 +75,6 @@
           "h": 128
         },
         {
-          "index": 8,
           "name": "cat-nuzzle-3",
           "x": 368,
           "y": 280,
@@ -106,7 +82,6 @@
           "h": 128
         },
         {
-          "index": 9,
           "name": "cat-nuzzle-4",
           "x": 496,
           "y": 280,
@@ -114,7 +89,6 @@
           "h": 128
         },
         {
-          "index": 10,
           "name": "cat-nuzzle-5",
           "x": 624,
           "y": 280,
@@ -122,7 +96,6 @@
           "h": 128
         },
         {
-          "index": 11,
           "name": "cat-nuzzle-6",
           "x": 752,
           "y": 280,
@@ -134,14 +107,11 @@
     {
       "id": "walk",
       "name": "行走",
-      "nameEn": "WALK",
-      "row": 3,
+      "sheet": "cat-sheet",
       "fps": 6,
       "loop": true,
-      "frameCount": 4,
       "frames": [
         {
-          "index": 12,
           "name": "cat-walk-1",
           "x": 112,
           "y": 408,
@@ -149,7 +119,6 @@
           "h": 128
         },
         {
-          "index": 13,
           "name": "cat-walk-2",
           "x": 240,
           "y": 408,
@@ -157,7 +126,6 @@
           "h": 128
         },
         {
-          "index": 14,
           "name": "cat-walk-3",
           "x": 368,
           "y": 408,
@@ -165,7 +133,6 @@
           "h": 128
         },
         {
-          "index": 15,
           "name": "cat-walk-4",
           "x": 496,
           "y": 408,
@@ -177,14 +144,11 @@
     {
       "id": "run",
       "name": "奔跑",
-      "nameEn": "RUN",
-      "row": 4,
+      "sheet": "cat-sheet",
       "fps": 6,
       "loop": true,
-      "frameCount": 4,
       "frames": [
         {
-          "index": 16,
           "name": "cat-run-1",
           "x": 112,
           "y": 536,
@@ -192,7 +156,6 @@
           "h": 128
         },
         {
-          "index": 17,
           "name": "cat-run-2",
           "x": 240,
           "y": 536,
@@ -200,7 +163,6 @@
           "h": 128
         },
         {
-          "index": 18,
           "name": "cat-run-3",
           "x": 368,
           "y": 536,
@@ -208,7 +170,6 @@
           "h": 128
         },
         {
-          "index": 19,
           "name": "cat-run-4",
           "x": 496,
           "y": 536,
@@ -220,14 +181,11 @@
     {
       "id": "sleep",
       "name": "睡觉",
-      "nameEn": "SLEEP",
-      "row": 5,
+      "sheet": "cat-sheet",
       "fps": 6,
       "loop": true,
-      "frameCount": 4,
       "frames": [
         {
-          "index": 20,
           "name": "cat-sleep-1",
           "x": 112,
           "y": 664,
@@ -235,7 +193,6 @@
           "h": 128
         },
         {
-          "index": 21,
           "name": "cat-sleep-2",
           "x": 240,
           "y": 664,
@@ -243,7 +200,6 @@
           "h": 128
         },
         {
-          "index": 22,
           "name": "cat-sleep-3",
           "x": 368,
           "y": 664,
@@ -251,7 +207,6 @@
           "h": 128
         },
         {
-          "index": 23,
           "name": "cat-sleep-4",
           "x": 496,
           "y": 664,
@@ -263,74 +218,72 @@
     {
       "id": "fire",
       "name": "篝火",
-      "nameEn": "CAMPFIRE",
-      "row": 6,
+      "sheet": "cat-sheet",
       "fps": 8,
       "loop": true,
-      "frameCount": 6,
+      "out": {
+        "name": "fire-out",
+        "sheet": "cat-fire-out",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        }
+      },
       "frames": [
         {
-          "index": 24,
-          "name": "cat-fire-1",
+          "name": "fire-1",
           "x": 112,
           "y": 792,
           "w": 128,
           "h": 128
         },
         {
-          "index": 25,
-          "name": "cat-fire-2",
+          "name": "fire-2",
           "x": 240,
           "y": 792,
           "w": 128,
           "h": 128
         },
         {
-          "index": 26,
-          "name": "cat-fire-3",
+          "name": "fire-3",
           "x": 368,
           "y": 792,
           "w": 128,
           "h": 128
         },
         {
-          "index": 27,
-          "name": "cat-fire-4",
+          "name": "fire-4",
           "x": 496,
           "y": 792,
           "w": 128,
           "h": 128
         },
         {
-          "index": 28,
-          "name": "cat-fire-5",
+          "name": "fire-5",
           "x": 624,
           "y": 792,
           "w": 128,
           "h": 128
         },
         {
-          "index": 29,
-          "name": "cat-fire-6",
+          "name": "fire-6",
           "x": 752,
           "y": 792,
           "w": 128,
           "h": 128
         }
-      ],
-      "note": "场景道具动画，非猫咪角色"
+      ]
     },
     {
       "id": "idle",
       "name": "睁眼摇尾",
-      "nameEn": "IDLE",
-      "row": 7,
+      "sheet": "cat-sheet",
       "fps": 8,
       "loop": true,
-      "frameCount": 8,
       "frames": [
         {
-          "index": 30,
           "name": "cat-idle-1",
           "x": 112,
           "y": 920,
@@ -338,7 +291,6 @@
           "h": 128
         },
         {
-          "index": 31,
           "name": "cat-idle-2",
           "x": 240,
           "y": 920,
@@ -346,7 +298,6 @@
           "h": 128
         },
         {
-          "index": 32,
           "name": "cat-idle-3",
           "x": 368,
           "y": 920,
@@ -354,7 +305,6 @@
           "h": 128
         },
         {
-          "index": 33,
           "name": "cat-idle-4",
           "x": 496,
           "y": 920,
@@ -362,7 +312,6 @@
           "h": 128
         },
         {
-          "index": 34,
           "name": "cat-idle-5",
           "x": 624,
           "y": 920,
@@ -370,7 +319,6 @@
           "h": 128
         },
         {
-          "index": 35,
           "name": "cat-idle-6",
           "x": 752,
           "y": 920,
@@ -378,7 +326,6 @@
           "h": 128
         },
         {
-          "index": 36,
           "name": "cat-idle-7",
           "x": 880,
           "y": 920,
@@ -386,7 +333,6 @@
           "h": 128
         },
         {
-          "index": 37,
           "name": "cat-idle-8",
           "x": 1008,
           "y": 920,
@@ -398,16 +344,21 @@
     {
       "id": "pumpkin",
       "name": "南瓜灯",
-      "nameEn": "PUMPKIN",
       "sheet": "cat-pumpkin",
-      "source": "cat-all-sprites-sheet.svg 第 8 行（x = 112 + i*128, y = 1048）；母图见 masters/cat-pumpkin.png",
-      "row": 8,
       "fps": 10,
       "loop": true,
-      "frameCount": 6,
+      "out": {
+        "name": "pumpkin-out",
+        "sheet": "cat-pumpkin-out",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 128,
+          "h": 128
+        }
+      },
       "frames": [
         {
-          "index": 0,
           "name": "cat-pumpkin-1",
           "x": 0,
           "y": 0,
@@ -415,7 +366,6 @@
           "h": 128
         },
         {
-          "index": 1,
           "name": "cat-pumpkin-2",
           "x": 128,
           "y": 0,
@@ -423,7 +373,6 @@
           "h": 128
         },
         {
-          "index": 2,
           "name": "cat-pumpkin-3",
           "x": 256,
           "y": 0,
@@ -431,7 +380,6 @@
           "h": 128
         },
         {
-          "index": 3,
           "name": "cat-pumpkin-4",
           "x": 384,
           "y": 0,
@@ -439,7 +387,6 @@
           "h": 128
         },
         {
-          "index": 4,
           "name": "cat-pumpkin-5",
           "x": 512,
           "y": 0,
@@ -447,7 +394,6 @@
           "h": 128
         },
         {
-          "index": 5,
           "name": "cat-pumpkin-6",
           "x": 640,
           "y": 0,
