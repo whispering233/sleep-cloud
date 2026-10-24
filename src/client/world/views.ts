@@ -717,7 +717,10 @@ export function createPetAnims(scene: Phaser.Scene): void {
 
 export function createPetView(scene: Phaser.Scene): PetView {
   // 初始贴图给 idle 的第一帧：动画由 `placePet` 按目标形态切，建出来时先不播
-  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, 'cat-idle-1').setScale(ART_SCALE).setVisible(false);
+  const sprite = scene.add
+    .sprite(0, 0, SPRITES_KEY, animSpecOf('cat-idle').frames[0])
+    .setScale(ART_SCALE)
+    .setVisible(false);
   return { sprite, bubble: createBubbleView(scene), anim: undefined };
 }
 
