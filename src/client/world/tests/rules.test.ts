@@ -101,7 +101,7 @@ describe('小人贴图', () => {
   });
 });
 
-describe('我床头的篝火：亮灭跟着我的显示态', () => {
+describe('我床头的装饰（篝火 / 南瓜灯）：亮灭跟着我的显示态', () => {
   const lying: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'lying', bedNo: 7, ownedBedNo: 7 };
   const roaming: SelfPerson = { id: 'u_me', name: '我', appearance: 'boy', state: 'roaming', x: 300, y: 280, ownedBedNo: 7 };
 

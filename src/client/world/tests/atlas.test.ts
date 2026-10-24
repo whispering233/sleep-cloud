@@ -39,7 +39,7 @@ const askedLooks: BedLook[] = [
 const askedFrames = [...askedLooks.map((look) => look.frame), ...APPEARANCES.map((appearance) => personFrame(appearance))];
 
 /**
- * 猫与篝火的帧：素材管线的白名单是 idle / walk / run / pat / nuzzle / sleep / fire 七组。
+ * 猫、篝火与南瓜灯的帧：素材管线的白名单是 idle / walk / run / pat / nuzzle / sleep / fire / pumpkin 八组。
  * 动画按帧名前缀 + 序号取帧，所以这里也按同一规则点名。
  */
 const numberedFrames = (prefix: string, count: number): string[] =>
@@ -139,8 +139,8 @@ describe('图集与客户端的接口', () => {
   });
 });
 
-describe('图集里的猫与篝火（多色素材，两支映射）', () => {
-  it('猫 20 帧与篝火 7 帧都在图集里（缺一帧就是一段空动画）', () => {
+describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）', () => {
+  it('猫 32 帧、篝火 7 帧与南瓜灯 7 帧都在图集里（缺一帧就是一段空动画）', () => {
     for (const name of DECOR_FRAMES) expect(atlas.frames[name], name).toBeDefined();
   });
 
@@ -195,6 +195,16 @@ describe('图集里的猫与篝火（多色素材，两支映射）', () => {
     ).toBe(1);
     // 熄灭帧与燃烧帧同框：切帧时柴堆与石圈不能位移
     expect(sizeOf('fire-out')).toBe(sizeOf('fire-1'));
+    // 灭帧与亮帧同框：切亮灭时南瓜不能位移
+    expect(sizeOf('pumpkin-out')).toBe(sizeOf('cat-pumpkin-1'));
+  });
+
+  it('南瓜灯帧的世界宽度不超过床头块（56），否则会压到隔壁格', () => {
+    for (const name of [...PUMPKIN_FRAMES, 'pumpkin-out']) {
+      const frame = atlas.frames[name];
+      if (!frame) throw new Error(`图集里没有 ${name}`);
+      expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(56);
+    }
   });
 
   it('篝火帧的世界宽度落在 46~50（火堆不能比床还大）', () => {
