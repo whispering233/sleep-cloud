@@ -4,6 +4,7 @@ import { ART_SCALE, BED_H, BED_W, MAX_DPR } from '../../shared/constants';
 import { displayBedNoOf, reserveOf, roomOf } from '../../shared/layout';
 import type { Person } from '../../shared/protocol';
 import { actTextOf } from '../act-text';
+import atlasJson from '../assets/sprites/atlas.json';
 // 气泡几何与提示共用一份（那个模块是 Phaser-free 的，界面层与单测都能拿，见 `../bubble-fit.ts`）
 import {
   BUBBLE_PAD,
@@ -92,17 +93,58 @@ const WALK_SWAY_HZ = 4.5;
 export const SPRITES_KEY = 'sprites';
 
 /**
+ * 动画元数据只有一份，住在产物的 `animations` 段（`tools/art/build-sprites.mjs` 从母图 JSON 生成）：
+ * 组标识 = 帧名主干，帧率 / 循环 / 熄灭帧都跟着素材声明走。世界层只说「我要哪几组」，不再自己数帧。
+ */
+interface AnimSpec {
+  group: string;
+  frames: string[];
+  frameRate: number;
+  loop: boolean;
+  out?: string;
+}
+
+const ANIMS: AnimSpec[] = atlasJson.animations;
+
+function animSpecOf(group: string): AnimSpec {
+  const spec = ANIMS.find((anim) => anim.group === group);
+  if (!spec) throw new Error(`图集里没有 ${group} 这一组动画（先跑 npm run art）`);
+  return spec;
+}
+
+/** 熄灭帧（`out`）：只有循环的那几组才有「熄」这一态。 */
+function outFrameOf(group: string): string {
+  const out = animSpecOf(group).out;
+  if (!out) throw new Error(`图集里 ${group} 这一组没有熄灭帧（out）`);
+  return out;
+}
+
+/**
+ * 注册一组动画：帧列表 / 帧率 / 循环全取自产物，`repeat` 只由 `loop` 决定（`-1` 循环 / `0` 播一遍）。
+ * **全局 `AnimationManager` 只注册一次**（重复 create 会告警并原样返回）。
+ */
+function registerAnim(scene: Phaser.Scene, group: string, animKey: string): void {
+  if (scene.anims.exists(animKey)) return;
+  const spec = animSpecOf(group);
+  scene.anims.create({
+    key: animKey,
+    frames: spec.frames.map((frame) => ({ key: SPRITES_KEY, frame })),
+    frameRate: spec.frameRate,
+    repeat: spec.loop ? -1 : 0,
+  });
+}
+
+/**
  * 床头块的两样装饰共用一套视图与一条亮灭判据（`docs/design/80-reserve-decor.md` §2 / §2.4）：
- * 差别只有帧前缀、帧率与熄灭帧。动画 key 不带 `world-` 前缀：它是全局 `AnimationManager` 里的一支，
- * 与「组件名」不是同一类东西。
+ * 差别只有组标识与动画 key（帧率、循环、熄灭帧都来自产物）。动画 key 不带 `world-` 前缀：
+ * 它是全局 `AnimationManager` 里的一支，与「组件名」不是同一类东西。
  */
 export type HeadDecorSkin = 'fire' | 'pumpkin';
 
-const HEAD_DECOR_SKINS: Record<HeadDecorSkin, { anim: string; prefix: string; end: number; frameRate: number; out: string }> = {
-  // 燃烧 = 6 帧 / 8fps；熄灭 = 单帧（柴 + 灰 + 石圈）
-  fire: { anim: 'fire-burning', prefix: 'fire-', end: 6, frameRate: 8, out: 'fire-out' },
-  // 亮 = 6 帧 / 10fps（帧率取自素材声明）；灭 = 单帧（不发光的老南瓜）
-  pumpkin: { anim: 'pumpkin-lit', prefix: 'cat-pumpkin-', end: 6, frameRate: 10, out: 'pumpkin-out' },
+/** 偏好 id → 产物里的组标识 + 本文件内部的动画 key。 */
+const HEAD_DECOR_SKINS: Record<HeadDecorSkin, { anim: string; group: string }> = {
+  fire: { anim: 'decor-fire', group: 'fire' },
+  pumpkin: { anim: 'decor-pumpkin', group: 'cat-pumpkin' },
 };
 
 export const COLORS = {
@@ -602,22 +644,17 @@ export interface HeadDecorView {
   skin: HeadDecorSkin | undefined;
 }
 
-/** 两样装饰的循环各自注册一次。**全局 `AnimationManager` 只注册一次**（重复 create 会告警并原样返回）。 */
+/** 两样装饰的循环各自注册一次（`registerAnim` 自带「全局只注册一次」的守卫）。 */
 export function createHeadDecorAnims(scene: Phaser.Scene): void {
-  for (const skin of Object.values(HEAD_DECOR_SKINS)) {
-    if (scene.anims.exists(skin.anim)) continue;
-    scene.anims.create({
-      key: skin.anim,
-      frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: skin.prefix, start: 1, end: skin.end }),
-      frameRate: skin.frameRate,
-      repeat: -1,
-    });
-  }
+  for (const skin of Object.values(HEAD_DECOR_SKINS)) registerAnim(scene, skin.group, skin.anim);
 }
 
 export function createHeadDecorView(scene: Phaser.Scene): HeadDecorView {
   // 初始贴图给熄灭帧：还没有我的时候它本来就是一堆柴；亮起来才换帧
-  const sprite = scene.add.sprite(0, 0, SPRITES_KEY, HEAD_DECOR_SKINS.fire.out).setScale(ART_SCALE).setVisible(false);
+  const sprite = scene.add
+    .sprite(0, 0, SPRITES_KEY, outFrameOf(HEAD_DECOR_SKINS.fire.group))
+    .setScale(ART_SCALE)
+    .setVisible(false);
   return { sprite, lit: undefined, skin: undefined };
 }
 
@@ -643,7 +680,7 @@ export function placeHeadDecor(view: HeadDecorView, paint: HeadDecorPaint): void
   }
   // 熄灭 = 停动画 + 换成单帧，**不隐藏**：留下柴、灰与石圈 / 一颗不发光的老南瓜（「熄灭」是状态，不是消失）
   view.sprite.anims.stop();
-  view.sprite.setTexture(SPRITES_KEY, skin.out);
+  view.sprite.setTexture(SPRITES_KEY, outFrameOf(skin.group));
 }
 
 /** 不画（床头选到「无装饰」/ 没有我 / 没有床 / 那张床不在视野里）：藏起来并停掉动画，签名清空——下次出现时重新落位。 */
@@ -669,25 +706,13 @@ export interface PetView {
   anim: PetAnim | undefined;
 }
 
-/** 六个动画：idle 8 帧 / 8fps，走、跑、睡各 4 帧 / 6fps（循环）；摸猫的两组各 6 帧 / 4fps（不循环，§3.6）。**全局只注册一次**。 */
+/**
+ * 摸猫的六个动画：**动画 key 就是组标识**（`PetAnim` 六个值一字不改），帧率与循环取自产物。
+ * **全局只注册一次**（`registerAnim` 的守卫）。
+ */
 export function createPetAnims(scene: Phaser.Scene): void {
-  const groups: Array<{ key: PetAnim; prefix: string; end: number; frameRate: number; repeat: number }> = [
-    { key: 'cat-idle', prefix: 'cat-idle-', end: 8, frameRate: 8, repeat: -1 },
-    { key: 'cat-walk', prefix: 'cat-walk-', end: 4, frameRate: 6, repeat: -1 },
-    { key: 'cat-run', prefix: 'cat-run-', end: 4, frameRate: 6, repeat: -1 },
-    { key: 'cat-sleep', prefix: 'cat-sleep-', end: 4, frameRate: 6, repeat: -1 },
-    { key: 'cat-pat', prefix: 'cat-pat-', end: 6, frameRate: 4, repeat: 0 },
-    { key: 'cat-nuzzle', prefix: 'cat-nuzzle-', end: 6, frameRate: 4, repeat: 0 },
-  ];
-  for (const group of groups) {
-    if (scene.anims.exists(group.key)) continue;
-    scene.anims.create({
-      key: group.key,
-      frames: scene.anims.generateFrameNames(SPRITES_KEY, { prefix: group.prefix, start: 1, end: group.end }),
-      frameRate: group.frameRate,
-      repeat: group.repeat,
-    });
-  }
+  const groups: PetAnim[] = ['cat-idle', 'cat-walk', 'cat-run', 'cat-sleep', 'cat-pat', 'cat-nuzzle'];
+  for (const group of groups) registerAnim(scene, group, group);
 }
 
 export function createPetView(scene: Phaser.Scene): PetView {

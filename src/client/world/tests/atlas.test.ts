@@ -23,7 +23,18 @@ const atlas = JSON.parse(readFileSync(join(process.cwd(), 'src', 'client', 'asse
       face?: { x: number; y: number };
     }
   >;
+  animations: Array<{ group: string; frames: string[]; frameRate: number; loop: boolean; out?: string }>;
   meta: { image: string; size: { w: number; h: number } };
+};
+
+/**
+ * 源母图：`npm run art` 从它生成上面那份 `animations` 段。两边**按帧名数组对齐**——源的组标识是 `id`
+ * （`pat` / `idle` / …），产物是帧名主干（`cat-pat` / `cat-idle` / …），没有一张 `id → 组标识` 的表可抄。
+ */
+const master = JSON.parse(
+  readFileSync(join(process.cwd(), 'tools', 'art', 'masters', 'cat-all-sprites-atlas.json'), 'utf8'),
+) as {
+  animations: Array<{ id: string; fps: number; loop: boolean; frames: Array<{ name: string }>; out?: { name: string } }>;
 };
 
 const APPEARANCES: Appearance[] = ['boy', 'girl'];
@@ -39,23 +50,24 @@ const askedLooks: BedLook[] = [
 const askedFrames = [...askedLooks.map((look) => look.frame), ...APPEARANCES.map((appearance) => personFrame(appearance))];
 
 /**
- * 猫、篝火与南瓜灯的帧：素材管线的白名单是 idle / walk / run / pat / nuzzle / sleep / fire / pumpkin 八组。
- * 动画按帧名前缀 + 序号取帧，所以这里也按同一规则点名。
+ * 猫、篝火与南瓜灯的帧：**一律从产物的 `animations` 段派生**（素材管线的白名单是 idle / walk / run / pat /
+ * nuzzle / sleep / fire / pumpkin 八组，源在 `tools/art/masters/cat-all-sprites-atlas.json`）。
+ * 手抄一份帧表就会与产物脱节：动画少一帧只会在画面里变成空白。
  */
-const numberedFrames = (prefix: string, count: number): string[] =>
-  Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
-const CAT_FRAMES = [
-  ...numberedFrames('cat-idle-', 8),
-  ...numberedFrames('cat-walk-', 4),
-  ...numberedFrames('cat-run-', 4),
-  ...numberedFrames('cat-sleep-', 4),
-  ...numberedFrames('cat-pat-', 6),
-  ...numberedFrames('cat-nuzzle-', 6),
-];
-const FIRE_FRAMES = numberedFrames('fire-', 6);
-/** 南瓜灯：床头块第二个候选（6 帧亮 + 1 张灭帧，与篝火同一套视图，见 `../views.ts` 的 `HEAD_DECOR_SKINS`）。 */
-const PUMPKIN_FRAMES = numberedFrames('cat-pumpkin-', 6);
-const DECOR_FRAMES = [...CAT_FRAMES, ...FIRE_FRAMES, ...PUMPKIN_FRAMES, 'fire-out', 'pumpkin-out'];
+const framesOf = (group: string): string[] => {
+  const spec = atlas.animations.find((anim) => anim.group === group);
+  if (!spec) throw new Error(`图集里没有 ${group} 这一组动画`);
+  return spec.frames;
+};
+const outOf = (group: string): string => {
+  const out = atlas.animations.find((anim) => anim.group === group)?.out;
+  if (!out) throw new Error(`图集里 ${group} 这一组没有熄灭帧`);
+  return out;
+};
+const CAT_FRAMES = ['cat-idle', 'cat-walk', 'cat-run', 'cat-sleep', 'cat-pat', 'cat-nuzzle'].flatMap(framesOf);
+const FIRE_FRAMES = framesOf('fire');
+const PUMPKIN_FRAMES = framesOf('cat-pumpkin');
+const DECOR_FRAMES = atlas.animations.flatMap((anim) => (anim.out ? [...anim.frames, anim.out] : anim.frames));
 
 describe('图集与客户端的接口', () => {
   it('客户端会要的每一帧都在图集里（缺帧只会在画面里变成空白，靠目视发现太晚）', () => {
@@ -140,6 +152,25 @@ describe('图集与客户端的接口', () => {
 });
 
 describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）', () => {
+  it('产物 animations 与源母图逐组等价（组标识集合、帧名与顺序、帧率、循环、熄灭帧）', () => {
+    const sourceOf = new Map(master.animations.map((anim) => [anim.frames.map((frame) => frame.name).join(' '), anim]));
+    expect(atlas.animations.length).toBe(master.animations.length);
+    for (const anim of atlas.animations) {
+      const source = sourceOf.get(anim.frames.join(' '));
+      if (!source) throw new Error(`母图里没有帧名为 ${anim.frames.join(' / ')} 的那一组`);
+      expect(anim.frameRate, anim.group).toBe(source.fps);
+      expect(anim.loop, anim.group).toBe(source.loop);
+      expect(anim.out, anim.group).toBe(source.out?.name);
+    }
+  });
+
+  it('animations 里的每一帧与熄灭帧都在图集 frames 里（名字写错就是一帧空白）', () => {
+    for (const anim of atlas.animations) {
+      for (const name of anim.frames) expect(atlas.frames[name], name).toBeDefined();
+      if (anim.out) expect(atlas.frames[anim.out], anim.out).toBeDefined();
+    }
+  });
+
   it('猫 32 帧、篝火 7 帧与南瓜灯 7 帧都在图集里（缺一帧就是一段空动画）', () => {
     for (const name of DECOR_FRAMES) expect(atlas.frames[name], name).toBeDefined();
   });
@@ -171,36 +202,21 @@ describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）'
       if (!frame) throw new Error(`图集里没有 ${name}`);
       return `${frame.frame.w}x${frame.frame.h}`;
     };
-    for (const [prefix, count] of [
-      ['cat-idle-', 8],
-      ['cat-walk-', 4],
-      ['cat-run-', 4],
-      ['cat-sleep-', 4],
-      ['cat-pat-', 6],
-      ['cat-nuzzle-', 6],
-      ['fire-', 6],
-    ] as const) {
-      const sizes = new Set(Array.from({ length: count }, (_, index) => sizeOf(`${prefix}${index + 1}`)));
-      expect(sizes.size, prefix).toBe(1);
+    for (const anim of atlas.animations) {
+      const sizes = new Set(anim.frames.map((frame) => sizeOf(frame)));
+      expect(sizes.size, anim.group).toBe(1);
     }
     // 站立的五组还要彼此同框：idle ⇄ walk ⇄ run ⇄ 摸头/蹭手切换时身体不能跳
-    expect(
-      new Set([
-        sizeOf('cat-idle-1'),
-        sizeOf('cat-walk-1'),
-        sizeOf('cat-run-1'),
-        sizeOf('cat-pat-1'),
-        sizeOf('cat-nuzzle-1'),
-      ]).size,
-    ).toBe(1);
-    // 熄灭帧与燃烧帧同框：切帧时柴堆与石圈不能位移
-    expect(sizeOf('fire-out')).toBe(sizeOf('fire-1'));
-    // 灭帧与亮帧同框：切亮灭时南瓜不能位移
-    expect(sizeOf('pumpkin-out')).toBe(sizeOf('cat-pumpkin-1'));
+    const standing = ['cat-idle', 'cat-walk', 'cat-run', 'cat-pat', 'cat-nuzzle'].map((group) =>
+      sizeOf(framesOf(group)[0]),
+    );
+    expect(new Set(standing).size).toBe(1);
+    // 熄灭帧与燃烧 / 点亮帧同框：切帧时柴堆、石圈与南瓜不能位移
+    for (const group of ['fire', 'cat-pumpkin']) expect(sizeOf(outOf(group))).toBe(sizeOf(framesOf(group)[0]));
   });
 
   it('南瓜灯帧的世界宽度不超过床头块（56），否则会压到隔壁格', () => {
-    for (const name of [...PUMPKIN_FRAMES, 'pumpkin-out']) {
+    for (const name of [...PUMPKIN_FRAMES, outOf('cat-pumpkin')]) {
       const frame = atlas.frames[name];
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(56);
@@ -208,7 +224,7 @@ describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）'
   });
 
   it('篝火帧的世界宽度落在 46~50（火堆不能比床还大）', () => {
-    for (const name of [...FIRE_FRAMES, 'fire-out']) {
+    for (const name of [...FIRE_FRAMES, outOf('fire')]) {
       const frame = atlas.frames[name];
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(46);
@@ -217,9 +233,9 @@ describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）'
   });
 
   it('摸猫的两组帧都在图集里（点一下才有的看，缺帧只会变成空白）', () => {
-    for (const prefix of ['cat-pat-', 'cat-nuzzle-'] as const) {
-      expect(atlas.frames[`${prefix}1`]).toBeDefined();
-      expect(atlas.frames[`${prefix}6`]).toBeDefined();
+    for (const group of ['cat-pat', 'cat-nuzzle']) {
+      expect(framesOf(group)[0]).toBeDefined();
+      expect(framesOf(group).at(-1)).toBeDefined();
     }
   });
 });
