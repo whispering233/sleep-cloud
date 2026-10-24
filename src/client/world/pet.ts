@@ -110,7 +110,7 @@ export interface PetTarget {
   trail?: PetTrail;
 }
 
-/** 六个动画的 key（与图集帧前缀同名，`views.createPetAnims` 按它注册）：idle / walk / run / sleep 循环，
+/** 六个动画的 key（与图集里的组标识同名，`views.createPetAnims` 按它注册）：idle / walk / run / sleep 循环，
  * `cat-pat` / `cat-nuzzle` 是**摸猫那一下**的一次性动作（不循环）。 */
 export type PetAnim = 'cat-idle' | 'cat-walk' | 'cat-run' | 'cat-sleep' | 'cat-pat' | 'cat-nuzzle';
 
