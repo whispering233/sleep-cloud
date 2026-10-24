@@ -171,10 +171,6 @@ describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）'
     }
   });
 
-  it('猫 32 帧、篝火 7 帧与南瓜灯 7 帧都在图集里（缺一帧就是一段空动画）', () => {
-    for (const name of DECOR_FRAMES) expect(atlas.frames[name], name).toBeDefined();
-  });
-
   it('每帧的裁剪字段与帧一致，锚点是墨迹底边中心 {0.5, 1}', () => {
     for (const name of DECOR_FRAMES) {
       const frame = atlas.frames[name];
@@ -229,13 +225,6 @@ describe('图集里的猫、篝火与南瓜灯（多色素材，两支映射）'
       if (!frame) throw new Error(`图集里没有 ${name}`);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeGreaterThanOrEqual(46);
       expect(frame.frame.w * ART_SCALE, `${name} 宽`).toBeLessThanOrEqual(50);
-    }
-  });
-
-  it('摸猫的两组帧都在图集里（点一下才有的看，缺帧只会变成空白）', () => {
-    for (const group of ['cat-pat', 'cat-nuzzle']) {
-      expect(framesOf(group)[0]).toBeDefined();
-      expect(framesOf(group).at(-1)).toBeDefined();
     }
   });
 });

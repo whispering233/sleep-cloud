@@ -131,4 +131,4 @@ npm run lint:design   # 基线：0 error / 0 warning
 
 **雨声素材**：`public/audio/` 下的两个 WAV 由 [`Rain and Thunders`](https://opengameart.org/content/rain-and-thunders)（作者 `kindland`，**CC0 1.0**，无署名要求）加工而成：避开雷声、拼成无缝循环、单声道 32 kHz。完整加工链见 `public/audio/LICENSE-rain-and-thunders.txt`。
 
-图集里的**猫、篝火与南瓜灯**为**本项目自绘**，同样以 **MIT** 授权，声明见 `public/sprites/LICENSE-cat-fire.txt`。
+图集里的**猫、篝火与南瓜灯**为**本项目自绘**，同样以 **MIT** 授权，声明见 `public/sprites/LICENSE-cat-fire.txt`。自绘素材的动画元数据（每组的帧名、帧率、是否循环与熄灭帧）只写在 `tools/art/masters/cat-all-sprites-atlas.json`，`npm run art` 把它转写进 `atlas.json` 的 `animations` 段——改帧率 / 循环 / 帧名只改那一张表，别处不手抄。
