@@ -6,9 +6,9 @@ import { DECOR_BLOCK_ORDER, blockLabel, decorOptionsOf } from '../decor';
 import { exitComposer } from '../focus';
 import { HAS_POPOVER } from '../popover';
 import { PRIVACY_PAGE_HREF, openPrivacyPage } from '../privacy-link';
-import { getState, openAbout, openFeedback, openGames, openLot, setComposer, setDecor, setRain, setSound, setSwitching, showNotice } from '../store';
+import { getState, openAbout, openFeedback, openGames, openLot, setComposer, setDecor, setSound, setSwitching, setWeather, showNotice } from '../store';
 import { APP_VERSION } from '../version';
-import { soundLabel, weatherLabel } from '../weather';
+import { soundLabel, weatherLabel, weatherOptionsOf } from '../weather';
 import { focusBed, focusMyBed, setZoomMode } from '../world-handle';
 import { sendHop } from '../ws';
 import type { BedDirection } from '../world/rules';
@@ -131,7 +131,7 @@ const ICON_ENTRIES = [
 /**
  * `chat-panel` 里的**动作行** + 门控行（`docs/ui/DESIGN.md` 的 `action-row` 行）：左 = 可点击组
  * （`床号 n ↑` / `GO`）、右 = 礼物与设置齿轮（礼物拉出托盘：**睡不着留言板** / **求签** / **游戏** / **随机阅读**；
- * 齿轮点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **装饰**（二级视图）/ **天气** / **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
+ * 齿轮点开的浮层：**更换床位** / **缩放档位**（二级视图）/ **装饰**（二级视图）/ **天气**（二级视图）/ **雨声** / **反馈与建议** / **关于失眠云** / 版本号 / 隐私说明；
  * 没有 Popover 的内核退回手写开关，见 `../popover.ts`），
  * 门控行紧贴其下。**非空闲态**（`composer !== 'idle'`：打字或举报）右端那一组换成「收起」胶囊——
  * 它是输入会话唯一的常驻可见出口（`docs/design/60-interaction-shell.md` §2）。
@@ -163,8 +163,8 @@ export function ActionRow() {
       一个联合类型同时回答「谁开着」与「不会两个都开」——齿轮菜单与礼物托盘共用下面那一段点外 / `Esc` / 焦点归还 */
   const [openMenu, setOpenMenu] = useState<'none' | 'gift' | 'gear'>('none');
   /** 浮层当前显示哪一级：`root` = 设置列表，`zoom` = 缩放档位二级（`zoom-picker`），`decor` = 装饰二级
-      （`decor-picker`）。关掉浮层就回 `root` */
-  const [menuView, setMenuView] = useState<'root' | 'zoom' | 'decor'>('root');
+      （`decor-picker`），`weather` = 天气二级（`weather-picker`）。关掉浮层就回 `root` */
+  const [menuView, setMenuView] = useState<'root' | 'zoom' | 'decor' | 'weather'>('root');
   /** 齿轮菜单本体（礼物托盘是 `giftTrayRef`） */
   const menuRef = useRef<HTMLDivElement>(null);
   /** 礼物托盘本体 */
@@ -395,11 +395,11 @@ export function ActionRow() {
               {/* 菜单：有 Popover 时 `popover="auto"`——顶层渲染、light-dismiss、焦点管理全部由平台给，
                   所以没有遮罩、也没有手写的开关状态（`docs/design/60-interaction-shell.md` §4）。位置锚在齿轮上（CSS）。
                   **根视图七项**：**更换床位**（可点，胶囊外观）、**缩放**（进二级）、**装饰**（同样进二级：
-                  每块单选 + 「无装饰」，见 `decor-picker`）、**天气开关**（文案 = 当前天气）、
+                  每块单选 + 「无装饰」，见 `decor-picker`）、**天气**（进二级，文案 = 当前天气，见 `weather-picker`）、
                   **雨声开关**、**反馈与建议**与**关于失眠云**，版本号与**隐私说明**（两行纯文字）在下。模式期间第一项文案变「取消换床」
                   ——入口那处就是出口那处，用户不必另找按钮。版本号是构建期注入的，不存在于任何运行时请求里。
-                  **二级视图**（`zoom-picker` / `decor-picker`）只换框里的内容：前者五档 + 一行返回，
-                  后者每块一个标题 + 候选与「无装饰」+ 一行返回。
+                  **二级视图**（`zoom-picker` / `decor-picker` / `weather-picker`）只换框里的内容：缩放五档 + 一行返回，
+                  装饰每块一个标题 + 候选与「无装饰」+ 一行返回，天气三项单选 + 一行返回。
                   没有 Popover 时退回手写的开关：无 `popover` 属性，按 `openMenu === 'gear'` 条件渲染 */}
               {HAS_POPOVER || openMenu === 'gear' ? (
                 <div className="hud-menu" id="hud-menu" ref={menuRef} popover={HAS_POPOVER ? 'auto' : undefined}>
@@ -472,6 +472,38 @@ export function ActionRow() {
                         返回
                       </button>
                     </div>
+                  ) : menuView === 'weather' ? (
+                    // 天气（`weather-picker`，`docs/design/config.md` §4）：三项**单选**，与缩放那一套同形
+                    // （竖排胶囊 + 选中态 + 一行返回）。点一项立即生效、**不关浮层**（可连续比较）。
+                    // 候选与文案只来自 `weatherOptionsOf()`：界面不写第二份
+                    <div className="hud-menu-group">
+                      {weatherOptionsOf().map((option) => {
+                        const selected = view.weather === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className={
+                              selected ? 'hud-action hud-menu-action menu-option-selected' : 'hud-action hud-menu-action'
+                            }
+                            aria-pressed={selected}
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={() => setWeather(option.id)}
+                          >
+                            {selected ? `✓ ${option.label}` : option.label}
+                          </button>
+                        );
+                      })}
+                      {/* 返回根：与上面三项同一套外观（都是 44px 胶囊） */}
+                      <button
+                        type="button"
+                        className="hud-action hud-menu-action"
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => setMenuView('root')}
+                      >
+                        返回
+                      </button>
+                    </div>
                   ) : (
                     <>
                       <div className="hud-menu-group">
@@ -510,18 +542,17 @@ export function ActionRow() {
                         >
                           装饰
                         </button>
-                        {/* 天气开关：文案 = 当前天气，`aria-pressed` 表达开 / 关。点它**不关浮层**
-                            ——天气是可连续切换的设置（不像「更换床位」那样是模式入口）。
-                            独立 `key` + `pointerdown` 拦默认行为：与「收起」那颗同理，免得被原地复用 / 聚焦换位 */}
+                        {/* 天气：进二级（`weather-picker`，`docs/ui/DESIGN.md`）。文案带当前天气——它是天气那一段里
+                            唯一说「现在下什么」的地方。与缩放、装饰同形：点它**不关浮层**、只换这一块内容，
+                            所以它是**导航项**，不带 `aria-pressed`（每项真开关在二级里） */}
                         <button
                           key="weather"
                           type="button"
                           className="hud-action hud-menu-action"
-                          aria-pressed={view.rain}
                           onPointerDown={(event) => event.preventDefault()}
-                          onClick={() => setRain(!view.rain)}
+                          onClick={() => setMenuView('weather')}
                         >
-                          {weatherLabel(view.rain)}
+                          天气 · {weatherLabel(view.weather)}
                         </button>
                         {/* 雨声开关：与天气各自独立（无雨也能只听雨、雨天也能静音）。文案 = 当前状态。
                             点它同样不关浮层；同样需要独立 `key` + `pointerdown` 拦默认行为 */}

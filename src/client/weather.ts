@@ -3,9 +3,21 @@
  * 纯函数：偏好层与界面层共用这一份，不自己写第二套默认值或文案。
  */
 
-/** 齿轮浮层里那颗天气胶囊的文案 = 当前天气（开 / 关由 `aria-pressed` 表达）。 */
-export function weatherLabel(rain: boolean): string {
-  return rain ? '雨天' : '无雨';
+import type { WeatherKind } from './prefs';
+
+/** 齿轮浮层 root 那一项的文案 = 当前天气（它是导航项，开 / 关由二级列表表达）。 */
+export function weatherLabel(kind: WeatherKind): string {
+  return kind === 'snow' ? '雪' : kind === 'rain' ? '雨天' : '无雨';
+}
+
+const WEATHER_OPTIONS: readonly WeatherKind[] = ['none', 'rain', 'snow'];
+
+/**
+ * 天气候选（`weather-picker` 的二级列表）：界面按它遍历，所以加一种天气只改这里 + `prefs.ts` 的 id 表。
+ * 顺序就是列表顺序（`无雨` 在前 = 缺键的默认值在第一位）。
+ */
+export function weatherOptionsOf(): { id: WeatherKind; label: string }[] {
+  return WEATHER_OPTIONS.map((id) => ({ id, label: weatherLabel(id) }));
 }
 
 /**
