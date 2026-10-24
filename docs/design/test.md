@@ -9,7 +9,7 @@
 | 环境 | 是什么 | 什么时候用它 |
 | :--- | :--- | :--- |
 | **单测（L1）** | `npm test`（vitest）：纯函数、布局、寻路、位置同步的假时间轴、协议镜像、**交互状态机（`composerReducer` 及其序列穷举）/ `shouldResize`** | **任何纯逻辑**。能写成纯函数就必须在这里验，不要留到别处 |
-| **类型检查** | `npm run typecheck`（三份 tsconfig） | 改协议 / 样式令牌 / 前端代码后。干净克隆先跑一次 `npm run tokens` |
+| **类型检查** | `npm run typecheck`（三份 tsconfig：根 / tests / client） | 改协议 / 样式令牌 / 前端代码后。干净克隆先跑一次 `npm run tokens` |
 | **桌面浏览器** | 本机 Chromium（手工；要脚本化时用宿主上的 BetterWright） | 逻辑与流程：进厅、走动、躺下、聊天、断线重连、命中判定。**桌面视口只用于「不是响应式」的那类结论** |
 | **桌面浏览器 + 手机视口** | 同上，但视口按手机设（393×852 类） | **降级选项**：模拟器不可用时才用，只能看溢出/换行这类明显错误；**结论必须标注「降级验证」**。它仿真不了软键盘、IME、真触摸语义（见 §3），所以**不得作为响应式/触摸类验收的通过依据** |
 | **宿主 Windows 上的 Android 模拟器** | 真 Android + 真 Chrome + 真 Gboard，`-gpu host` | **移动端验收的默认环境**：布局与响应式、触摸语义（合成分发）、软键盘 / IME、画布与面板时序、DOM 与合成器行为。配方见 §2 |
@@ -17,6 +17,8 @@
 | **生产** | 部署后的站点 + 平台用量面板 | 额度、并发上限、真实网络下的节拍与位置年龄。**与额度相关的结论只看平台用量面板，不接受推算** |
 | **CI（推 tag 的工作流）** | `verify` 在干净 runner 上重跑三条基线 + 版本一致性；`deploy` 以 `/api/health` 判定上线；`release` 建 Release | 发版时。它**不是**本地测试的替代品：本地不过就别打 tag |
 | **音频听感** | 外放 / 耳机，人耳 | 只能人耳判。自动化最多断言「`AudioContext` 在跑、请求确实发生、没有异常」，断言不了好不好听。移动端要同时验 **iOS 静音拨片**：拨到静音后 WebAudio 不出声是平台行为，不是 bug |
+
+**编辑器另有一份 `src/client/tsconfig.json`，它只有一行 `extends`。** 存在的唯一目的是让 TS 服务打开 `src/client/**` 时用**客户端那份**配置：TS 服务按「最近的 tsconfig」解析，`src/client/` 下没有配置文件时退到根 `tsconfig.json`，而根里没有 `vite/client`（它只编 `src/worker` / `src/hall` / `src/shared`），于是 `atlas.png?url` 这类导入会报「找不到模块」——原文没错、`npm run typecheck` 也是绿的，纯粹是编辑器拿错了配置。`include` / `exclude` 由 `extends` **按基线所在目录**重定位，所以它不复制任何路径表；它**不在** `npm run typecheck` 里，类型基线仍然只改 `tsconfig.client.json`。**它不管测试文件**（`exclude` 沿继承），所以编辑器打开 `src/client/**/tests/` 时对 `node:fs` / `process` 仍会报红——那是**既有**的假阳性（删掉这份文件也一样报），门禁由 `tsconfig.tests.json` 保证。
 
 **基线设备**：iPhone 16 竖屏（393×852 / DPR 3 / 真手指触摸）。窄档阈值 640，其它窄屏手机走同一套分支。
 
