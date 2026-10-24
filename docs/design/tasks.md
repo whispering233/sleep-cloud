@@ -8,18 +8,6 @@
 
 ---
 
-## 卡 3 · `frames.css` 只产入场层预览的两帧
-
-**依赖**：无（与 1/2 独立）。
-
-**改哪里**
-1. `tools/art/build-sprites.mjs`：`frames.css` 只给 `boy_stand` / `girl_stand` 两条规则（注释改成「只产入场层预览用到的帧」）。
-2. `src/client/world/tests/atlas.test.ts`：那条「每帧一条规则 + 坐标同源」的断言改成「**恰好**这两条、名字就是这两个、坐标与图集一致」。
-
-**验收**：`npm run art` 后 `frames.css` 只剩 2 条规则，`atlas.png` / `atlas.json` 不变；`npm test` 绿；入场层两个形象预览仍出图（`EntryOverlay.tsx` 的 `sprite-${PREVIEW_FRAME[value]}`）。
-
----
-
 ## 暂不做
 
 - **游戏代码搬 `public/`**：游戏 chunk 已在 `/assets/` 下、缓存策略相同；途中的另一个动机（加游戏不用碰 TS）已由「文件夹即注册」解决。今天没有需求方。

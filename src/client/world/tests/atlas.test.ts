@@ -98,14 +98,14 @@ describe('图集与客户端的接口', () => {
     }
   });
 
-  it('frames.css 每帧一条规则，坐标与图集同源（入场层的形象预览按它取图）', () => {
+  it('frames.css 恰好两条规则：boy_stand / girl_stand，坐标与图集同源（入场层的形象预览按它取图）', () => {
     const css = readFileSync(join(process.cwd(), 'src', 'client', 'styles', 'frames.css'), 'utf8');
     const rules = [
       ...css.matchAll(
         /\.sprite-(\S+) \{ width: (\d+)px; height: (\d+)px; background-image: url\('\.\.\/assets\/sprites\/atlas\.png'\); background-position: -(\d+)px -(\d+)px; \}/g,
       ),
     ];
-    expect(rules.length).toBe(Object.keys(atlas.frames).length);
+    expect(rules.map(([, name]) => name)).toEqual(['boy_stand', 'girl_stand']);
     for (const [, name, w, h, x, y] of rules) {
       const frame = atlas.frames[name ?? ''];
       if (!frame) throw new Error(`frames.css 里的 ${name} 不在图集里`);

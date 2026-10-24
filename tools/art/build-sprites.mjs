@@ -8,8 +8,8 @@
  * 2. **裁到墨迹 bbox**（bbox 由脚本算，不硬编码），并输出锚点：
  *    床 = 墨迹左上角对齐格左上角，小人 = 墨迹底边中心对齐站立点；
  *    （聊天气泡不走素材：圆角矩形 + 三角在客户端程序化画，见 DESIGN.md「气泡不走素材」）
- * 3. 顺带产出 `src/client/styles/frames.css`：每帧一条 `background-position`，给入场层的形象
- *    预览当图片用——图集坐标只能有这一份，别处不许手抄；
+ * 3. 顺带产出 `src/client/styles/frames.css`：只产入场层预览用到的帧，每帧一条 `background-position`——
+ *    图集坐标只能有这一份，别处不许手抄；
  * 4. 产物是**提交物**（`src/client/assets/sprites/` 与 `src/client/styles/frames.css`），`npm run art` 重新生成；
  *    **不挂进 `npm run build`**。两个许可文件留在 `public/sprites/`（文档与 `AGENTS.md` 引用它）。
  *
@@ -34,6 +34,8 @@ const LICENSE_OUT_DIR = join(ROOT, 'public', 'sprites');
 const DESIGN = join(ROOT, 'docs', 'ui', 'DESIGN.md');
 const CAT_ATLAS = join(MASTERS, 'cat-all-sprites-atlas.json');
 const FRAMES_CSS = join(ROOT, 'src', 'client', 'styles', 'frames.css');
+/** `frames.css` 只产入场层预览用到的帧（其余帧走画布，不用 CSS）；名字不在图集里就当场报错。 */
+const CSS_FRAMES = ['boy_stand', 'girl_stand'];
 const LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-wheatcloudsleep.txt');
 const CAT_LICENSE_OUT = join(LICENSE_OUT_DIR, 'LICENSE-cat-fire.txt');
 /** 图集宽度取 256（2 列床 = 2×122 + 间隙）：够宽、又不浪费填充率。 */
@@ -542,11 +544,13 @@ function main() {
 
   // 入场层的形象预览要拿图集里的帧当 CSS 图片用：坐标从这里出，别处不手抄
   const css = [
-    '/* 由 `npm run art` 生成（tools/art/build-sprites.mjs）：图集坐标的唯一来源，不要手改。 */',
-    ...frames.map((frame) => {
-      const at = placements[frame.name];
+    '/* 由 `npm run art` 生成（tools/art/build-sprites.mjs）：只产入场层预览用到的帧，不要手改。 */',
+    ...CSS_FRAMES.map((name) => {
+      const frame = frames.find((entry) => entry.name === name);
+      const at = placements[name];
+      if (!frame || !at) throw new Error(`frames.css 要出的 ${name} 不在图集里`);
       return (
-        `.sprite-${frame.name} { width: ${frame.w}px; height: ${frame.h}px;` +
+        `.sprite-${name} { width: ${frame.w}px; height: ${frame.h}px;` +
         // 相对 frames.css 自己的位置（src/client/styles/）：Vite 会改写成带内容哈希的 URL
         ` background-image: url('../assets/sprites/atlas.png'); background-position: -${at.x}px -${at.y}px; }`
       );
@@ -605,7 +609,7 @@ function main() {
     `图集：src/client/assets/sprites/atlas.png ${ATLAS_WIDTH}×${height}（${atlasPng.length} 字节）、` +
       `src/client/assets/sprites/atlas.json（${JSON.stringify(json).length} 字节）`,
   );
-  console.log(`坐标：src/client/styles/frames.css（${frames.length} 条规则）`);
+  console.log(`坐标：src/client/styles/frames.css（${CSS_FRAMES.length} 条规则）`);
   console.log(`许可：public/sprites/LICENSE-wheatcloudsleep.txt 在位（${license.length} 字节，MIT / © 2022 WheatBox）`);
   console.log(`许可：public/sprites/LICENSE-cat-fire.txt 在位（猫 / 篝火 / 南瓜灯为项目自绘，MIT）`);
 }
