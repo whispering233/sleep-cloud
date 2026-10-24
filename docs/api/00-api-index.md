@@ -26,6 +26,7 @@
 | :--- | :--- | :--- | :--- |
 | POST | `/api/admin/login` | 用 `ADMIN_TOKEN` 换 `sc_admin` cookie | `30-api-admin.md` |
 | POST | `/api/admin/logout` | 清 `sc_admin` | `30-api-admin.md` |
+| GET | `/api/admin/me` | 会话自检（只回 `{ ok: true }`） | `30-api-admin.md` |
 | GET | `/api/admin/identities` | 访客台账（可按 IP 反查） | `30-api-admin.md` |
 | GET | `/api/admin/identities/:userId` | 身份详情 | `30-api-admin.md` |
 | GET | `/api/admin/blocks` | 黑名单 | `30-api-admin.md` |

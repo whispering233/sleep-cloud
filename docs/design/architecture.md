@@ -123,10 +123,10 @@ games/        各游戏条目（`<id>/meta.ts` + `<id>/index.ts`，构建期扫�
 src/client/   世界层（world/）+ UI 层（components/、styles/）+ 游戏页外壳与扫描器（games/，逐条动态 import）+ 客户端偏好、天气与音频（prefs.ts、weather.ts、audio.ts）
 src/hall/     房间服务层
 src/worker/   入口层
-public/       静态资源（重着色后的图集、雨声 WAV、词表）
+public/       不需要经过构建的静态文件（雨声 WAV、后台页与隐私页、许可声明、`_headers`）
 ```
 
-**雨声不走 Phaser 的 `this.sound`**：`SoundManager` 的价值在于「用 Loader 载素材 + 统一的播放 API」，而这里只有一个音频、懒加载（`fetch` → `decodeAudioData`），还要做「早播小循环 → 主循环」的双 source 交叉淡化。接进 Phaser 会把音频绑到世界层的生命周期上：世界层是懒加载块，而 `load.audio` 会让首帧等那次下载。所以它是 UI 层旁边的独立小模块：一个 `AudioContext`、两个 `AudioBufferSourceNode`、每路一个 `GainNode`（1 s 交叉淡化要两个），对外只有 `setRain(on)` 与 `unlock()`。
+**雨声不走 Phaser 的 `this.sound`**：`SoundManager` 的价值在于「用 Loader 载素材 + 统一的播放 API」，而这里只有一个音频、懒加载（`fetch` → `decodeAudioData`），还要做「早播小循环 → 主循环」的双 source 交叉淡化。接进 Phaser 会把音频绑到世界层的生命周期上：世界层是懒加载块，而 `load.audio` 会让首帧等那次下载。所以它是 UI 层旁边的独立小模块：一个 `AudioContext`、两个 `AudioBufferSourceNode`、每路一个 `GainNode`（1 s 交叉淡化要两个），对外只有 `setSound(on)`、`suspendHall()` / `resumeHall()` 与 `unlock()`。
 
 ## 4. 数据流
 

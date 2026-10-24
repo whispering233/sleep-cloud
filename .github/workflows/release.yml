@@ -34,7 +34,7 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint:design
-      # 版本一致性：标签去掉 v 必须等于 package.json 的 version，且 CHANGELOG.md 里有 ## [vX.Y.Z] 段。
+      # 版本一致性：标签去掉 v 与 `-` 后缀之后的基版本必须等于 package.json 的 version，且 CHANGELOG.md 里有 ## [vX.Y.Z] 段。
       # 带后缀的预发布 tag（vX.Y.Z-ci 这类）只比对基版本，Release 那一步会被跳过（见 release job 的 if）。
       # 放在 verify 而不是等 release 报错：那段对不上时 release 一定失败，排到它后面就成了「已上线但没 Release」。
       - name: 版本一致性

@@ -165,7 +165,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 | 步骤 | 动作 |
 | :--- | :--- |
-| 1 | 改 `package.json` 的 `version`；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期>` 之下，并留一个空的 `[Unreleased]` 段；**同时手改这一版「最近更新」到 `src/client/about.json`**（这个文件只有手工维护这一条路，`90-about-panel.md` §4） |
+| 1 | 改 `package.json` 的 `version`，并跑 `npm install --package-lock-only` 让 `package-lock.json` 里那两处 `version` 一起走（CI 的一致性只比 `package.json`，但锁文件对不上会让人以为是漏发）；把 `CHANGELOG.md` 的 `## [Unreleased]` 内容归到 `## [vX.Y.Z] - <日期>` 之下，并留一个空的 `[Unreleased]` 段；**同时手改这一版「最近更新」到 `src/client/about.json`**（这个文件只有手工维护这一条路，`90-about-panel.md` §4） |
 | 2 | 发布前基线三条都要零失败：`npm test`、`npm run typecheck`、`npm run lint:design`（CI 会再跑一遍，见 §4.4） |
 | 3 | `git commit`（版本号 + CHANGELOG + 本轮其它改动）→ `git push origin main` |
 | 4 | `git tag vX.Y.Z` → `git push origin vX.Y.Z`。**推完这一步就没有手工动作了**：CI 依次跑质量门 → 部署 → `/api/health` 冒烟 → 建 GitHub Release（§4.4） |
@@ -185,7 +185,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 | job | 做什么 | 失败后 |
 | :--- | :--- | :--- |
-| `verify` | `npm ci` → `npm run tokens`（`typecheck` 与 `test` 依赖它生成的 `src/client/styles/tokens.*`）→ `npm test` → `npm run typecheck` → `npm run lint:design` → **版本一致性**：标签去掉 `v` 必须等于 `package.json` 的 `version`，且 `CHANGELOG.md` 里存在 `## [vX.Y.Z]` 那一段 | 不部署、不建 Release |
+| `verify` | `npm ci` → `npm run tokens`（`typecheck` 与 `test` 依赖它生成的 `src/client/styles/tokens.*`）→ `npm test` → `npm run typecheck` → `npm run lint:design` → **版本一致性**：标签去掉 `v` 与 `-` 后缀之后的基版本必须等于 `package.json` 的 `version`，且 `CHANGELOG.md` 里存在 `## [vX.Y.Z]` 那一段 | 不部署、不建 Release |
 | `deploy` | `npm ci` → `npm run build`（`assets.directory` 指向 `dist/`，而 deploy 跑在另一台 runner 上，拿不到 verify 的产物）→ 把两个占位符换成真实值 → `npx wrangler deploy` → `GET /api/health`（失败重试 3 次、间隔 10 s） | 不建 Release |
 | `release` | 用 `CHANGELOG.md` 里那一段正文建 GitHub Release | — |
 
@@ -208,7 +208,7 @@ HTTPS 也是必需项（不只是访问问题）：会话 cookie 在生产下带
 
 **没有 dry-run 通道，`--dry-run` 也不算**：它在上传前就返回，验不到 token 权限与 zone 解析，只证明配置能被接受。
 
-**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过。`wrangler deploy` 输出 `Uploaded <Worker 名> (5.33 sec)` → `Deployed <Worker 名> triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
+**已验证（2026-10-21，预发布 tag `v0.0.7-ci`）**：`verify` 28 s、`deploy` 24 s 全绿，`release` 因 `-` 后缀跳过——所以那条记录**只验到上传与冒烟**；`release` job 第一次真正执行是 `v0.1.0`。`wrangler deploy` 输出 `Uploaded <Worker 名> (5.33 sec)` → `Deployed <Worker 名> triggers (1.63 sec)` → 冒烟一次通过；线上 `GET /api/health` 仍为 `{"code":"0",…}`。所以 per-Worker `Editor` 这条路实测可用。
 
 失败形态分两段，别弄混：
 

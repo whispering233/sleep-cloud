@@ -39,7 +39,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 ```
 
 - **状态住 store**（`composer: 'idle' | 'typing' | 'report' | 'reading' | 'feedback'`）。DOM 焦点只是它的**入口之一**，不是它的定义——这是全篇最要紧的一句：焦点是会被卸载、会被抢走、会被系统手势吞掉的东西，把它当状态本体就必然出现「回不到大厅」。
-- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `enterComposer()`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗在**礼物托盘里**（`gift-tray`，不是动作行上的一颗）的阅读胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
+- **入口统一**：shell 级 `focusin`，目标匹配 `input, textarea, [contenteditable]` **且落在 `.chat-panel` 或 `.slot-panel` 内** → `setComposer({ kind: 'focus-in' })`。今天有四个源：聊天输入、`GO` 的床号输入、举报事由、反馈事由（后两者都在**插槽面板**里，是 `.chat-panel` 的兄弟节点——只匹配前者会把「聚焦事由框」判成面板外，下一帧对账直接退场）。**任何将来会拉起键盘的控件都自动进同一个状态**，不需要逐个登记。限定在面板内是必须的：入场层也有输入框（昵称），进厅时绝不能带着一个「打字态」进来。`report` / `feedback` 已在时，**`focusin` 不降级**：`ComposerEvent` 没有携带焦点目标，分不清「事由框复焦」与「点聊天输入框」，而降级会当场卸载表单、丢掉已写的事由。**`reading` 是唯一的非焦点入口**：那颗在**礼物托盘里**（`gift-tray`，不是动作行上的一颗）的阅读胶囊不拉键盘，状态由点击自己写进去（理由见 `50-slot-panel.md` §附）；从 `reading` 出发的 `focusin` 降成 `typing`（点了输入框就是要打字）。
 - **出口唯一**：`exitComposer()`。它必须满足三条：
   1. **幂等**（重复调用无副作用）；
   2. **不看 `activeElement` 是谁**（当前实现正是因为它只看输入框，才在输入框被卸载后彻底失效）；
@@ -122,7 +122,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 | I2 | 从 `typing` / `report` / `feedback` 出发，**任一**退出类事件（`exit` / `lost-focus` / `offline`）都直接到 `idle`；从 `reading` 出发，`exit` / `offline` 到 `idle`、`lost-focus` **保持 `reading`**（里面没有可编辑控件）——穷举长度 ≤ 4 的序列证明没有卡住的路 |
 | I3 | `exitComposer()` 幂等，且不依赖 `document.activeElement` 的具体类型 |
 | I4 | `composer !== 'idle'` 时屏幕内始终存在一个可见的 44px 出口控件 |
-| I5 | 任何可编辑控件获得焦点 → `composer` 为 `typing` 或 `report`（无例外，含 `GO` 床号与举报事由）；**`report` 不会被焦点事件降级成 `typing`** |
+| I5 | 任何可编辑控件获得焦点 → `composer` 为 `typing` / `report` / `feedback`（无例外，含 `GO` 床号、举报事由与反馈事由）；**`report` 与 `feedback` 都不会被焦点事件降级成 `typing`** |
 | I6 | `typing` 期间与退场当帧画布像素尺寸都不变（`canvas.width/height` 与 `scale.resize` 调用次数都不变） |
 | I7 | 点插槽面板空白**不产生 `walk`**：空白处的 `pointerdown` 被取消（`defaultPrevented`），且整次手势期间手指底下的盒子不换手 |
 | I8 | 世界层只接受 `downElement === canvas` 的 tap |

@@ -20,10 +20,6 @@ wrangler.local.jsonc
 src/client/styles/tokens.css
 src/client/styles/tokens.json
 
-# 测试产物（Playwright 的截图与报告，`npm run e2e` 每次都写）
-test-results/
-playwright-report/
-
 # 测试缓存（vitest 每次跑测试都会写）
 .vitest/
 
