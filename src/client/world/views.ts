@@ -114,6 +114,8 @@ export const COLORS = {
   /** 气泡底（与界面同底）与它那 1px 的描边 */
   bubbleFill: color('secondary'),
   bubbleLine: color('neutral-muted'),
+  /** 雪点的白芯（素材里「白色填充」的映射目标）：与 `line` 的墨边配对，雪在漫游档才看得见 */
+  paper: color('paper'),
 } as const;
 
 const INK = color('neutral');

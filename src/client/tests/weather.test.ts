@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { soundLabel, weatherLabel } from '../weather';
+import { soundLabel, weatherLabel, weatherOptionsOf } from '../weather';
 
 describe('天气文案', () => {
-  it('文案 = 当前天气', () => {
-    expect(weatherLabel(true)).toBe('雨天');
-    expect(weatherLabel(false)).toBe('无雨');
+  it('三态各有自己的文案', () => {
+    expect(weatherLabel('none')).toBe('无雨');
+    expect(weatherLabel('rain')).toBe('雨天');
+    expect(weatherLabel('snow')).toBe('雪');
+  });
+});
+
+describe('天气候选（weather-picker）', () => {
+  it('顺序固定、三项齐全：无雨 → 雨天 → 雪', () => {
+    expect(weatherOptionsOf()).toEqual([
+      { id: 'none', label: '无雨' },
+      { id: 'rain', label: '雨天' },
+      { id: 'snow', label: '雪' },
+    ]);
   });
 });
 

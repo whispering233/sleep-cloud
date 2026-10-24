@@ -1,6 +1,7 @@
 import { displayBedNoOf } from '../shared/layout';
 import type { ComposerState } from './composer';
 import type { DecorPick } from './decor';
+import type { WeatherKind } from './prefs';
 import type { BedDirection } from './world/rules';
 import type { ClientState } from './store';
 import { sameZoomMode } from './zoom';
@@ -30,8 +31,8 @@ export interface HudView {
   switching: boolean;
   /** 世界缩放档位：HUD 那一段「缩放 …」吃它（见 `src/client/zoom.ts`） */
   zoomMode: ZoomMode;
-  /** 天气（客户端本地偏好）：齿轮浮层里那一颗胶囊的文案与 `aria-pressed` 吃它 */
-  rain: boolean;
+  /** 天气（客户端本地偏好，单选的一态）：齿轮浮层里那一项的文案与二级列表的选中态吃它 */
+  weather: WeatherKind;
   /** 雨声（与天气各自独立的本地偏好）：隔壁那颗胶囊吃它，**音频只看它** */
   sound: boolean;
   /**
@@ -53,7 +54,7 @@ export function hudViewOf(state: ClientState): HudView {
     rttMs: state.rttMs,
     switching: state.switching,
     zoomMode: state.zoomMode,
-    rain: state.rain,
+    weather: state.weather,
     sound: state.sound,
     decor: state.decor,
     composer: state.composer,
@@ -69,7 +70,7 @@ export function sameHudView(a: HudView, b: HudView): boolean {
     a.emptyBeds === b.emptyBeds &&
     a.rttMs === b.rttMs &&
     a.switching === b.switching &&
-    a.rain === b.rain &&
+    a.weather === b.weather &&
     a.sound === b.sound &&
     // 装饰是对象：store 只在真变更时换它（`setDecor`），所以**按引用比**就够，不逐块拆字段
     a.decor === b.decor &&

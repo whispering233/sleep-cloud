@@ -38,7 +38,7 @@ import {
   writeWeather,
   writeZoomMode,
 } from './prefs';
-import type { ReadProgress } from './prefs';
+import type { ReadProgress, WeatherKind } from './prefs';
 import { anchorPrediction, arcLengthAhead, beginPrediction, predictionPointAt } from './prediction';
 import type { Prediction } from './prediction';
 import { drawNext } from './type-texts';
@@ -135,12 +135,12 @@ export interface ClientState {
    */
   zoomMode: ZoomMode;
   /**
-   * **天气**（客户端本地偏好，不进协议、不进快照）：`true` = 雨天，**只驱动雨层画面**。
+   * **天气**（客户端本地偏好，不进协议、不进快照）：**单选的一态**，只驱动天气层画面。
    * 缺键时无雨；之后只由用户切换（见 `docs/design/40-client-storage.md` §3）。
    */
-  rain: boolean;
+  weather: WeatherKind;
   /**
-   * **雨声**（与 `rain` 各自独立的本地偏好，不进协议、不进快照）：`true` = 开。**只看它**决定出不出声，
+   * **雨声**（与 `weather` 各自独立的本地偏好，不进协议、不进快照）：`true` = 开。**只看它**决定出不出声，
    * 所以「无雨 + 雨声」「雨天 + 静音」都是合法状态。缺键 = 静音。
    */
   sound: boolean;
@@ -210,10 +210,10 @@ const emptyState = (): ClientState => ({
   readProgress: loadReadProgress(),
   reportedIds: new Set(),
   // 启动时读一次本地偏好进初值，之后不再碰 `localStorage`（不进逐帧路径）。
-  // 落盘的是 id（`none` / `rain`），store 里仍是两个布尔：多一种天气/声道时只需改 id 表。
+  // 天气与声道落盘的是 id（`none` / `rain` / `snow`）：天气直接存那份 id（单选的一态），声道仍折成布尔。
   // 装饰不一样：它本来就是「每块一个 id」，所以 store 直接存那份值（世界层逐帧读的就是它）
   zoomMode: readZoomMode(),
-  rain: readWeather() === 'rain',
+  weather: readWeather(),
   sound: readSound() === 'rain',
   decor: readDecor(),
   aboutOpen: shouldShowAbout(readAboutSeen()) ? 'auto' : null,
@@ -434,13 +434,13 @@ export function setZoomMode(mode: ZoomMode): void {
 }
 
 /**
- * 天气开关（见 `ClientState.rain`）：同值不写；写 store + 本地偏好（`false` 也照写，写入路径只一条）。
+ * 写天气（见 `ClientState.weather`）：同值不写；写 store + 本地偏好（`none` 也照写，写入路径只一条）。
  * **不联动雨声**：画面归画面、声音归声音（`docs/design/40-client-storage.md` §3）。
  */
-export function setRain(on: boolean): void {
-  if (state.rain === on) return;
-  setState({ rain: on });
-  writeWeather(on ? 'rain' : 'none');
+export function setWeather(kind: WeatherKind): void {
+  if (state.weather === kind) return;
+  setState({ weather: kind });
+  writeWeather(kind);
 }
 
 /**

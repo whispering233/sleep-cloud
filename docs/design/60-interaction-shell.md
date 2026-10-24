@@ -112,7 +112,7 @@ typing / report / reading / feedback ──断线 / 焦点对账失败──▶ 
 - **幂等**：世界层自留一个 `suspended` 布尔，只有状态真翻转才 sleep / wake（`wake()` 在 `running` 时虽会早退，但 `resetDelta()` 会打乱 FPS 统计）。
 - **首次创建时 loop 还没跑起来**：`new Phaser.Game()` 之后要先等 `TextureManager` 把三张 base64 贴图 `onload` 完才 `loop.start()`，而世界 chunk 是动态 import 的——注册那一刻 `running === false`，直接 `sleep()` 就是空操作。所以停不下时挂一次 `poststep`、在首帧尾巴上再睡（醒来前又盖上的情况由 `suspended` 兜住）；`!started` 时**不 wake**：那时 `wake()` 会在 `callback` 设上之前就重启 rAF。
 - **界面层不关心世界层起没起来**：世界层是懒加载块（入场层不该等它下载完），App 的 effect 可能比它先跑。所以 `src/client/world-handle.ts` **模块级记住最后一次请求**，`setWorldHandle()` 注册时把当前值套上去。
-- **覆盖期间没有别的东西要看**：停的是整个世界（含雨层 Scene）；DOM 界面照旧，它本来就不吃 Phaser 的帧。
+- **覆盖期间没有别的东西要看**：停的是整个世界（含天气 Scene）；DOM 界面照旧，它本来就不吃 Phaser 的帧。
 
 ## 6. 不变式（每条都必须可测）
 

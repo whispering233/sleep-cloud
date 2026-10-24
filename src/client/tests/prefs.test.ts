@@ -20,7 +20,7 @@ import {
   writeWeather,
 } from '../prefs';
 import type { PrefStorage } from '../prefs';
-import { getState, setRain, setSound, setZoomMode } from '../store';
+import { getState, setSound, setWeather, setZoomMode } from '../store';
 
 /** 假 storage：单测跑在 Node（没有 `localStorage`），读写都走这张表。 */
 const fakeStorage = (): PrefStorage & { data: Map<string, string> } => {
@@ -113,17 +113,17 @@ describe('天气偏好（sc.weather）', () => {
     expect(storage.data.has(PREFS.weather)).toBe(false);
   });
 
-  it('读回写下的值；`false` 也照写（单写入路径，不做「无雨就删键」）', () => {
+  it('读回写下的值（三态各自往返）；`none` 也照写（单写入路径，不做「无雨就删键」）', () => {
     const storage = fakeStorage();
-    writeWeather('rain', storage);
-    expect(readWeather(storage)).toBe('rain');
-    writeWeather('none', storage);
-    expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind: 'none' });
-    expect(readWeather(storage)).toBe('none');
+    for (const kind of ['rain', 'snow', 'none'] as const) {
+      writeWeather(kind, storage);
+      expect(readWeather(storage)).toBe(kind);
+      expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind });
+    }
   });
 
   it('坏 JSON / 版本不符 / 表外 kind → 无雨，且该键已被删（不删就永久循环判废）', () => {
-    const raws = ['{不是 JSON', JSON.stringify({ v: 2, kind: 'rain' }), JSON.stringify({ v: 1, kind: 'snow' })];
+    const raws = ['{不是 JSON', JSON.stringify({ v: 2, kind: 'rain' }), JSON.stringify({ v: 1, kind: 'fog' })];
     for (const raw of raws) {
       const storage = fakeStorage();
       storage.data.set(PREFS.weather, raw);
@@ -132,17 +132,19 @@ describe('天气偏好（sc.weather）', () => {
     }
   });
 
-  it('setRain 写 store 与偏好；同值不写', () => {
+  it('setWeather 写 store 与偏好（三态各一次）；同值不写', () => {
     const storage = fakeStorage();
     (globalThis as { localStorage?: PrefStorage }).localStorage = storage;
     try {
-      const next = !getState().rain;
-      setRain(next);
-      expect(getState().rain).toBe(next);
-      expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind: next ? 'rain' : 'none' });
+      // 初值是 `none`：先切到 rain / snow，再切回 none，三次都是真变更（同值不写在最后一条断言）
+      for (const kind of ['rain', 'snow', 'none'] as const) {
+        setWeather(kind);
+        expect(getState().weather).toBe(kind);
+        expect(JSON.parse(storage.data.get(PREFS.weather) ?? '')).toEqual({ v: 1, kind });
+      }
 
       storage.data.delete(PREFS.weather);
-      setRain(next);
+      setWeather('none');
       expect(storage.data.has(PREFS.weather)).toBe(false);
     } finally {
       delete (globalThis as { localStorage?: PrefStorage }).localStorage;
@@ -268,15 +270,15 @@ describe('雨声偏好（sc.sound）', () => {
     const storage = fakeStorage();
     (globalThis as { localStorage?: PrefStorage }).localStorage = storage;
     try {
-      const rainBefore = getState().rain;
+      const weatherBefore = getState().weather;
       const sound = !getState().sound;
       setSound(sound);
       expect(getState().sound).toBe(sound);
-      expect(getState().rain).toBe(rainBefore);
+      expect(getState().weather).toBe(weatherBefore);
       expect(JSON.parse(storage.data.get(PREFS.sound) ?? '')).toEqual({ v: 1, kind: sound ? 'rain' : 'none' });
       expect(storage.data.has(PREFS.weather)).toBe(false);
 
-      setRain(!rainBefore);
+      setWeather(weatherBefore === 'snow' ? 'rain' : 'snow');
       expect(getState().sound).toBe(sound);
       expect(storage.data.has(PREFS.sound)).toBe(true);
     } finally {
